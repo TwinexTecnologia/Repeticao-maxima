@@ -1,0 +1,30 @@
+# Root project ignores
+.DS_Store
+Thumbs.db
+
+# Local env files
+.env*
+**/.env*
+
+# Node / Next.js app
+web/node_modules/
+web/.next/
+web/out/
+web/build/
+web/coverage/
+web/.vercel/
+web/.pnp
+web/.pnp.*
+web/.yarn/*
+!web/.yarn/patches
+!web/.yarn/plugins
+!web/.yarn/releases
+!web/.yarn/versions
+web/npm-debug.log*
+web/yarn-debug.log*
+web/yarn-error.log*
+web/.pnpm-debug.log*
+web/next-env.d.ts
+
+# Temporary local backups
+**/.git-web-backup/
