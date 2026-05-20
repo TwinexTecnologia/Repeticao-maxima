@@ -7,12 +7,18 @@ import { loadPublishedCompanyDiscountRulesForCallback } from "@/lib/empresa/repo
 
 export async function GET() {
   const rules = await loadPublishedCompanyDiscountRulesForCallback();
+  const appPublicUrl =
+    process.env.APP_PUBLIC_URL?.trim() ||
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    null;
 
   return NextResponse.json(
     {
       ok: true,
       route: "nuvemshop-discounts-callback",
       publishedRules: rules.length,
+      appPublicUrl,
+      methods: ["GET", "POST"],
     },
     { status: 200 },
   );
