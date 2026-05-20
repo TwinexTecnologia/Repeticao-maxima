@@ -42,6 +42,7 @@ type CartLineItem = {
 export async function syncCompanyRuleWithNuvemshop(
   rule: CompanyCartDiscountRule,
   origin: string,
+  previousRule?: CompanyCartDiscountRule | null,
 ): Promise<SyncCompanyRuleResult> {
   const syncedAt = new Date().toISOString();
   const credentials = getNuvemshopCredentials();
@@ -116,7 +117,42 @@ export async function syncCompanyRuleWithNuvemshop(
       };
     }
 
+    const titleChanged =
+      Boolean(rule.nuvemshopPromotionId) &&
+      Boolean(previousRule?.nuvemshopPromotionId) &&
+      previousRule?.nuvemshopPromotionId === rule.nuvemshopPromotionId &&
+      previousRule?.title.trim() !== rule.title.trim();
+
     if (rule.nuvemshopPromotionId) {
+      if (titleChanged) {
+        try {
+          await client.updatePromotion(rule.nuvemshopPromotionId, {
+            active: false,
+            combines_with_quantity_discounts: false,
+            combines_with_free_shipping: false,
+            combines_with_cart_amount_discounts: false,
+            combines_with_app_discounts: false,
+            combines_with_price_discounts: false,
+          });
+        } catch (error) {
+          if (!(error instanceof NuvemshopApiError && error.status === 404)) {
+            throw error;
+          }
+        }
+
+        const recreatedPromotionId = await createActivePromotion(client, rule);
+
+        return {
+          ok: true,
+          status: "publicada",
+          message:
+            "Promocao recriada na Nuvemshop para refletir o novo titulo no checkout.",
+          promotionId: recreatedPromotionId,
+          callbackUrl,
+          syncedAt,
+        };
+      }
+
       try {
         const updated = await client.updatePromotion(rule.nuvemshopPromotionId, {
           active: true,

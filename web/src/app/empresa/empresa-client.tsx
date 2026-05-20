@@ -46,6 +46,7 @@ export function EmpresaClient({
   const [togglingRuleId, setTogglingRuleId] = useState<string | null>(null);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [form, setForm] = useState({
+    title: "",
     ruleMode: "categoria" as RuleMode,
     categoryIds: defaultCategoryId ? [defaultCategoryId] : [],
     minimumQuantity: "3",
@@ -131,6 +132,7 @@ export function EmpresaClient({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
+            title: form.title,
             ruleMode: form.ruleMode,
             categoryId: form.categoryIds[0] || "",
             categoryName: selectedCategories[0]?.name || "",
@@ -276,6 +278,7 @@ export function EmpresaClient({
   function startEditingRule(rule: CompanyCartDiscountRule) {
     setEditingRuleId(rule.id);
     setForm({
+      title: rule.title,
       ruleMode: rule.ruleMode,
       categoryIds:
         rule.categoryIds.length > 0
@@ -295,6 +298,7 @@ export function EmpresaClient({
     setEditingRuleId(null);
     setSelectedProductIds([]);
     setForm({
+      title: "",
       ruleMode: "categoria",
       categoryIds: defaultCategoryId ? [defaultCategoryId] : [],
       minimumQuantity: "3",
@@ -483,6 +487,21 @@ export function EmpresaClient({
             </div>
 
             <div className={styles.formStack}>
+              <label className={styles.filterField}>
+                <span>Titulo da promocao no site</span>
+                <input
+                  type="text"
+                  placeholder="Ex.: Leve 3 oversized e ganhe R$ 57 OFF"
+                  value={form.title}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      title: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
               <label className={styles.filterField}>
                 <span>Modo do combo</span>
                 <select
