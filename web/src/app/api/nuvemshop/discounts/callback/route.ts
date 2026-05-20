@@ -5,6 +5,25 @@ import {
 } from "@/lib/empresa/nuvemshop-discounts";
 import { loadPublishedCompanyDiscountRulesForCallback } from "@/lib/empresa/repository";
 
+export async function GET() {
+  const rules = await loadPublishedCompanyDiscountRulesForCallback();
+  const appPublicUrl =
+    process.env.APP_PUBLIC_URL?.trim() ||
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    null;
+
+  return NextResponse.json(
+    {
+      ok: true,
+      route: "nuvemshop-discounts-callback",
+      publishedRules: rules.length,
+      appPublicUrl,
+      methods: ["GET", "POST"],
+    },
+    { status: 200 },
+  );
+}
+
 export async function POST(request: Request) {
   try {
     const payload = await request.json();
