@@ -72,6 +72,7 @@ export async function syncCompanyRuleWithNuvemshop(
   }
 
   const client = new NuvemshopClient(credentials.credentials);
+  const activePromotionSettings = getActivePromotionSettings();
 
   try {
     await client.updateDiscountsCallback(callbackUrl);
@@ -81,6 +82,7 @@ export async function syncCompanyRuleWithNuvemshop(
         try {
           await client.updatePromotion(rule.nuvemshopPromotionId, {
             active: false,
+            combines_with_other_discounts: false,
             combines_with_quantity_discounts: false,
             combines_with_free_shipping: false,
             combines_with_cart_amount_discounts: false,
@@ -128,6 +130,7 @@ export async function syncCompanyRuleWithNuvemshop(
         try {
           await client.updatePromotion(rule.nuvemshopPromotionId, {
             active: false,
+            combines_with_other_discounts: false,
             combines_with_quantity_discounts: false,
             combines_with_free_shipping: false,
             combines_with_cart_amount_discounts: false,
@@ -154,14 +157,10 @@ export async function syncCompanyRuleWithNuvemshop(
       }
 
       try {
-        const updated = await client.updatePromotion(rule.nuvemshopPromotionId, {
-          active: true,
-          combines_with_quantity_discounts: false,
-          combines_with_free_shipping: false,
-          combines_with_cart_amount_discounts: false,
-          combines_with_app_discounts: false,
-          combines_with_price_discounts: false,
-        });
+        const updated = await client.updatePromotion(
+          rule.nuvemshopPromotionId,
+          activePromotionSettings,
+        );
         const updatedPromotionId =
           extractPromotionId(updated) || rule.nuvemshopPromotionId;
 
@@ -227,14 +226,8 @@ async function createActivePromotion(
   rule: CompanyCartDiscountRule,
 ) {
   const created = await client.createPromotion({
+    ...getActivePromotionSettings(),
     name: rule.title,
-    active: true,
-    allocation_type: "cross_items",
-    combines_with_quantity_discounts: false,
-    combines_with_free_shipping: false,
-    combines_with_cart_amount_discounts: false,
-    combines_with_app_discounts: false,
-    combines_with_price_discounts: false,
   });
   const createdPromotionId = extractPromotionId(created);
 
@@ -245,6 +238,19 @@ async function createActivePromotion(
   }
 
   return createdPromotionId;
+}
+
+function getActivePromotionSettings() {
+  return {
+    active: true,
+    allocation_type: "cross_items" as const,
+    combines_with_other_discounts: true,
+    combines_with_quantity_discounts: true,
+    combines_with_free_shipping: false,
+    combines_with_cart_amount_discounts: true,
+    combines_with_app_discounts: true,
+    combines_with_price_discounts: true,
+  };
 }
 
 export function buildCompanyDiscountCallbackDecision(
