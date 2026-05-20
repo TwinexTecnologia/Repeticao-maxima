@@ -348,6 +348,7 @@ export async function loadPublishedCompanyDiscountRulesForCallback() {
   }
 
   try {
+    const catalog = await loadNuvemshopDiscountCatalog();
     const { data, error } = await supabase.client
       .schema(OPERATIONS_SCHEMA)
       .from(COMPANY_CART_DISCOUNT_TABLE)
@@ -359,8 +360,23 @@ export async function loadPublishedCompanyDiscountRulesForCallback() {
       throw error;
     }
 
+    const productMatchMap = new Map(
+      (catalog.products || []).map((product) => [product.productId, product.matchIds]),
+    );
+
     return (data ?? [])
       .map(rowToCompanyCartDiscountRule)
+      .map((rule) => ({
+        ...rule,
+        productIds: Array.from(
+          new Set(
+            rule.productIds.flatMap((productId) => {
+              const matchIds = productMatchMap.get(productId);
+              return matchIds && matchIds.length > 0 ? matchIds : [productId];
+            }),
+          ),
+        ),
+      }))
       .filter((rule) => Boolean(rule.nuvemshopPromotionId));
   } catch {
     return [] as CompanyCartDiscountRule[];
