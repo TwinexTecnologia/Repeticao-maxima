@@ -273,6 +273,18 @@ export async function updateCompanyCartDiscountRule(
   const row = normalizeCompanyCartDiscountInput(input);
 
   try {
+    const { data: currentData, error: currentError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(COMPANY_CART_DISCOUNT_TABLE)
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (currentError || !currentData) {
+      throw currentError || new Error("Promocao nao encontrada para edicao.");
+    }
+
+    const previousRule = rowToCompanyCartDiscountRule(currentData);
     const { data, error } = await supabase.client
       .schema(OPERATIONS_SCHEMA)
       .from(COMPANY_CART_DISCOUNT_TABLE)
@@ -303,6 +315,7 @@ export async function updateCompanyCartDiscountRule(
       supabase.client,
       rowToCompanyCartDiscountRule(data),
       origin,
+      previousRule,
     );
 
     return {
@@ -681,12 +694,17 @@ async function syncRuleSnapshot(
   client: SupabaseClient,
   rule: CompanyCartDiscountRule,
   origin?: string,
+  previousRule?: CompanyCartDiscountRule | null,
 ) {
   if (!origin) {
     return rule;
   }
 
-  const syncResult = await syncCompanyRuleWithNuvemshop(rule, origin);
+  const syncResult = await syncCompanyRuleWithNuvemshop(
+    rule,
+    origin,
+    previousRule,
+  );
 
   const { data, error } = await client
     .schema(OPERATIONS_SCHEMA)
