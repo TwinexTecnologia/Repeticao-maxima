@@ -72,7 +72,7 @@ export async function syncCompanyRuleWithNuvemshop(
   }
 
   const client = new NuvemshopClient(credentials.credentials);
-  const activePromotionSettings = getActivePromotionSettings();
+  const activePromotionUpdateSettings = getActivePromotionUpdateSettings();
 
   try {
     await client.updateDiscountsCallback(callbackUrl);
@@ -159,7 +159,7 @@ export async function syncCompanyRuleWithNuvemshop(
       try {
         const updated = await client.updatePromotion(
           rule.nuvemshopPromotionId,
-          activePromotionSettings,
+          activePromotionUpdateSettings,
         );
         const updatedPromotionId =
           extractPromotionId(updated) || rule.nuvemshopPromotionId;
@@ -226,7 +226,7 @@ async function createActivePromotion(
   rule: CompanyCartDiscountRule,
 ) {
   const created = await client.createPromotion({
-    ...getActivePromotionSettings(),
+    ...getActivePromotionCreateSettings(),
     name: rule.title,
   });
   const createdPromotionId = extractPromotionId(created);
@@ -240,10 +240,16 @@ async function createActivePromotion(
   return createdPromotionId;
 }
 
-function getActivePromotionSettings() {
+function getActivePromotionCreateSettings() {
+  return {
+    allocation_type: "cross_items" as const,
+    ...getActivePromotionUpdateSettings(),
+  };
+}
+
+function getActivePromotionUpdateSettings() {
   return {
     active: true,
-    allocation_type: "cross_items" as const,
     combines_with_other_discounts: true,
     combines_with_quantity_discounts: true,
     combines_with_free_shipping: false,
