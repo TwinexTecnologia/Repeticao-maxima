@@ -82,7 +82,6 @@ export async function syncCompanyRuleWithNuvemshop(
         try {
           await client.updatePromotion(rule.nuvemshopPromotionId, {
             active: false,
-            combines_with_other_discounts: false,
             combines_with_quantity_discounts: false,
             combines_with_free_shipping: false,
             combines_with_cart_amount_discounts: false,
@@ -130,7 +129,6 @@ export async function syncCompanyRuleWithNuvemshop(
         try {
           await client.updatePromotion(rule.nuvemshopPromotionId, {
             active: false,
-            combines_with_other_discounts: false,
             combines_with_quantity_discounts: false,
             combines_with_free_shipping: false,
             combines_with_cart_amount_discounts: false,
@@ -250,7 +248,6 @@ function getActivePromotionCreateSettings() {
 function getActivePromotionUpdateSettings() {
   return {
     active: true,
-    combines_with_other_discounts: true,
     combines_with_quantity_discounts: true,
     combines_with_free_shipping: false,
     combines_with_cart_amount_discounts: true,
