@@ -122,7 +122,12 @@ ALTER TABLE repeticao_maxima.promocoes_carrinho
   ADD COLUMN IF NOT EXISTS minimum_quantity INTEGER NOT NULL DEFAULT 3,
   ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE,
-  ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '';
+  ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS nuvemshop_promotion_id TEXT,
+  ADD COLUMN IF NOT EXISTS nuvemshop_status TEXT NOT NULL DEFAULT 'pendente',
+  ADD COLUMN IF NOT EXISTS nuvemshop_message TEXT NOT NULL DEFAULT 'Ainda nao sincronizada com a Nuvemshop.',
+  ADD COLUMN IF NOT EXISTS nuvemshop_callback_url TEXT,
+  ADD COLUMN IF NOT EXISTS nuvemshop_last_synced_at TIMESTAMPTZ;
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA repeticao_maxima
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated, service_role;

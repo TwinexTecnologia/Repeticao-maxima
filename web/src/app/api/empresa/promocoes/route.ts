@@ -5,7 +5,10 @@ import { createCompanyCartDiscountRule } from "@/lib/empresa/repository";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const result = await createCompanyCartDiscountRule(body);
+    const result = await createCompanyCartDiscountRule(
+      body,
+      new URL(request.url).origin,
+    );
 
     if (!result.ok) {
       return NextResponse.json(
