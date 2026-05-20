@@ -138,7 +138,13 @@ export function EmpresaClient({
             categoryName: selectedCategories[0]?.name || "",
             categoryIds: form.categoryIds,
             categoryNames: selectedCategories.map((category) => category.name),
-            productIds: selectedProducts.map((product) => product.productId),
+            productIds: Array.from(
+              new Set(
+                selectedProducts.flatMap((product) =>
+                  product.matchIds.length > 0 ? product.matchIds : [product.productId],
+                ),
+              ),
+            ),
             productNames: selectedProducts.map((product) => product.productName),
             minimumQuantity: form.minimumQuantity,
             discountAmount: form.discountAmount,
