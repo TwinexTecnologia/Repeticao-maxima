@@ -86,7 +86,7 @@ export function EmpresaClient({
       {
         label: "Promocoes salvas",
         value: String(rules.length),
-        detail: "Regras internas prontas para virar integracao de carrinho",
+        detail: "Regras internas prontas para sincronizar com a Nuvemshop",
       },
       {
         label: "Promocoes ativas",
@@ -405,7 +405,31 @@ export function EmpresaClient({
                     <td>{rule.minimumQuantity}</td>
                     <td>{formatMoney(rule.discountAmount)}</td>
                     <td>{rule.active ? "Ativa" : "Pausada"}</td>
-                    <td>Pendente</td>
+                    <td>
+                      <div
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "6px 10px",
+                          borderRadius: 999,
+                          background:
+                            getNuvemshopStatusStyles(rule.nuvemshopStatus).background,
+                          color: getNuvemshopStatusStyles(rule.nuvemshopStatus).color,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {getNuvemshopStatusLabel(rule.nuvemshopStatus)}
+                      </div>
+                      <div style={{ color: "#6f5b82", marginTop: 6 }}>
+                        {rule.nuvemshopMessage}
+                      </div>
+                      {rule.nuvemshopLastSyncedAt ? (
+                        <div style={{ color: "#6f5b82", marginTop: 6 }}>
+                          Ultima sync: {formatDateTime(rule.nuvemshopLastSyncedAt)}
+                        </div>
+                      ) : null}
+                    </td>
                     <td>
                       <div
                         style={{
@@ -600,13 +624,14 @@ export function EmpresaClient({
             <p>{feedback || persistence.message}</p>
             <p style={{ marginTop: 10 }}>{initialCatalogState.message}</p>
             <p style={{ marginTop: 10 }}>
-              Agora voce consegue criar combo so por categoria ou misturar varias
-              categorias com produtos diferentes na mesma regra.
+              Agora voce consegue criar o combo, publicar a promocao na
+              Nuvemshop e deixar o callback do carrinho decidir quando aplicar
+              ou remover o desconto.
             </p>
             <p style={{ marginTop: 10 }}>
-              Ativar aqui hoje ativa a regra no sistema. Para ativar no carrinho
-              real da Nuvemshop ainda falta a integracao do app de promocoes com
-              callback.
+              Se alguma regra aparecer com erro, a propria mensagem da linha
+              mostra o retorno da sincronizacao para voce corrigir ambiente,
+              callback ou payload.
             </p>
           </article>
         </div>
@@ -730,6 +755,45 @@ function formatMoney(value: number) {
     style: "currency",
     currency: "BRL",
   }).format(value || 0);
+}
+
+function formatDateTime(value: string) {
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(parsed);
+}
+
+function getNuvemshopStatusLabel(status: CompanyCartDiscountRule["nuvemshopStatus"]) {
+  switch (status) {
+    case "publicada":
+      return "Publicada";
+    case "pausada":
+      return "Pausada";
+    case "erro":
+      return "Erro";
+    default:
+      return "Pendente";
+  }
+}
+
+function getNuvemshopStatusStyles(status: CompanyCartDiscountRule["nuvemshopStatus"]) {
+  switch (status) {
+    case "publicada":
+      return { background: "#e6f7ee", color: "#0f8a4a" };
+    case "pausada":
+      return { background: "#fff3dd", color: "#9a6700" };
+    case "erro":
+      return { background: "#ffe6e6", color: "#b42318" };
+    default:
+      return { background: "#eee6fb", color: "#5b2aa8" };
+  }
 }
 
 function normalizeText(value: string) {

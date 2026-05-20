@@ -13,7 +13,11 @@ export async function PATCH(request: Request, context: RouteProps) {
   try {
     const body = await request.json();
     const { id } = await context.params;
-    const result = await updateCompanyCartDiscountRuleStatus(id, body);
+    const result = await updateCompanyCartDiscountRuleStatus(
+      id,
+      body,
+      new URL(request.url).origin,
+    );
 
     if (!result.ok) {
       return NextResponse.json(
@@ -52,7 +56,11 @@ export async function PUT(request: Request, context: RouteProps) {
   try {
     const body = await request.json();
     const { id } = await context.params;
-    const result = await updateCompanyCartDiscountRule(id, body);
+    const result = await updateCompanyCartDiscountRule(
+      id,
+      body,
+      new URL(request.url).origin,
+    );
 
     if (!result.ok) {
       return NextResponse.json(
