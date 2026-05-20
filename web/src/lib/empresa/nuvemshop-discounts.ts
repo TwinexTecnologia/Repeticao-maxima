@@ -41,6 +41,19 @@ export async function syncCompanyRuleWithNuvemshop(
 ): Promise<SyncCompanyRuleResult> {
   const syncedAt = new Date().toISOString();
   const credentials = getNuvemshopCredentials();
+  const callbackUrl = buildDiscountsCallbackUrl(origin);
+
+  if (!callbackUrl) {
+    return {
+      ok: false,
+      status: "erro",
+      message:
+        "Nao foi possivel sincronizar na Nuvemshop porque a URL publica do sistema nao esta configurada. Defina APP_PUBLIC_URL na producao e sincronize novamente.",
+      promotionId: rule.nuvemshopPromotionId,
+      callbackUrl: null,
+      syncedAt,
+    };
+  }
 
   if (!credentials.ok) {
     return {
@@ -48,12 +61,11 @@ export async function syncCompanyRuleWithNuvemshop(
       status: "erro",
       message: `Nao foi possivel sincronizar na Nuvemshop. Configure ${credentials.missing.join(" e ")}.`,
       promotionId: rule.nuvemshopPromotionId,
-      callbackUrl: buildDiscountsCallbackUrl(origin),
+      callbackUrl,
       syncedAt,
     };
   }
 
-  const callbackUrl = buildDiscountsCallbackUrl(origin);
   const client = new NuvemshopClient(credentials.credentials);
 
   try {
@@ -233,8 +245,50 @@ export function buildCompanyDiscountCallbackDecision(
 }
 
 function buildDiscountsCallbackUrl(origin: string) {
-  const normalizedOrigin = origin.replace(/\/$/, "");
-  return `${normalizedOrigin}/api/nuvemshop/discounts/callback`;
+  const baseUrl = resolvePublicAppBaseUrl(origin);
+
+  if (!baseUrl) {
+    return null;
+  }
+
+  return `${baseUrl}/api/nuvemshop/discounts/callback`;
+}
+
+function resolvePublicAppBaseUrl(origin: string) {
+  const configured =
+    process.env.APP_PUBLIC_URL?.trim() ||
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    "";
+
+  if (configured) {
+    return normalizeBaseUrl(configured);
+  }
+
+  if (origin && !isLocalOrigin(origin)) {
+    return normalizeBaseUrl(origin);
+  }
+
+  return null;
+}
+
+function normalizeBaseUrl(value: string) {
+  return value.replace(/\/$/, "");
+}
+
+function isLocalOrigin(origin: string) {
+  try {
+    const url = new URL(origin);
+    const hostname = url.hostname.toLowerCase();
+
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "0.0.0.0" ||
+      hostname.endsWith(".local")
+    );
+  } catch {
+    return true;
+  }
 }
 
 function extractCartLineItems(payload: DiscountCallbackPayload) {
