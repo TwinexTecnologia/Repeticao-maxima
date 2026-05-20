@@ -35,7 +35,7 @@ export type SyncCompanyRuleResult = SyncSuccessResult | SyncErrorResult;
 type DiscountCallbackPayload = Record<string, unknown>;
 
 type CartLineItem = {
-  productId: string;
+  matchIds: string[];
   quantity: number;
 };
 
@@ -273,7 +273,7 @@ export function buildCompanyDiscountCallbackDecision(
   }
 
   const lineItems = extractCartLineItems(normalizedPayload);
-  const currency = getTextValue(normalizedPayload.currency) || "BRL";
+  const currency = extractCurrency(normalizedPayload) || "BRL";
   const matchingRules = publishedRules
     .map((rule) => ({
       rule,
@@ -390,45 +390,66 @@ function isLocalOrigin(origin: string) {
 }
 
 function extractCartLineItems(payload: DiscountCallbackPayload) {
-  const rawLineItems = getRecordArrayValue(payload.line_items);
+  const cartPayload = getRecordValue(payload.cart);
+  const rawLineItems =
+    getRecordArrayValue(payload.line_items).length > 0
+      ? getRecordArrayValue(payload.line_items)
+      : getRecordArrayValue(cartPayload?.line_items);
 
   if (rawLineItems.length > 0) {
     return rawLineItems
       .map((lineItem) => ({
-        productId: extractProductId(lineItem),
+        matchIds: extractMatchIds(lineItem),
         quantity: Math.max(getIntegerValue(lineItem.quantity), 0),
       }))
-      .filter((lineItem) => lineItem.productId && lineItem.quantity > 0);
+      .filter((lineItem) => lineItem.matchIds.length > 0 && lineItem.quantity > 0);
   }
 
-  const products = getRecordArrayValue(payload.products);
+  const products =
+    getRecordArrayValue(payload.products).length > 0
+      ? getRecordArrayValue(payload.products)
+      : getRecordArrayValue(cartPayload?.products);
   return products
     .map((product) => ({
-      productId: extractProductId(product),
+      matchIds: extractMatchIds(product),
       quantity: Math.max(getIntegerValue(product.quantity), 0),
     }))
-    .filter((lineItem) => lineItem.productId && lineItem.quantity > 0);
+    .filter((lineItem) => lineItem.matchIds.length > 0 && lineItem.quantity > 0);
 }
 
-function extractProductId(value: Record<string, unknown>) {
-  const productId = getTextValue(value.product_id);
+function extractCurrency(payload: DiscountCallbackPayload) {
+  const topLevelCurrency = getTextValue(payload.currency);
 
-  if (productId) {
-    return productId;
+  if (topLevelCurrency) {
+    return topLevelCurrency;
   }
 
-  if (typeof value.product === "object" && value.product !== null) {
-    return getTextValue((value.product as Record<string, unknown>).id);
-  }
+  const cartPayload = getRecordValue(payload.cart);
+  return getTextValue(cartPayload?.currency);
+}
 
-  return getTextValue(value.id);
+function extractMatchIds(value: Record<string, unknown>) {
+  const productPayload = getRecordValue(value.product);
+  const variantPayload = getRecordValue(value.variant);
+
+  return Array.from(
+    new Set(
+      [
+        getTextValue(value.product_id),
+        getTextValue(value.variant_id),
+        getTextValue(value.id),
+        getTextValue(productPayload?.id),
+        getTextValue(variantPayload?.id),
+      ].filter(Boolean),
+    ),
+  );
 }
 
 function getEligibleQuantity(rule: CompanyCartDiscountRule, items: CartLineItem[]) {
   const eligibleIds = new Set(rule.productIds);
 
   return items.reduce((total, item) => {
-    if (!eligibleIds.has(item.productId)) {
+    if (!item.matchIds.some((matchId) => eligibleIds.has(matchId))) {
       return total;
     }
 
@@ -476,6 +497,12 @@ function getRecordArrayValue(value: unknown) {
     (item): item is Record<string, unknown> =>
       typeof item === "object" && item !== null,
   );
+}
+
+function getRecordValue(value: unknown) {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 function getTextValue(value: unknown) {

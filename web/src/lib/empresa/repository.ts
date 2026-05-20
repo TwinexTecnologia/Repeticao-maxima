@@ -40,6 +40,7 @@ export type CompanyDiscountProductOption = {
   categoryIds: string[];
   categoryNames: string[];
   imageUrl: string | null;
+  matchIds: string[];
 };
 
 export type CompanyCartDiscountRule = {
@@ -450,6 +451,12 @@ function buildCompanyDiscountProductOptions(products: NuvemshopProduct[]) {
           product.images && product.images[0] && typeof product.images[0].src === "string"
             ? product.images[0].src
             : null,
+        matchIds: Array.from(
+          new Set([
+            String(product.id),
+            ...(product.variants || []).map((variant) => String(variant.id ?? "")),
+          ].filter(Boolean)),
+        ),
       };
     })
     .filter((product) => product.productId && product.productName && product.categoryIds.length > 0)
