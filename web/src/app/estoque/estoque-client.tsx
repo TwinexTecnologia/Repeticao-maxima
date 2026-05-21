@@ -385,11 +385,21 @@ export function EstoqueClient({
 
       if (!response.ok || !result.ok || !result.item) {
         throw new Error(
-          result.message || "Nao foi possivel adicionar a linha de estoque.",
+          result.message || "Nao foi possivel salvar a linha de estoque.",
         );
       }
 
-      setItems((current) => [...current, result.item!]);
+      setItems((current) => {
+        const existingItem = current.find((item) => item.id === result.item!.id);
+
+        if (existingItem) {
+          return sortStockItems(
+            current.map((item) => (item.id === result.item!.id ? result.item! : item)),
+          );
+        }
+
+        return sortStockItems([...current, result.item!]);
+      });
       setDrafts((current) => ({
         ...current,
         [result.item!.id]: result.item!,
@@ -408,12 +418,12 @@ export function EstoqueClient({
         reorderPoint: "0",
         notes: "",
       });
-      setFeedback(result.message || "Linha de estoque adicionada.");
+      setFeedback(result.message || "Linha de estoque salva.");
     } catch (error) {
       setFeedback(
         error instanceof Error
           ? error.message
-          : "Nao foi possivel adicionar a linha de estoque.",
+          : "Nao foi possivel salvar a linha de estoque.",
       );
     } finally {
       setIsCreating(false);
@@ -447,7 +457,9 @@ export function EstoqueClient({
       }
 
       setItems((current) =>
-        current.map((item) => (item.id === id ? result.item! : item)),
+        sortStockItems(
+          current.map((item) => (item.id === id ? result.item! : item)),
+        ),
       );
       setDrafts((current) => ({
         ...current,
@@ -715,6 +727,287 @@ export function EstoqueClient({
       <section className={styles.section}>
         <div className={styles.sectionHeader}>
           <div>
+            <div className={styles.sectionTitle}>Salvar linha de estoque</div>
+            <p className={styles.sectionSubtitle}>
+              Cadastre por cor e tamanho o que chegou da fabrica. Se a
+              combinacao ja existir, o sistema atualiza essa mesma linha no
+              banco.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.configGrid}>
+          <article className={styles.configCard}>
+            <div className={styles.formStack}>
+              <label className={styles.filterField}>
+                <span>Produto base</span>
+                <select
+                  value={form.sku}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      sku: event.target.value,
+                    }))
+                  }
+                >
+                  {nuvemshopCategoryOptions.length === 0 ? (
+                    <option value="">Sem categorias da Nuvemshop</option>
+                  ) : (
+                    nuvemshopCategoryOptions.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+              <label className={styles.filterField}>
+                <span>Cor</span>
+                <select
+                  value={form.color}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      color: event.target.value,
+                    }))
+                  }
+                >
+                  <option>Preta</option>
+                  <option>Branca</option>
+                  <option>Roxa</option>
+                  <option>Avela</option>
+                </select>
+              </label>
+              <label className={styles.filterField}>
+                <span>Tamanho</span>
+                <select
+                  value={form.size}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      size: event.target.value,
+                    }))
+                  }
+                >
+                  <option>P</option>
+                  <option>M</option>
+                  <option>G</option>
+                  <option>GG</option>
+                </select>
+              </label>
+              <label className={styles.filterField}>
+                <span>Total</span>
+                <input
+                  type="number"
+                  value={form.total}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      total: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className={styles.filterField}>
+                <span>Ponto de reposicao</span>
+                <input
+                  type="number"
+                  value={form.reorderPoint}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      reorderPoint: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className={styles.filterField}>
+                <span>Observacao</span>
+                <input
+                  value={form.notes}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      notes: event.target.value,
+                    }))
+                  }
+                  placeholder="Ex.: prioridade de recompra"
+                />
+              </label>
+            </div>
+
+            <div className={styles.filterActions}>
+              <button
+                type="button"
+                className={styles.primaryButton}
+                onClick={handleCreateItem}
+                disabled={!persistence.enabled || isCreating}
+              >
+                {isCreating ? "Salvando..." : "Salvar linha"}
+              </button>
+            </div>
+          </article>
+
+          <article className={styles.configCard}>
+            <div className={styles.callout}>
+              <h3>Como esse salvar funciona</h3>
+              <p>
+                O cadastro usa o schema repeticao_maxima e evita duplicidade por
+                produto base, cor e tamanho. Se voce repetir a combinacao, ele
+                atualiza a linha existente.
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Atualizar saldos</div>
+            <p className={styles.sectionSubtitle}>
+              Escolha modelo, cor e tamanho. So depois disso os campos de
+              edicao aparecem. Estampadas vem da Nuvemshop e nao sao alteradas
+              aqui.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.configGrid}>
+          <article className={styles.configCard}>
+            <div className={styles.formStack}>
+              <label className={styles.filterField}>
+                <span>Modelo</span>
+                <select
+                  value={selectedSku}
+                  onChange={(event) => handleSelectSku(event.target.value)}
+                >
+                  {skuOptions.map((sku) => (
+                    <option key={sku} value={sku}>
+                      {sku}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.filterField}>
+                <span>Cor</span>
+                <select
+                  value={selectedColor}
+                  onChange={(event) => handleSelectColor(event.target.value)}
+                >
+                  {colorOptions.map((color) => (
+                    <option key={color} value={color}>
+                      {color}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.filterField}>
+                <span>Tamanho</span>
+                <select
+                  value={selectedSize}
+                  onChange={(event) => setSelectedSize(event.target.value)}
+                >
+                  {sizeOptions.map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </article>
+
+          {selectedItem ? (
+            <article className={styles.configCard}>
+              {(() => {
+                const draft = drafts[selectedItem.id] ?? selectedItem;
+
+                return (
+                  <>
+                    <div className={styles.listTitle}>{`${selectedItem.sku} · ${selectedItem.color} · ${selectedItem.size}`}</div>
+                    <div className={styles.formStack}>
+                      <label className={styles.filterField}>
+                        <span>Total</span>
+                        <input
+                          type="number"
+                          value={draft.total}
+                          onChange={(event) =>
+                            updateDraft(
+                              selectedItem.id,
+                              "total",
+                              Number.parseInt(event.target.value || "0", 10),
+                            )
+                          }
+                        />
+                      </label>
+                      <label className={styles.filterField}>
+                        <span>Ja estampadas</span>
+                        <input type="number" value={draft.printed} disabled />
+                      </label>
+                      <label className={styles.filterField}>
+                        <span>Livres</span>
+                        <input type="number" value={draft.free} disabled />
+                      </label>
+                      <label className={styles.filterField}>
+                        <span>Ponto de reposicao</span>
+                        <input
+                          type="number"
+                          value={draft.reorderPoint}
+                          onChange={(event) =>
+                            updateDraft(
+                              selectedItem.id,
+                              "reorderPoint",
+                              Number.parseInt(event.target.value || "0", 10),
+                            )
+                          }
+                        />
+                      </label>
+                      <label className={styles.filterField}>
+                        <span>Observacao</span>
+                        <input
+                          value={draft.notes}
+                          onChange={(event) =>
+                            updateDraft(selectedItem.id, "notes", event.target.value)
+                          }
+                        />
+                      </label>
+                    </div>
+                    <div className={styles.filterActions}>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        onClick={() => handleSaveItem(selectedItem.id)}
+                        disabled={
+                          !persistence.enabled || savingItemId === selectedItem.id
+                        }
+                      >
+                        {savingItemId === selectedItem.id
+                          ? "Salvando..."
+                          : "Salvar saldos"}
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
+            </article>
+          ) : (
+            <article className={styles.configCard}>
+              <div className={styles.callout}>
+                <h3>Nenhuma combinacao encontrada</h3>
+                <p>
+                  Ajuste o modelo, a cor e o tamanho para abrir a linha certa do
+                  estoque.
+                </p>
+              </div>
+            </article>
+          )}
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <div>
             <div className={styles.sectionTitle}>Leitura do estoque atual</div>
             <p className={styles.sectionSubtitle}>
               Agora o resumo bate com a sua rotina: total em maos, estampadas
@@ -731,6 +1024,49 @@ export function EstoqueClient({
               <div className={styles.metricHint}>{metric.detail}</div>
             </article>
           ))}
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Cobertura por cor e tamanho</div>
+            <p className={styles.sectionSubtitle}>
+              Essa grade mostra a foto atual do banco depois dos ajustes que
+              voce faz no topo da tela.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Produto base</th>
+                <th>Cor</th>
+                <th>Tamanho</th>
+                <th>Total</th>
+                <th>Ja estampadas</th>
+                <th>Livres</th>
+                <th>Ponto de reposicao</th>
+                <th>Observacao</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((row) => (
+                <tr key={row.id}>
+                  <td>{row.sku}</td>
+                  <td>{row.color}</td>
+                  <td>{row.size}</td>
+                  <td>{row.total}</td>
+                  <td>{row.printed}</td>
+                  <td>{row.free}</td>
+                  <td>{row.reorderPoint}</td>
+                  <td>{row.notes || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -939,329 +1275,6 @@ export function EstoqueClient({
             Nenhum modelo da Nuvemshop encontrado com esse filtro.
           </div>
         )}
-      </section>
-
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <div className={styles.sectionTitle}>Nova linha de estoque</div>
-            <p className={styles.sectionSubtitle}>
-              Cadastre por cor e tamanho o que chegou da fabrica ou o que voce
-              quer acompanhar separado. O campo estampadas vem da Nuvemshop.
-            </p>
-          </div>
-        </div>
-
-        <div className={styles.configGrid}>
-          <article className={styles.configCard}>
-            <div className={styles.formStack}>
-              <label className={styles.filterField}>
-                <span>Produto base</span>
-                <select
-                  value={form.sku}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      sku: event.target.value,
-                    }))
-                  }
-                >
-                  {nuvemshopCategoryOptions.length === 0 ? (
-                    <option value="">Sem categorias da Nuvemshop</option>
-                  ) : (
-                    nuvemshopCategoryOptions.map((category) => (
-                      <option key={category} value={category}>
-                        {category}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </label>
-              <label className={styles.filterField}>
-                <span>Cor</span>
-                <select
-                  value={form.color}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      color: event.target.value,
-                    }))
-                  }
-                >
-                  <option>Preta</option>
-                  <option>Branca</option>
-                  <option>Roxa</option>
-                  <option>Avela</option>
-                </select>
-              </label>
-              <label className={styles.filterField}>
-                <span>Tamanho</span>
-                <select
-                  value={form.size}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      size: event.target.value,
-                    }))
-                  }
-                >
-                  <option>P</option>
-                  <option>M</option>
-                  <option>G</option>
-                  <option>GG</option>
-                </select>
-              </label>
-              <label className={styles.filterField}>
-                <span>Total</span>
-                <input
-                  type="number"
-                  value={form.total}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      total: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className={styles.filterField}>
-                <span>Ponto de reposicao</span>
-                <input
-                  type="number"
-                  value={form.reorderPoint}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      reorderPoint: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className={styles.filterField}>
-                <span>Observacao</span>
-                <input
-                  value={form.notes}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      notes: event.target.value,
-                    }))
-                  }
-                  placeholder="Ex.: prioridade de recompra"
-                />
-              </label>
-            </div>
-
-            <div className={styles.filterActions}>
-              <button
-                type="button"
-                className={styles.primaryButton}
-                onClick={handleCreateItem}
-                disabled={!persistence.enabled || isCreating}
-              >
-                {isCreating ? "Salvando..." : "Adicionar linha"}
-              </button>
-            </div>
-          </article>
-
-          <article className={styles.configCard}>
-            <div className={styles.callout}>
-              <h3>Regra pratica de leitura</h3>
-              <p>
-                O que manda a recompra nao e so o total em maos. O sistema olha
-                o total interno e desconta automaticamente o estoque estampado
-                que esta hoje na Nuvemshop.
-              </p>
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <div className={styles.sectionTitle}>Cobertura por cor e tamanho</div>
-            <p className={styles.sectionSubtitle}>
-              Essa grade mostra a foto atual do banco. Abaixo dela voce ajusta
-              os saldos quando algo muda na operacao.
-            </p>
-          </div>
-        </div>
-
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Produto base</th>
-                <th>Cor</th>
-                <th>Tamanho</th>
-                <th>Total</th>
-                <th>Ja estampadas</th>
-                <th>Livres</th>
-                <th>Ponto de reposicao</th>
-                <th>Observacao</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((row) => (
-                <tr key={row.id}>
-                  <td>{row.sku}</td>
-                  <td>{row.color}</td>
-                  <td>{row.size}</td>
-                  <td>{row.total}</td>
-                  <td>{row.printed}</td>
-                  <td>{row.free}</td>
-                  <td>{row.reorderPoint}</td>
-                  <td>{row.notes || "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <div className={styles.sectionTitle}>Atualizar saldos</div>
-            <p className={styles.sectionSubtitle}>
-              Escolha modelo, cor e tamanho. So depois disso os campos de
-              edicao aparecem. Estampadas vem da Nuvemshop e nao sao alteradas
-              aqui.
-            </p>
-          </div>
-        </div>
-
-        <div className={styles.configGrid}>
-          <article className={styles.configCard}>
-            <div className={styles.formStack}>
-              <label className={styles.filterField}>
-                <span>Modelo</span>
-                <select
-                  value={selectedSku}
-                  onChange={(event) => handleSelectSku(event.target.value)}
-                >
-                  {skuOptions.map((sku) => (
-                    <option key={sku} value={sku}>
-                      {sku}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className={styles.filterField}>
-                <span>Cor</span>
-                <select
-                  value={selectedColor}
-                  onChange={(event) => handleSelectColor(event.target.value)}
-                >
-                  {colorOptions.map((color) => (
-                    <option key={color} value={color}>
-                      {color}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className={styles.filterField}>
-                <span>Tamanho</span>
-                <select
-                  value={selectedSize}
-                  onChange={(event) => setSelectedSize(event.target.value)}
-                >
-                  {sizeOptions.map((size) => (
-                    <option key={size} value={size}>
-                      {size}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </article>
-
-          {selectedItem ? (
-            <article className={styles.configCard}>
-              {(() => {
-                const draft = drafts[selectedItem.id] ?? selectedItem;
-
-                return (
-                  <>
-                    <div className={styles.listTitle}>{`${selectedItem.sku} · ${selectedItem.color} · ${selectedItem.size}`}</div>
-                    <div className={styles.formStack}>
-                      <label className={styles.filterField}>
-                        <span>Total</span>
-                        <input
-                          type="number"
-                          value={draft.total}
-                          onChange={(event) =>
-                            updateDraft(
-                              selectedItem.id,
-                              "total",
-                              Number.parseInt(event.target.value || "0", 10),
-                            )
-                          }
-                        />
-                      </label>
-                      <label className={styles.filterField}>
-                        <span>Ja estampadas</span>
-                        <input type="number" value={draft.printed} disabled />
-                      </label>
-                      <label className={styles.filterField}>
-                        <span>Livres</span>
-                        <input type="number" value={draft.free} disabled />
-                      </label>
-                      <label className={styles.filterField}>
-                        <span>Ponto de reposicao</span>
-                        <input
-                          type="number"
-                          value={draft.reorderPoint}
-                          onChange={(event) =>
-                            updateDraft(
-                              selectedItem.id,
-                              "reorderPoint",
-                              Number.parseInt(event.target.value || "0", 10),
-                            )
-                          }
-                        />
-                      </label>
-                      <label className={styles.filterField}>
-                        <span>Observacao</span>
-                        <input
-                          value={draft.notes}
-                          onChange={(event) =>
-                            updateDraft(selectedItem.id, "notes", event.target.value)
-                          }
-                        />
-                      </label>
-                    </div>
-                    <div className={styles.filterActions}>
-                      <button
-                        type="button"
-                        className={styles.secondaryButton}
-                        onClick={() => handleSaveItem(selectedItem.id)}
-                        disabled={
-                          !persistence.enabled || savingItemId === selectedItem.id
-                        }
-                      >
-                        {savingItemId === selectedItem.id
-                          ? "Salvando..."
-                          : "Salvar saldos"}
-                      </button>
-                    </div>
-                  </>
-                );
-              })()}
-            </article>
-          ) : (
-            <article className={styles.configCard}>
-              <div className={styles.callout}>
-                <h3>Nenhuma combinacao encontrada</h3>
-                <p>
-                  Ajuste o modelo, a cor e o tamanho para abrir a linha certa do
-                  estoque.
-                </p>
-              </div>
-            </article>
-          )}
-        </div>
       </section>
 
       <section className={styles.section}>
@@ -1670,4 +1683,12 @@ function getDefaultStockCategory(products: NuvemshopStockProduct[]) {
     categories[0] ??
     ""
   );
+}
+
+function sortStockItems(items: BaseStockItem[]) {
+  return [...items].sort((left, right) => {
+    const leftKey = `${left.sku}-${left.color}-${left.size}`;
+    const rightKey = `${right.sku}-${right.color}-${right.size}`;
+    return leftKey.localeCompare(rightKey);
+  });
 }
