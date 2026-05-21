@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS repeticao_maxima.estoque_base (
   printed_qty INTEGER NOT NULL DEFAULT 0,
   reserved_qty INTEGER NOT NULL DEFAULT 0,
   reorder_point INTEGER NOT NULL DEFAULT 0,
+  lead_time_days INTEGER NOT NULL DEFAULT 10,
   notes TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -53,12 +54,16 @@ CREATE TABLE IF NOT EXISTS repeticao_maxima.estoque_base (
   CHECK (printed_qty >= 0),
   CHECK (reserved_qty >= 0),
   CHECK (reorder_point >= 0),
+  CHECK (lead_time_days >= 0),
   CHECK (printed_qty <= total_qty),
   CHECK (reserved_qty <= total_qty - printed_qty),
   UNIQUE (sku, color, size)
 );
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.estoque_base TO anon, authenticated, service_role;
+
+ALTER TABLE repeticao_maxima.estoque_base
+  ADD COLUMN IF NOT EXISTS lead_time_days INTEGER NOT NULL DEFAULT 10;
 
 CREATE TABLE IF NOT EXISTS repeticao_maxima.estoque_dtf (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -161,12 +166,13 @@ INSERT INTO repeticao_maxima.estoque_base (
   printed_qty,
   reserved_qty,
   reorder_point,
+  lead_time_days,
   notes
 )
 VALUES
-  ('Oversized', 'Preta', 'M', 30, 8, 5, 25, 'Comprar junto no proximo lote'),
-  ('Oversized', 'Preta', 'G', 24, 4, 3, 20, 'Monitorar se o ritmo subir'),
-  ('Oversized', 'Branca', 'M', 28, 3, 2, 18, 'Saudavel por enquanto'),
-  ('Oversized', 'Roxa', 'G', 18, 5, 2, 12, 'Pode esperar a proxima leitura'),
-  ('Minimalista', 'Branca', 'P', 21, 9, 6, 15, 'Estampar so o necessario')
+  ('Oversized', 'Preta', 'M', 30, 8, 5, 25, 10, 'Comprar junto no proximo lote'),
+  ('Oversized', 'Preta', 'G', 24, 4, 3, 20, 10, 'Monitorar se o ritmo subir'),
+  ('Oversized', 'Branca', 'M', 28, 3, 2, 18, 10, 'Saudavel por enquanto'),
+  ('Oversized', 'Roxa', 'G', 18, 5, 2, 12, 10, 'Pode esperar a proxima leitura'),
+  ('Minimalista', 'Branca', 'P', 21, 9, 6, 15, 10, 'Estampar so o necessario')
 ON CONFLICT (sku, color, size) DO NOTHING;

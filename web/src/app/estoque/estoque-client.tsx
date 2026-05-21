@@ -11,8 +11,6 @@ import {
   type NuvemshopStockProduct,
   type OperationalPersistenceState,
 } from "@/lib/operacoes/repository";
-import { operationAlerts } from "@/lib/operations-data";
-
 type EstoqueClientProps = {
   initialItems: BaseStockItem[];
   initialPersistence: OperationalPersistenceState;
@@ -65,6 +63,7 @@ export function EstoqueClient({
     size: "M",
     total: "0",
     reorderPoint: "0",
+    leadTimeDays: "10",
     notes: "",
   });
   const [drafts, setDrafts] = useState<Record<string, BaseStockItem>>(() =>
@@ -107,28 +106,66 @@ export function EstoqueClient({
   const [visibleNuvemshopItems, setVisibleNuvemshopItems] = useState(2);
 
   const metrics = useMemo(() => {
-    const total = items.reduce((sum, item) => sum + item.total, 0);
-    const printed = items.reduce((sum, item) => sum + item.printed, 0);
-    const free = items.reduce((sum, item) => sum + item.free, 0);
+    const physical = items.reduce((sum, item) => sum + item.total, 0);
+    const plain = items.reduce((sum, item) => sum + item.plain, 0);
+    const printedReal = items.reduce((sum, item) => sum + item.printedReal, 0);
+    const published = items.reduce((sum, item) => sum + item.published, 0);
+    const remanejavel = items.reduce((sum, item) => sum + item.free, 0);
+    const atRisk = items.filter((item) => needsAttention(item)).length;
 
     return [
       {
-        label: "Total de camisetas base",
-        value: String(total),
-        detail: "Saldo geral somando cores e tamanhos",
+        label: "Fisico total",
+        value: String(physical),
+        detail: "Tudo o que existe fisicamente nessa base, somando lisas e estampadas reais.",
       },
       {
-        label: "Ja estampadas",
-        value: String(printed),
-        detail: "Pecas prontas que ja sairam do saldo livre",
+        label: "Lisas em maos",
+        value: String(plain),
+        detail: "Saldo que ainda pode virar qualquer arte conforme a demanda.",
       },
       {
-        label: "Livres para usar",
-        value: String(free),
-        detail: "Base real para nova venda ou nova estampa",
+        label: "Estampadas reais",
+        value: String(printedReal),
+        detail: "Pecas ja prontas de verdade, controladas no banco interno.",
+      },
+      {
+        label: "Publicado na loja",
+        value: String(published),
+        detail: "Soma do estoque disponivel hoje na Nuvemshop para essas bases.",
+      },
+      {
+        label: "Folga para remanejar",
+        value: String(remanejavel),
+        detail: "Quanto ainda da para distribuir entre artes sem estourar o fisico.",
+      },
+      {
+        label: "Bases em alerta",
+        value: String(atRisk),
+        detail: "Linhas que ja pedem reposicao, ajuste de remanejamento ou correcao.",
       },
     ];
   }, [items]);
+
+  const stockAlerts = useMemo(
+    () =>
+      items
+        .filter((item) => needsAttention(item))
+        .sort((left, right) => {
+          const severity =
+            getStockAttentionScore(right) - getStockAttentionScore(left);
+
+          if (severity !== 0) {
+            return severity;
+          }
+
+          return `${left.sku}-${left.color}-${left.size}`.localeCompare(
+            `${right.sku}-${right.color}-${right.size}`,
+          );
+        })
+        .slice(0, 8),
+    [items],
+  );
 
   const dtfMetrics = useMemo(() => {
     const totalAvailable = dtfItems.reduce(
@@ -232,6 +269,9 @@ export function EstoqueClient({
   const addQuantityPreview = Math.max(parsePositiveInteger(form.total), 0);
   const projectedTotal = matchingFormItem
     ? matchingFormItem.total + addQuantityPreview
+    : addQuantityPreview;
+  const projectedPlain = matchingFormItem
+    ? Math.max(projectedTotal - matchingFormItem.printedReal, 0)
     : addQuantityPreview;
 
   const selectedDtfItem = useMemo(
@@ -436,6 +476,7 @@ export function EstoqueClient({
         size: "M",
         total: "0",
         reorderPoint: "0",
+        leadTimeDays: "10",
         notes: "",
       });
       setFeedback(result.message || "Linha de estoque salva.");
@@ -678,16 +719,9 @@ export function EstoqueClient({
             : value,
       } as BaseStockItem;
 
-      const total = Math.max(nextItem.total, 0);
-      const printed = Math.min(Math.max(nextItem.printed, 0), total);
-
-      nextItem.total = total;
-      nextItem.printed = printed;
-      nextItem.free = Math.max(total - printed, 0);
-
       return {
         ...current,
-        [id]: nextItem,
+        [id]: recalculateDraftStockState(nextItem),
       };
     });
   }
@@ -723,9 +757,10 @@ export function EstoqueClient({
           <div>
             <div className={styles.sectionTitle}>Central do estoque base</div>
             <p className={styles.sectionSubtitle}>
-              Aqui voce adiciona saldo novo, revisa uma linha especifica e bate
-              o olho no total real, nas estampadas da Nuvemshop e no que segue
-              livre para vender ou estampar.
+              Aqui o controle parte do fisico total por cor e tamanho. A
+              Nuvemshop mostra o que esta publicado na loja, enquanto o banco
+              interno registra o que ja esta estampado de verdade e o quanto
+              ainda sobra para remanejar entre artes.
             </p>
           </div>
         </div>
@@ -758,8 +793,8 @@ export function EstoqueClient({
           <article className={styles.stockPanel}>
             <div className={styles.listTitle}>Adicionar ao estoque</div>
             <p className={styles.sectionSubtitle}>
-              Use esse bloco para registrar lote novo. Se a combinacao ja
-              existir, a quantidade informada sera somada ao total atual.
+              Use esse bloco quando chegar lote novo de camisetas. O valor
+              informado entra como acrescimo no fisico total da linha.
             </p>
             <div className={styles.formStack}>
               <label className={styles.filterField}>
@@ -819,7 +854,7 @@ export function EstoqueClient({
                 </select>
               </label>
               <label className={styles.filterField}>
-                <span>Total</span>
+                <span>Qtd do lote</span>
                 <input
                   type="number"
                   value={form.total}
@@ -840,6 +875,19 @@ export function EstoqueClient({
                     setForm((current) => ({
                       ...current,
                       reorderPoint: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className={styles.filterField}>
+                <span>Prazo de reposicao</span>
+                <input
+                  type="number"
+                  value={form.leadTimeDays}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      leadTimeDays: event.target.value,
                     }))
                   }
                 />
@@ -867,8 +915,8 @@ export function EstoqueClient({
               </h3>
               <p>
                 {matchingFormItem
-                  ? `Hoje essa combinacao esta com ${matchingFormItem.total} no total. Ao adicionar ${addQuantityPreview}, ela passa para ${projectedTotal}.`
-                  : `Ao salvar ${addQuantityPreview}, essa combinacao entra como nova linha no estoque base.`}
+                  ? `Hoje essa combinacao esta com ${matchingFormItem.total} no fisico total e ${matchingFormItem.plain} lisas em maos. Ao adicionar ${addQuantityPreview}, ela passa para ${projectedTotal} no total fisico e ${projectedPlain} lisas.`
+                  : `Ao salvar ${addQuantityPreview}, essa combinacao entra como nova base fisica para distribuir entre as artes.`}
               </p>
             </div>
 
@@ -887,9 +935,9 @@ export function EstoqueClient({
           <article className={styles.stockPanel}>
             <div className={styles.listTitle}>Revisar uma linha especifica</div>
             <p className={styles.sectionSubtitle}>
-              Aqui voce corrige o saldo final de uma linha ja criada. As
-              estampadas continuam vindo da Nuvemshop e nao sao alteradas
-              manualmente.
+              Aqui voce ajusta o fisico total, informa quantas ja estao
+              estampadas de verdade e confere quanto esta publicado hoje na
+              loja para remanejar sem se perder.
             </p>
             <div className={styles.formStack}>
               <label className={styles.filterField}>
@@ -942,13 +990,14 @@ export function EstoqueClient({
                       <div className={styles.callout} style={{ marginTop: 16 }}>
                         <h3>{`${selectedItem.sku} · ${selectedItem.color} · ${selectedItem.size}`}</h3>
                         <p>
-                          Total atual {draft.total}, estampadas {draft.printed} e
-                          livres {draft.free}.
+                          Fisico {draft.total}, lisas {draft.plain},
+                          estampadas reais {draft.printedReal}, publicado na
+                          loja {draft.published} e folga para remanejar {draft.free}.
                         </p>
                       </div>
                       <div className={styles.formStack}>
                         <label className={styles.filterField}>
-                          <span>Total</span>
+                          <span>Fisico total</span>
                           <input
                             type="number"
                             value={draft.total}
@@ -962,12 +1011,44 @@ export function EstoqueClient({
                           />
                         </label>
                         <label className={styles.filterField}>
-                          <span>Ja estampadas</span>
-                          <input type="number" value={draft.printed} disabled />
+                          <span>Lisas em maos</span>
+                          <input type="number" value={draft.plain} disabled />
                         </label>
                         <label className={styles.filterField}>
-                          <span>Livres</span>
+                          <span>Estampadas reais</span>
+                          <input
+                            type="number"
+                            value={draft.printedReal}
+                            onChange={(event) =>
+                              updateDraft(
+                                selectedItem.id,
+                                "printedReal",
+                                Number.parseInt(event.target.value || "0", 10),
+                              )
+                            }
+                          />
+                        </label>
+                        <label className={styles.filterField}>
+                          <span>Publicado na loja</span>
+                          <input type="number" value={draft.published} disabled />
+                        </label>
+                        <label className={styles.filterField}>
+                          <span>Folga para remanejar</span>
                           <input type="number" value={draft.free} disabled />
+                        </label>
+                        <label className={styles.filterField}>
+                          <span>Prazo de reposicao</span>
+                          <input
+                            type="number"
+                            value={draft.leadTimeDays}
+                            onChange={(event) =>
+                              updateDraft(
+                                selectedItem.id,
+                                "leadTimeDays",
+                                Number.parseInt(event.target.value || "0", 10),
+                              )
+                            }
+                          />
                         </label>
                         <label className={styles.filterField}>
                           <span>Ponto de reposicao</span>
@@ -1027,16 +1108,16 @@ export function EstoqueClient({
             <div className={styles.listTitle}>Como a leitura funciona</div>
             <div className={styles.stockList}>
               <div className={styles.stockRow}>
-                <span>Total base</span>
-                <strong>Vem do seu banco interno</strong>
+                <span>Fisico total</span>
+                <strong>Lisas + estampadas reais no mesmo cor e tamanho</strong>
               </div>
               <div className={styles.stockRow}>
-                <span>Ja estampadas</span>
-                <strong>Soma o estoque da Nuvemshop por cor e tamanho</strong>
+                <span>Publicado na loja</span>
+                <strong>Vem da Nuvemshop e mostra so o que esta disponivel para vender</strong>
               </div>
               <div className={styles.stockRow}>
-                <span>Livres</span>
-                <strong>Total base menos o que ja esta estampado</strong>
+                <span>Folga para remanejar</span>
+                <strong>Fisico total menos o que ja esta publicado na loja</strong>
               </div>
             </div>
           </article>
@@ -1053,8 +1134,8 @@ export function EstoqueClient({
                 <strong>Use "Revisar uma linha especifica"</strong>
               </div>
               <div className={styles.stockRow}>
-                <span>Quer conferir estampadas</span>
-                <strong>Olhe a foto da Nuvemshop abaixo</strong>
+                <span>Quer ver pressao de compra</span>
+                <strong>Olhe cobertura, vendas 30d e prazo de reposicao</strong>
               </div>
             </div>
           </article>
@@ -1066,9 +1147,9 @@ export function EstoqueClient({
           <div>
             <div className={styles.sectionTitle}>Cobertura por cor e tamanho</div>
             <p className={styles.sectionSubtitle}>
-              Essa grade mostra a foto consolidada do banco interno: o total que
-              voce controla, o que ja aparece estampado na loja e o saldo livre
-              real por combinacao.
+              Essa grade junta o fisico, o publicado, o giro recente e a folga
+              operacional por combinacao para voce pedir camiseta a tempo e
+              remanejar melhor entre as artes.
             </p>
           </div>
         </div>
@@ -1080,10 +1161,15 @@ export function EstoqueClient({
                 <th>Produto base</th>
                 <th>Cor</th>
                 <th>Tamanho</th>
-                <th>Total</th>
-                <th>Ja estampadas</th>
-                <th>Livres</th>
-                <th>Ponto de reposicao</th>
+                <th>Fisico</th>
+                <th>Lisas</th>
+                <th>Estampadas reais</th>
+                <th>Publicado</th>
+                <th>Folga</th>
+                <th>Excesso</th>
+                <th>Vendas 30d</th>
+                <th>Cobertura</th>
+                <th>Prazo</th>
                 <th>Observacao</th>
               </tr>
             </thead>
@@ -1094,9 +1180,14 @@ export function EstoqueClient({
                   <td>{row.color}</td>
                   <td>{row.size}</td>
                   <td>{row.total}</td>
-                  <td>{row.printed}</td>
+                  <td>{row.plain}</td>
+                  <td>{row.printedReal}</td>
+                  <td>{row.published}</td>
                   <td>{row.free}</td>
-                  <td>{row.reorderPoint}</td>
+                  <td>{row.overcommitted > 0 ? row.overcommitted : "-"}</td>
+                  <td>{row.recentSales30d}</td>
+                  <td>{row.coverageDays !== null ? `${row.coverageDays} dias` : "-"}</td>
+                  <td>{row.leadTimeDays} dias</td>
                   <td>{row.notes || "-"}</td>
                 </tr>
               ))}
@@ -1110,8 +1201,8 @@ export function EstoqueClient({
           <div>
             <div className={styles.sectionTitle}>Estoque atual na Nuvemshop</div>
             <p className={styles.sectionSubtitle}>
-              Foto do modelo e saldo estampado da loja por cor e tamanho, com
-              filtros para voce bater o olho rapido no que esta publicado.
+              Aqui fica a distribuicao comercial publicada na loja. Isso nao
+              significa automaticamente que tudo ja esta estampado de verdade.
             </p>
           </div>
         </div>
@@ -1313,27 +1404,56 @@ export function EstoqueClient({
       </section>
 
       <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Alertas inteligentes</div>
+            <p className={styles.sectionSubtitle}>
+              Essas linhas pedem acao agora, seja para comprar a tempo, reduzir
+              publicacao ou remanejar estoque entre artes.
+            </p>
+          </div>
+        </div>
         <div className={styles.list}>
-          {operationAlerts.slice(0, 3).map((alert) => {
-            const pillClass =
-              alert.level === "alto"
-                ? styles.pillHigh
-                : alert.level === "medio"
-                  ? styles.pillMedium
-                  : styles.pillLow;
+          {stockAlerts.length > 0 ? (
+            stockAlerts.map((item) => {
+              const pillClass =
+                item.overcommitted > 0
+                  ? styles.pillHigh
+                  : item.coverageDays !== null &&
+                      item.coverageDays <= item.leadTimeDays
+                    ? styles.pillMedium
+                    : styles.pillLow;
 
-            return (
-              <article key={alert.title} className={styles.listItem}>
-                <div className={styles.listTitleRow}>
-                  <div className={styles.listTitle}>{alert.title}</div>
-                  <span className={`${styles.pill} ${pillClass}`}>
-                    {alert.level}
-                  </span>
-                </div>
-                <p className={styles.listDetail}>{alert.detail}</p>
-              </article>
-            );
-          })}
+              return (
+                <article
+                  key={`${item.id}-alert`}
+                  className={styles.listItem}
+                >
+                  <div className={styles.listTitleRow}>
+                    <div className={styles.listTitle}>
+                      {`${item.sku} · ${item.color} · ${item.size}`}
+                    </div>
+                    <span className={`${styles.pill} ${pillClass}`}>
+                      {item.overcommitted > 0
+                        ? "alto"
+                        : item.coverageDays !== null &&
+                            item.coverageDays <= item.leadTimeDays
+                          ? "medio"
+                          : "baixo"}
+                    </span>
+                  </div>
+                  <p className={styles.listDetail}>
+                    {buildStockAlertDetail(item)}
+                  </p>
+                </article>
+              );
+            })
+          ) : (
+            <div className={styles.emptyState}>
+              Nenhuma base em alerta agora. O fisico, a publicacao e a cobertura
+              estao equilibrados.
+            </div>
+          )}
         </div>
       </section>
 
@@ -1732,6 +1852,69 @@ function getDefaultStockCategory(products: NuvemshopStockProduct[]) {
 
 function parsePositiveInteger(value: string) {
   return Number.parseInt(value || "0", 10) || 0;
+}
+
+function recalculateDraftStockState(item: BaseStockItem): BaseStockItem {
+  const total = Math.max(item.total, 0);
+  const printedReal = Math.min(Math.max(item.printedReal, 0), total);
+  const published = Math.max(item.published, 0);
+  const recentSales30d = Math.max(item.recentSales30d, 0);
+  const averageDailySales =
+    recentSales30d > 0 ? Math.round((recentSales30d / 30) * 10) / 10 : 0;
+
+  return {
+    ...item,
+    total,
+    plain: Math.max(total - printedReal, 0),
+    printedReal,
+    printed: published,
+    published,
+    free: Math.max(total - published, 0),
+    overcommitted: Math.max(published - total, 0),
+    leadTimeDays: Math.max(item.leadTimeDays, 0),
+    recentSales30d,
+    averageDailySales,
+    coverageDays:
+      averageDailySales > 0
+        ? Math.round((total / averageDailySales) * 10) / 10
+        : null,
+  };
+}
+
+function needsAttention(item: BaseStockItem) {
+  return (
+    item.overcommitted > 0 ||
+    item.free <= item.reorderPoint ||
+    (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays)
+  );
+}
+
+function getStockAttentionScore(item: BaseStockItem) {
+  if (item.overcommitted > 0) {
+    return 3;
+  }
+
+  if (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays) {
+    return 2;
+  }
+
+  if (item.free <= item.reorderPoint) {
+    return 1;
+  }
+
+  return 0;
+}
+
+function buildStockAlertDetail(item: BaseStockItem) {
+  if (item.overcommitted > 0) {
+    return `A loja esta com ${item.published} publicados, mas o fisico total dessa base e ${item.total}. Reduza algumas artes ou reforce o lote dessa cor e tamanho.`;
+  }
+
+  if (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays) {
+    return `No ritmo dos ultimos 30 dias, essa base cobre ${item.coverageDays} dias e o prazo de reposicao configurado e ${item.leadTimeDays} dias. Vale pedir camiseta agora para nao apertar.`;
+  }
+
+  return `A folga para remanejar caiu para ${item.free} e o ponto de reposicao configurado e ${item.reorderPoint}. Melhor acompanhar essa base mais de perto.`;
 }
 
 function sortStockItems(items: BaseStockItem[]) {

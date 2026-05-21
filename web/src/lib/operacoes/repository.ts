@@ -61,7 +61,15 @@ export type BaseStockItem = {
   total: number;
   printed: number;
   free: number;
+  plain: number;
+  printedReal: number;
+  published: number;
+  overcommitted: number;
   reorderPoint: number;
+  leadTimeDays: number;
+  recentSales30d: number;
+  averageDailySales: number;
+  coverageDays: number | null;
   notes: string;
   createdAt: string | null;
   updatedAt: string | null;
@@ -297,7 +305,11 @@ export async function loadStockModuleData() {
     }
 
     const items = (stockData ?? []).map((row) =>
-      rowToStockItem(row, catalog.printedByBaseColorSize),
+      rowToStockItem(
+        row,
+        catalog.publishedByBaseColorSize,
+        catalog.salesByBaseColorSize,
+      ),
     );
     const dtfItems = (dtfData ?? []).map((row) =>
       rowToDtfItem(row, catalog.salesByProductId),
@@ -362,7 +374,7 @@ export async function createStockItem(input: unknown) {
     const { data: existingRow, error: existingError } = await supabase.client
       .schema(OPERATIONS_SCHEMA)
       .from(STOCK_TABLE)
-      .select("id, total_qty, reorder_point, notes")
+      .select("id, total_qty, printed_qty, reorder_point, lead_time_days, notes")
       .eq("sku", row.sku)
       .eq("color", row.color)
       .eq("size", row.size)
@@ -382,6 +394,10 @@ export async function createStockItem(input: unknown) {
               row.reorderPoint > 0
                 ? row.reorderPoint
                 : getIntegerValue(existingRow.reorder_point),
+            lead_time_days:
+              row.leadTimeDays > 0
+                ? row.leadTimeDays
+                : getIntegerValue(existingRow.lead_time_days) || 10,
             notes: row.notes || String(existingRow.notes ?? ""),
             updated_at: new Date().toISOString(),
           })
@@ -394,7 +410,9 @@ export async function createStockItem(input: unknown) {
             color: row.color,
             size: row.size,
             total_qty: row.total,
+            printed_qty: row.printedReal,
             reorder_point: row.reorderPoint,
+            lead_time_days: row.leadTimeDays,
             notes: row.notes,
           });
 
@@ -408,7 +426,11 @@ export async function createStockItem(input: unknown) {
 
     return {
       ok: true as const,
-      item: rowToStockItem(data, stampedContext.printedByBaseColorSize),
+      item: rowToStockItem(
+        data,
+        stampedContext.publishedByBaseColorSize,
+        stampedContext.salesByBaseColorSize,
+      ),
       persistence: {
         enabled: true,
         source: "supabase" as const,
@@ -451,7 +473,9 @@ export async function updateStockItem(id: string, input: unknown) {
         color: row.color,
         size: row.size,
         total_qty: row.total,
+        printed_qty: row.printedReal,
         reorder_point: row.reorderPoint,
+        lead_time_days: row.leadTimeDays,
         notes: row.notes,
         updated_at: new Date().toISOString(),
       })
@@ -465,7 +489,11 @@ export async function updateStockItem(id: string, input: unknown) {
 
     return {
       ok: true as const,
-      item: rowToStockItem(data, stampedContext.printedByBaseColorSize),
+      item: rowToStockItem(
+        data,
+        stampedContext.publishedByBaseColorSize,
+        stampedContext.salesByBaseColorSize,
+      ),
       persistence: {
         enabled: true,
         source: "supabase" as const,
@@ -623,14 +651,23 @@ function rowToDebt(row: Record<string, unknown>): InternalDebt {
 
 function rowToStockItem(
   row: Record<string, unknown>,
-  printedByBaseColorSize: Map<string, number>,
+  publishedByBaseColorSize: Map<string, number>,
+  salesByBaseColorSize: Map<string, number>,
 ): BaseStockItem {
   const total = getIntegerValue(row.total_qty);
+  const printedReal = Math.min(getIntegerValue(row.printed_qty), total);
   const sku = String(row.sku ?? "");
   const color = String(row.color ?? "");
   const size = String(row.size ?? "");
-  const printed =
-    printedByBaseColorSize.get(buildStockKey(sku, color, size)) ?? 0;
+  const published =
+    publishedByBaseColorSize.get(buildStockKey(sku, color, size)) ?? 0;
+  const free = Math.max(total - published, 0);
+  const recentSales30d =
+    salesByBaseColorSize.get(buildStockKey(sku, color, size)) ?? 0;
+  const averageDailySales =
+    recentSales30d > 0 ? Math.round((recentSales30d / 30) * 10) / 10 : 0;
+  const coverageDays =
+    averageDailySales > 0 ? Math.round((total / averageDailySales) * 10) / 10 : null;
 
   return {
     id: String(row.id ?? ""),
@@ -638,9 +675,17 @@ function rowToStockItem(
     color,
     size,
     total,
-    printed,
-    free: Math.max(total - printed, 0),
+    printed: published,
+    free,
+    plain: Math.max(total - printedReal, 0),
+    printedReal,
+    published,
+    overcommitted: Math.max(published - total, 0),
     reorderPoint: getIntegerValue(row.reorder_point),
+    leadTimeDays: Math.max(getIntegerValue(row.lead_time_days), 0),
+    recentSales30d,
+    averageDailySales,
+    coverageDays,
     notes: String(row.notes ?? ""),
     createdAt: typeof row.created_at === "string" ? row.created_at : null,
     updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
@@ -695,13 +740,19 @@ function normalizeDebtInput(input: unknown) {
 function normalizeStockInput(input: unknown) {
   const source = isRecord(input) ? input : {};
   const total = Math.max(getIntegerValue(source.total), 0);
+  const printedReal = Math.max(
+    getIntegerValue(source.printedReal ?? source.internalPrinted),
+    0,
+  );
 
   return {
     sku: String(source.sku ?? "").trim() || "Camiseta base",
     color: String(source.color ?? "").trim() || "Preta",
     size: String(source.size ?? "").trim() || "M",
     total,
+    printedReal: Math.min(printedReal, total),
     reorderPoint: Math.max(getIntegerValue(source.reorderPoint), 0),
+    leadTimeDays: Math.max(getIntegerValue(source.leadTimeDays), 10),
     notes: String(source.notes ?? "").trim(),
   };
 }
@@ -809,11 +860,19 @@ function getFallbackStock(): BaseStockItem[] {
     size: row.size,
     total: getIntegerValue(row.total),
     printed: getIntegerValue(row.printed),
-    free: Math.max(
-      getIntegerValue(row.total) - getIntegerValue(row.printed),
+    free: Math.max(getIntegerValue(row.total) - getIntegerValue(row.printed), 0),
+    plain: Math.max(
+      getIntegerValue(row.total) - Math.min(getIntegerValue(row.printed), getIntegerValue(row.total)),
       0,
     ),
+    printedReal: Math.min(getIntegerValue(row.printed), getIntegerValue(row.total)),
+    published: getIntegerValue(row.printed),
+    overcommitted: 0,
     reorderPoint: getIntegerValue(row.reorderPoint),
+    leadTimeDays: 10,
+    recentSales30d: 0,
+    averageDailySales: 0,
+    coverageDays: null,
     notes: row.action,
     createdAt: null,
     updatedAt: null,
@@ -828,7 +887,8 @@ async function loadDtfCatalogContext() {
       products: [] as DtfCatalogProduct[],
       stockProducts: [] as NuvemshopStockProduct[],
       salesByProductId: new Map<string, number>(),
-      printedByBaseColorSize: new Map<string, number>(),
+      publishedByBaseColorSize: new Map<string, number>(),
+      salesByBaseColorSize: new Map<string, number>(),
       state: buildDisabledState(
         `Catalogo da Nuvemshop indisponivel. Configure ${credentials.missing.join(" e ")}.`,
       ),
@@ -844,13 +904,15 @@ async function loadDtfCatalogContext() {
       client.listProducts(params),
     );
     const stockProducts = buildNuvemshopStockProducts(products);
-    const printedByBaseColorSize = buildPrintedStockByBaseColorSizeMap(products);
+    const publishedByBaseColorSize = buildPublishedStockByBaseColorSizeMap(products);
     let salesByProductId = new Map<string, number>();
+    let salesByBaseColorSize = new Map<string, number>();
     let stateMessage = "Catalogo da Nuvemshop conectado para mapear o DTF aos produtos.";
 
     try {
       const orders = await fetchAllNuvemshopPages((params) => client.listOrders(params));
       salesByProductId = buildRecentSalesMap(orders);
+      salesByBaseColorSize = buildRecentSalesByBaseColorSizeMap(orders, products);
     } catch (error) {
       const message = error instanceof Error ? error.message : "falha ao ler pedidos";
       stateMessage = `Catalogo da Nuvemshop conectado, mas as vendas 30d do DTF nao puderam ser lidas: ${message}.`;
@@ -867,7 +929,8 @@ async function loadDtfCatalogContext() {
       products: mappedProducts,
       stockProducts,
       salesByProductId,
-      printedByBaseColorSize,
+      publishedByBaseColorSize,
+      salesByBaseColorSize,
       state: {
         enabled: true,
         source: "supabase" as const,
@@ -886,7 +949,8 @@ async function loadDtfCatalogContext() {
       products: [] as DtfCatalogProduct[],
       stockProducts: [] as NuvemshopStockProduct[],
       salesByProductId: new Map<string, number>(),
-      printedByBaseColorSize: new Map<string, number>(),
+      publishedByBaseColorSize: new Map<string, number>(),
+      salesByBaseColorSize: new Map<string, number>(),
       state: buildDisabledState(
         error instanceof Error
           ? `Nao foi possivel ler os produtos da Nuvemshop: ${error.message}.`
@@ -906,7 +970,8 @@ async function loadStampedStockContext() {
 
   if (!credentials.ok) {
     return {
-      printedByBaseColorSize: new Map<string, number>(),
+      publishedByBaseColorSize: new Map<string, number>(),
+      salesByBaseColorSize: new Map<string, number>(),
     };
   }
 
@@ -915,13 +980,16 @@ async function loadStampedStockContext() {
     const products = await fetchAllNuvemshopPages((params) =>
       client.listProducts(params),
     );
+    const orders = await fetchAllNuvemshopPages((params) => client.listOrders(params));
 
     return {
-      printedByBaseColorSize: buildPrintedStockByBaseColorSizeMap(products),
+      publishedByBaseColorSize: buildPublishedStockByBaseColorSizeMap(products),
+      salesByBaseColorSize: buildRecentSalesByBaseColorSizeMap(orders, products),
     };
   } catch {
     return {
-      printedByBaseColorSize: new Map<string, number>(),
+      publishedByBaseColorSize: new Map<string, number>(),
+      salesByBaseColorSize: new Map<string, number>(),
     };
   }
 }
@@ -996,7 +1064,64 @@ function buildRecentSalesMap(orders: NuvemshopOrder[]) {
   return sales;
 }
 
-function buildPrintedStockByBaseColorSizeMap(
+function buildRecentSalesByBaseColorSizeMap(
+  orders: NuvemshopOrder[],
+  products: NuvemshopProduct[],
+) {
+  const sales = new Map<string, number>();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 30);
+  const variantCatalog = buildVariantCatalog(products);
+  const productBaseCatalog = buildProductBaseCatalog(products);
+
+  for (const order of orders) {
+    if (!order.created_at) {
+      continue;
+    }
+
+    const createdAt = new Date(order.created_at);
+    if (Number.isNaN(createdAt.getTime()) || createdAt < cutoff) {
+      continue;
+    }
+
+    for (const product of order.products || []) {
+      const quantity =
+        typeof product.quantity === "number" && Number.isFinite(product.quantity)
+          ? product.quantity
+          : 0;
+
+      if (quantity <= 0) {
+        continue;
+      }
+
+      const variantId = product.variant_id ? String(product.variant_id) : "";
+      const variantEntry = variantId ? variantCatalog.get(variantId) : undefined;
+      const fallbackBaseCategories = product.product_id
+        ? productBaseCatalog.get(String(product.product_id)) ?? []
+        : [];
+      const fallbackVariant = getOrderProductColorAndSize(product);
+      const baseCategories =
+        variantEntry?.baseCategories.length && variantEntry.baseCategories.length > 0
+          ? variantEntry.baseCategories
+          : fallbackBaseCategories;
+      const color = variantEntry?.color ?? fallbackVariant.color;
+      const size = variantEntry?.size ?? fallbackVariant.size;
+
+      if (!color || !size || baseCategories.length === 0) {
+        continue;
+      }
+
+      for (const baseCategory of baseCategories) {
+        const key = buildStockKey(baseCategory, color, size);
+        sales.set(key, (sales.get(key) ?? 0) + quantity);
+      }
+    }
+  }
+
+  return sales;
+}
+
+function buildPublishedStockByBaseColorSizeMap(
   products: Array<Record<string, unknown>>,
 ) {
   const stockMap = new Map<string, number>();
@@ -1011,11 +1136,13 @@ function buildPrintedStockByBaseColorSizeMap(
       variants?: Array<Record<string, unknown>>;
     };
 
-    const categories = (product.categories || [])
+    const baseCategories = getStockBaseCategories(
+      (product.categories || [])
       .map((category) => getLocalizedText(category.name))
-      .filter((value) => value && value !== "-");
+      .filter((value) => value && value !== "-"),
+    );
 
-    if (categories.length === 0) {
+    if (baseCategories.length === 0) {
       continue;
     }
 
@@ -1040,14 +1167,73 @@ function buildPrintedStockByBaseColorSizeMap(
       }
 
       const quantity = getVariantStockValue(variant);
-      for (const category of categories) {
-        const key = buildStockKey(category, color, size);
+      for (const baseCategory of baseCategories) {
+        const key = buildStockKey(baseCategory, color, size);
         stockMap.set(key, (stockMap.get(key) ?? 0) + quantity);
       }
     }
   }
 
   return stockMap;
+}
+
+function buildVariantCatalog(products: NuvemshopProduct[]) {
+  const catalog = new Map<
+    string,
+    {
+      baseCategories: string[];
+      color: string;
+      size: string;
+    }
+  >();
+
+  for (const product of products) {
+    const baseCategories = getStockBaseCategories(
+      (product.categories || [])
+        .map((category) => getLocalizedText(category.name))
+        .filter((value) => value && value !== "-"),
+    );
+    const attributeNames = (product.attributes || []).map((value) =>
+      getLocalizedText(value),
+    );
+
+    for (const variant of product.variants || []) {
+      const { color, size } = getVariantColorAndSize(
+        attributeNames,
+        variant.values || [],
+      );
+
+      if (!color || !size || baseCategories.length === 0) {
+        continue;
+      }
+
+      catalog.set(String(variant.id), {
+        baseCategories,
+        color,
+        size,
+      });
+    }
+  }
+
+  return catalog;
+}
+
+function buildProductBaseCatalog(products: NuvemshopProduct[]) {
+  const catalog = new Map<string, string[]>();
+
+  for (const product of products) {
+    const baseCategories = getStockBaseCategories(
+      (product.categories || [])
+        .map((category) => getLocalizedText(category.name))
+        .filter((value) => value && value !== "-"),
+    );
+
+    if (baseCategories.length > 0) {
+      catalog.set(String(product.id), baseCategories);
+    }
+  }
+
+  return catalog;
 }
 
 function buildNuvemshopStockProducts(products: NuvemshopProduct[]) {
@@ -1173,6 +1359,73 @@ function getVariantStockValue(variant: {
   }
 
   return 0;
+}
+
+function getOrderProductColorAndSize(product: {
+  variant_values?: unknown[];
+  properties?: unknown[];
+}) {
+  const sources = [
+    ...(Array.isArray(product.variant_values) ? product.variant_values : []),
+    ...(Array.isArray(product.properties) ? product.properties : []),
+  ];
+  let color = "";
+  let size = "";
+
+  for (const entry of sources) {
+    if (typeof entry === "string") {
+      const normalized = normalizeText(entry);
+      if (!color && isKnownColorValue(normalized)) {
+        color = entry;
+      }
+      if (!size && isKnownSizeValue(normalized)) {
+        size = entry;
+      }
+      continue;
+    }
+
+    if (!isRecord(entry)) {
+      continue;
+    }
+
+    const values = [
+      String(entry.pt ?? ""),
+      String(entry.en ?? ""),
+      String(entry.es ?? ""),
+      String(entry.value ?? ""),
+      String(entry.name ?? ""),
+    ].filter(Boolean);
+
+    for (const value of values) {
+      const normalized = normalizeText(value);
+      if (!color && isKnownColorValue(normalized)) {
+        color = value;
+      }
+      if (!size && isKnownSizeValue(normalized)) {
+        size = value;
+      }
+    }
+  }
+
+  return { color, size };
+}
+
+function getStockBaseCategories(categories: string[]) {
+  const filtered = categories.filter(
+    (category) => !isBlockedStockCategory(category),
+  );
+
+  return filtered.length > 0 ? filtered : categories;
+}
+
+function isBlockedStockCategory(category: string) {
+  const normalized = normalizeText(category);
+
+  return (
+    normalized === "full estampa" ||
+    normalized === "minimalista" ||
+    normalized === "outlet"
+  );
 }
 
 function buildStockKey(base: string, color: string, size: string) {

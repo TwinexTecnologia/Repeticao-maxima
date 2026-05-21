@@ -16,8 +16,8 @@ export default async function EstoquePage() {
 
   return (
     <AppShell
-      title="Estoque base"
-      subtitle="Controle das camisetas base por cor e tamanho e acompanhe tambem o estoque de DTF no mesmo lugar."
+      title="Estoque inteligente"
+      subtitle="Controle o fisico por cor e tamanho, acompanhe o que esta publicado na loja, veja a folga para remanejar entre artes e saiba quando pedir nova camiseta a tempo."
       currentPath="/estoque"
     >
       <EstoqueClient
