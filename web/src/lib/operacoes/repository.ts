@@ -662,12 +662,13 @@ function rowToStockItem(
   const published =
     publishedByBaseColorSize.get(buildStockKey(sku, color, size)) ?? 0;
   const free = Math.max(total - published, 0);
+  const plain = Math.max(total - printedReal, 0);
   const recentSales30d =
     salesByBaseColorSize.get(buildStockKey(sku, color, size)) ?? 0;
   const averageDailySales =
     recentSales30d > 0 ? Math.round((recentSales30d / 30) * 10) / 10 : 0;
   const coverageDays =
-    averageDailySales > 0 ? Math.round((total / averageDailySales) * 10) / 10 : null;
+    averageDailySales > 0 ? Math.round((plain / averageDailySales) * 10) / 10 : null;
 
   return {
     id: String(row.id ?? ""),
@@ -677,7 +678,7 @@ function rowToStockItem(
     total,
     printed: published,
     free,
-    plain: Math.max(total - printedReal, 0),
+    plain,
     printedReal,
     published,
     overcommitted: Math.max(published - total, 0),
