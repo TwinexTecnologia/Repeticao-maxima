@@ -40,6 +40,14 @@ type PartnerFormState = {
   notes: string;
 };
 
+type CouponListRow = {
+  code: string;
+  orders: number;
+  revenue: number;
+  lastOrderAt: string | null;
+  status: "Ja classificado" | "Pendente";
+};
+
 export function UsuariosClient({
   initialProfiles,
   initialKnownCoupons,
@@ -99,6 +107,46 @@ export function UsuariosClient({
       initialKnownCoupons.filter((coupon) => !mappedCouponCodes.has(coupon.code)),
     [initialKnownCoupons, mappedCouponCodes],
   );
+  const couponRows = useMemo(() => {
+    const rows = new Map<string, CouponListRow>();
+
+    initialKnownCoupons.forEach((coupon) => {
+      rows.set(coupon.code, {
+        code: coupon.code,
+        orders: coupon.orders,
+        revenue: coupon.revenue,
+        lastOrderAt: coupon.lastOrderAt,
+        status: mappedCouponCodes.has(coupon.code) ? "Ja classificado" : "Pendente",
+      });
+    });
+
+    profiles.forEach((profile) => {
+      const current = rows.get(profile.couponCode);
+
+      rows.set(profile.couponCode, {
+        code: profile.couponCode,
+        orders: current?.orders ?? 0,
+        revenue: current?.revenue ?? 0,
+        lastOrderAt: current?.lastOrderAt ?? null,
+        status: "Ja classificado",
+      });
+    });
+
+    return Array.from(rows.values()).sort((left, right) => {
+      const leftDate = left.lastOrderAt ? new Date(left.lastOrderAt).getTime() : 0;
+      const rightDate = right.lastOrderAt ? new Date(right.lastOrderAt).getTime() : 0;
+
+      if (rightDate !== leftDate) {
+        return rightDate - leftDate;
+      }
+
+      if (right.orders !== left.orders) {
+        return right.orders - left.orders;
+      }
+
+      return left.code.localeCompare(right.code);
+    });
+  }, [initialKnownCoupons, mappedCouponCodes, profiles]);
 
   async function handleSaveProfile() {
     setIsSaving(true);
@@ -365,20 +413,21 @@ export function UsuariosClient({
           <div>
             <div className={styles.sectionTitle}>Cupons encontrados na loja</div>
             <p className={styles.sectionSubtitle}>
-              Esses codigos vieram dos pedidos reais com cupom e ajudam a
-              preencher o cadastro mais rapido.
+              Aqui entram os cupons vistos nos pedidos e tambem os cupons ja
+              cadastrados no sistema, mesmo quando ainda nao venderam.
             </p>
           </div>
           <div className={styles.chipRow}>
             <span className={styles.chip}>
               {unmappedCoupons.length} sem classificacao
             </span>
+            <span className={styles.chip}>{couponRows.length} cupom(ns) na lista</span>
           </div>
         </div>
 
-        {initialKnownCoupons.length === 0 ? (
+        {couponRows.length === 0 ? (
           <div className={styles.emptyState}>
-            Nenhum cupom foi encontrado nos pedidos atuais da Nuvemshop.
+            Nenhum cupom encontrado nos pedidos e nenhum cupom cadastrado ainda.
           </div>
         ) : (
           <div className={styles.tableWrap}>
@@ -394,17 +443,13 @@ export function UsuariosClient({
                 </tr>
               </thead>
               <tbody>
-                {initialKnownCoupons.map((coupon) => (
+                {couponRows.map((coupon) => (
                   <tr key={coupon.code}>
                     <td>{coupon.code}</td>
                     <td>{coupon.orders}</td>
                     <td>{formatMoney(coupon.revenue)}</td>
                     <td>{formatDateTime(coupon.lastOrderAt)}</td>
-                    <td>
-                      {mappedCouponCodes.has(coupon.code)
-                        ? "Ja classificado"
-                        : "Pendente"}
-                    </td>
+                    <td>{coupon.status}</td>
                     <td>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         <button
