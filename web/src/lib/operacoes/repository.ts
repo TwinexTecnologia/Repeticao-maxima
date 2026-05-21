@@ -359,17 +359,43 @@ export async function createStockItem(input: unknown) {
   const stampedContext = await loadStampedStockContext();
 
   try {
-    const { data, error } = await supabase.client
+    const { data: existingRow, error: existingError } = await supabase.client
       .schema(OPERATIONS_SCHEMA)
       .from(STOCK_TABLE)
-      .insert({
-        sku: row.sku,
-        color: row.color,
-        size: row.size,
-        total_qty: row.total,
-        reorder_point: row.reorderPoint,
-        notes: row.notes,
-      })
+      .select("id")
+      .eq("sku", row.sku)
+      .eq("color", row.color)
+      .eq("size", row.size)
+      .maybeSingle();
+
+    if (existingError) {
+      throw existingError;
+    }
+
+    const operation = existingRow?.id
+      ? supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(STOCK_TABLE)
+          .update({
+            total_qty: row.total,
+            reorder_point: row.reorderPoint,
+            notes: row.notes,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existingRow.id)
+      : supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(STOCK_TABLE)
+          .insert({
+            sku: row.sku,
+            color: row.color,
+            size: row.size,
+            total_qty: row.total,
+            reorder_point: row.reorderPoint,
+            notes: row.notes,
+          });
+
+    const { data, error } = await operation
       .select("*")
       .single();
 
@@ -383,7 +409,9 @@ export async function createStockItem(input: unknown) {
       persistence: {
         enabled: true,
         source: "supabase" as const,
-        message: "Linha de estoque salva no Supabase.",
+        message: existingRow?.id
+          ? "Linha existente do estoque atualizada no Supabase."
+          : "Linha de estoque salva no Supabase.",
         updatedAt:
           data && typeof data.updated_at === "string" ? data.updated_at : null,
       },
