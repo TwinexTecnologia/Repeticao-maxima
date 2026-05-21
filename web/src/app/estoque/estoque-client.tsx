@@ -1861,11 +1861,12 @@ function recalculateDraftStockState(item: BaseStockItem): BaseStockItem {
   const recentSales30d = Math.max(item.recentSales30d, 0);
   const averageDailySales =
     recentSales30d > 0 ? Math.round((recentSales30d / 30) * 10) / 10 : 0;
+  const plain = Math.max(total - printedReal, 0);
 
   return {
     ...item,
     total,
-    plain: Math.max(total - printedReal, 0),
+    plain,
     printedReal,
     printed: published,
     published,
@@ -1876,7 +1877,7 @@ function recalculateDraftStockState(item: BaseStockItem): BaseStockItem {
     averageDailySales,
     coverageDays:
       averageDailySales > 0
-        ? Math.round((total / averageDailySales) * 10) / 10
+        ? Math.round((plain / averageDailySales) * 10) / 10
         : null,
   };
 }
@@ -1884,7 +1885,7 @@ function recalculateDraftStockState(item: BaseStockItem): BaseStockItem {
 function needsAttention(item: BaseStockItem) {
   return (
     item.overcommitted > 0 ||
-    item.free <= item.reorderPoint ||
+    item.plain <= item.reorderPoint ||
     (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays)
   );
 }
@@ -1898,7 +1899,7 @@ function getStockAttentionScore(item: BaseStockItem) {
     return 2;
   }
 
-  if (item.free <= item.reorderPoint) {
+  if (item.plain <= item.reorderPoint) {
     return 1;
   }
 
@@ -1911,10 +1912,10 @@ function buildStockAlertDetail(item: BaseStockItem) {
   }
 
   if (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays) {
-    return `No ritmo dos ultimos 30 dias, essa base cobre ${item.coverageDays} dias e o prazo de reposicao configurado e ${item.leadTimeDays} dias. Vale pedir camiseta agora para nao apertar.`;
+    return `No ritmo dos ultimos 30 dias, as lisas em maos dessa base cobrem ${item.coverageDays} dias e o prazo de reposicao configurado e ${item.leadTimeDays} dias. Vale pedir camiseta agora para nao apertar.`;
   }
 
-  return `A folga para remanejar caiu para ${item.free} e o ponto de reposicao configurado e ${item.reorderPoint}. Melhor acompanhar essa base mais de perto.`;
+  return `As lisas em maos cairam para ${item.plain} e o ponto de reposicao configurado e ${item.reorderPoint}. Melhor acompanhar essa base mais de perto.`;
 }
 
 function sortStockItems(items: BaseStockItem[]) {
