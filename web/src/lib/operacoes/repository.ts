@@ -362,7 +362,7 @@ export async function createStockItem(input: unknown) {
     const { data: existingRow, error: existingError } = await supabase.client
       .schema(OPERATIONS_SCHEMA)
       .from(STOCK_TABLE)
-      .select("id")
+      .select("id, total_qty, reorder_point, notes")
       .eq("sku", row.sku)
       .eq("color", row.color)
       .eq("size", row.size)
@@ -377,9 +377,12 @@ export async function createStockItem(input: unknown) {
           .schema(OPERATIONS_SCHEMA)
           .from(STOCK_TABLE)
           .update({
-            total_qty: row.total,
-            reorder_point: row.reorderPoint,
-            notes: row.notes,
+            total_qty: getIntegerValue(existingRow.total_qty) + row.total,
+            reorder_point:
+              row.reorderPoint > 0
+                ? row.reorderPoint
+                : getIntegerValue(existingRow.reorder_point),
+            notes: row.notes || String(existingRow.notes ?? ""),
             updated_at: new Date().toISOString(),
           })
           .eq("id", existingRow.id)
@@ -410,7 +413,7 @@ export async function createStockItem(input: unknown) {
         enabled: true,
         source: "supabase" as const,
         message: existingRow?.id
-          ? "Linha existente do estoque atualizada no Supabase."
+          ? "Quantidade adicionada na linha existente do estoque."
           : "Linha de estoque salva no Supabase.",
         updatedAt:
           data && typeof data.updated_at === "string" ? data.updated_at : null,
