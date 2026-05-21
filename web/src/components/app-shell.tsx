@@ -27,6 +27,7 @@ const navigationItems = [
     label: "Influenciadores",
     hint: "Cupons e brindes",
   },
+  { href: "/usuarios", label: "Usuarios", hint: "Atletas e cupons" },
   { href: "/empresa", label: "Empresa", hint: "Dados e regras" },
 ];
 

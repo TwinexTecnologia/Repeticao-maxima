@@ -109,6 +109,21 @@ CREATE TABLE IF NOT EXISTS repeticao_maxima.promocoes_carrinho (
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.promocoes_carrinho TO anon, authenticated, service_role;
 
+CREATE TABLE IF NOT EXISTS repeticao_maxima.parceiros_cupons (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL DEFAULT '',
+  coupon_code TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'influenciador',
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (role IN ('influenciador', 'atleta')),
+  UNIQUE (coupon_code)
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.parceiros_cupons TO anon, authenticated, service_role;
+
 ALTER TABLE repeticao_maxima.estoque_dtf
   ADD COLUMN IF NOT EXISTS art_type TEXT NOT NULL DEFAULT 'outro',
   ADD COLUMN IF NOT EXISTS available_qty INTEGER NOT NULL DEFAULT 0,
@@ -135,6 +150,13 @@ ALTER TABLE repeticao_maxima.promocoes_carrinho
   ADD COLUMN IF NOT EXISTS nuvemshop_message TEXT NOT NULL DEFAULT 'Ainda nao sincronizada com a Nuvemshop.',
   ADD COLUMN IF NOT EXISTS nuvemshop_callback_url TEXT,
   ADD COLUMN IF NOT EXISTS nuvemshop_last_synced_at TIMESTAMPTZ;
+
+ALTER TABLE repeticao_maxima.parceiros_cupons
+  ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS coupon_code TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'influenciador',
+  ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '';
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA repeticao_maxima
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated, service_role;
