@@ -299,8 +299,13 @@ function buildHomeSnapshot(params: {
 
   const totalUnits = stockItems.reduce((sum, item) => sum + item.total, 0);
   const freeUnits = stockItems.reduce((sum, item) => sum + item.free, 0);
-  const printedUnits = stockItems.reduce((sum, item) => sum + item.printed, 0);
-  const reorderCount = stockItems.filter((item) => item.free <= item.reorderPoint).length;
+  const publishedUnits = stockItems.reduce((sum, item) => sum + item.published, 0);
+  const reorderCount = stockItems.filter(
+    (item) =>
+      item.overcommitted > 0 ||
+      item.free <= item.reorderPoint ||
+      (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays),
+  ).length;
   const stockValueMinimal = totalUnits * MINIMAL_UNIT_COST;
   const stockValueFull = totalUnits * FULL_UNIT_COST;
   const monthlySalesCount = orders.length;
@@ -374,7 +379,7 @@ function buildHomeSnapshot(params: {
     {
       label: "Pecas livres",
       value: String(freeUnits),
-      detail: `${printedUnits} ja aparecem como estampadas na Nuvemshop.`,
+      detail: `${publishedUnits} estao publicados hoje na Nuvemshop.`,
     },
     {
       label: "Reposicoes em alerta",
