@@ -9,6 +9,10 @@ import {
 import { loadFinanceConfig } from "@/lib/financeiro/repository";
 import { loadMonthlyFinanceFlow, type FinanceFlowOrder } from "@/lib/financeiro/flow";
 import {
+  loadCompanyDiscountModuleData,
+  type CompanyCartDiscountRule,
+} from "@/lib/empresa/repository";
+import {
   loadDebtModuleData,
   loadStockModuleData,
   type BaseStockItem,
@@ -19,11 +23,12 @@ const FULL_UNIT_COST = 52;
 const MINIMAL_UNIT_COST = 32;
 
 export default async function Home() {
-  const [{ config }, flow, stockModule, debtModule] = await Promise.all([
+  const [{ config }, flow, stockModule, debtModule, companyModule] = await Promise.all([
     loadFinanceConfig(),
     loadMonthlyFinanceFlow(),
     loadStockModuleData(),
     loadDebtModuleData(),
+    loadCompanyDiscountModuleData(),
   ]);
 
   const financeDashboard = buildFinanceDashboard(config);
@@ -34,7 +39,9 @@ export default async function Home() {
     orders: flow.orders,
     cashFlow,
     financeDashboard,
-    comboQuantity: config.comboQuantity,
+    comboRules: companyModule.rules,
+    unitPrice: config.unitPrice,
+    config,
   });
 
   return (
@@ -176,31 +183,27 @@ export default async function Home() {
                 <thead>
                   <tr>
                     <th>Cenario</th>
+                    <th>Composicao</th>
                     <th>Qtd</th>
                     <th>Liquido</th>
-                    <th>Lucro full</th>
-                    <th>Margem full</th>
-                    <th>Lucro minimalista</th>
-                    <th>Margem minimalista</th>
+                    <th>Custo</th>
+                    <th>Lucro</th>
+                    <th>Margem</th>
                   </tr>
                 </thead>
                 <tbody>
                   {snapshot.strategicScenarioRows.map((row) => (
                     <tr key={row.title}>
                       <td>{row.title}</td>
+                      <td>{row.mixLabel}</td>
                       <td>{row.quantity}</td>
                       <td>{formatMoney(row.netReceived)}</td>
-                      <td className={getProfitToneClass(row.fullMarginPercent)}>
-                        {formatMoney(row.fullProfit)}
+                      <td>{formatMoney(row.costTotal)}</td>
+                      <td className={getProfitToneClass(row.marginPercent)}>
+                        {formatMoney(row.netProfit)}
                       </td>
-                      <td className={getProfitToneClass(row.fullMarginPercent)}>
-                        {formatPercent(row.fullMarginPercent)}
-                      </td>
-                      <td className={getProfitToneClass(row.minimalMarginPercent)}>
-                        {formatMoney(row.minimalProfit)}
-                      </td>
-                      <td className={getProfitToneClass(row.minimalMarginPercent)}>
-                        {formatPercent(row.minimalMarginPercent)}
+                      <td className={getProfitToneClass(row.marginPercent)}>
+                        {formatPercent(row.marginPercent)}
                       </td>
                     </tr>
                   ))}
@@ -312,9 +315,11 @@ function buildHomeSnapshot(params: {
   orders: FinanceFlowOrder[];
   cashFlow: ReturnType<typeof buildMonthlyCashFlow>;
   financeDashboard: ReturnType<typeof buildFinanceDashboard>;
-  comboQuantity: number;
+  comboRules: CompanyCartDiscountRule[];
+  unitPrice: number;
+  config: Awaited<ReturnType<typeof loadFinanceConfig>>["config"];
 }) {
-  const { stockItems, debts, orders, cashFlow, financeDashboard } = params;
+  const { stockItems, debts, orders, cashFlow, financeDashboard, comboRules, unitPrice, config } = params;
 
   const totalUnits = stockItems.reduce((sum, item) => sum + item.total, 0);
   const freeUnits = stockItems.reduce((sum, item) => sum + item.free, 0);
@@ -347,23 +352,106 @@ function buildHomeSnapshot(params: {
   const dueFortyFiveTotal = sumDebtsWithinNextDays(openDebts, 45);
 
   const customerSummary = buildCustomerMetrics(orders);
-  const worstRealisticCombo = toScenarioRow(
-    "Combo / Cartao 2x / Cupom 10%",
-    financeDashboard.offers.comboCard2Coupon,
-  );
-  const bestCombo = toScenarioRow(
-    "Combo / Pix / Sem cupom",
-    financeDashboard.offers.comboPixNoCoupon,
-  );
+  const comboDefinitions = buildRealComboDefinitions(comboRules, unitPrice);
+  const comboScenarioRows = comboDefinitions.flatMap((definition) => [
+    buildComboMixScenarioRow({
+      config,
+      title: `${definition.label} / Pix / Sem cupom`,
+      quantity: definition.quantity,
+      basePrice: definition.basePrice,
+      fullCount: definition.fullCount,
+      minimalCount: definition.minimalCount,
+      feePercent: config.nuvemPixPercent,
+      fixedFee: config.nuvemPixFixed,
+      discountPercent: 0,
+      mixLabel: definition.mixLabel,
+    }),
+    buildComboMixScenarioRow({
+      config,
+      title: `${definition.label} / Cartao 2x / Cupom 10%`,
+      quantity: definition.quantity,
+      basePrice: definition.basePrice,
+      fullCount: definition.fullCount,
+      minimalCount: definition.minimalCount,
+      feePercent: config.nuvemCard2Percent,
+      fixedFee: config.nuvemCard2Fixed,
+      discountPercent: config.couponPercent,
+      mixLabel: definition.mixLabel,
+    }),
+  ]);
+  const bestCombo =
+    comboScenarioRows.find((row) => row.title.includes("/ Pix / Sem cupom")) ??
+    buildComboMixScenarioRow({
+      config,
+      title: "Combo / Pix / Sem cupom",
+      quantity: config.comboQuantity,
+      basePrice: config.comboPrice,
+      fullCount: config.comboQuantity,
+      minimalCount: 0,
+      feePercent: config.nuvemPixPercent,
+      fixedFee: config.nuvemPixFixed,
+      discountPercent: 0,
+      mixLabel: `${config.comboQuantity} full`,
+    });
+  const worstRealisticCombo =
+    comboScenarioRows
+      .filter((row) => row.title.includes("/ Cartao 2x / Cupom 10%"))
+      .sort((left, right) => left.fullMarginPercent - right.fullMarginPercent)[0] ??
+    buildComboMixScenarioRow({
+      config,
+      title: "Combo / Cartao 2x / Cupom 10%",
+      quantity: config.comboQuantity,
+      basePrice: config.comboPrice,
+      fullCount: config.comboQuantity,
+      minimalCount: 0,
+      feePercent: config.nuvemCard2Percent,
+      fixedFee: config.nuvemCard2Fixed,
+      discountPercent: config.couponPercent,
+      mixLabel: `${config.comboQuantity} full`,
+    });
   const strategicScenarioRows = [
-    financeDashboard.offers.unitPixNoCoupon,
-    financeDashboard.offers.unitCard1Coupon,
-    financeDashboard.offers.unitCard2Coupon,
-    financeDashboard.offers.comboPixNoCoupon,
-    financeDashboard.offers.comboPixCoupon,
-    financeDashboard.offers.comboCard1Coupon,
-    financeDashboard.offers.comboCard2Coupon,
-  ].map((scenario) => toScenarioRow(scenario.title, scenario));
+    buildUnitMixScenarioRow({
+      config,
+      title: "Unitaria Full / Pix / Sem cupom",
+      basePrice: config.unitPrice,
+      fullCount: 1,
+      minimalCount: 0,
+      feePercent: config.nuvemPixPercent,
+      fixedFee: config.nuvemPixFixed,
+      discountPercent: 0,
+    }),
+    buildUnitMixScenarioRow({
+      config,
+      title: "Unitaria Full / Cartao 2x / Cupom 10%",
+      basePrice: config.unitPrice,
+      fullCount: 1,
+      minimalCount: 0,
+      feePercent: config.nuvemCard2Percent,
+      fixedFee: config.nuvemCard2Fixed,
+      discountPercent: config.couponPercent,
+    }),
+    buildUnitMixScenarioRow({
+      config,
+      title: "Unitaria Minimalista / Pix / Sem cupom",
+      basePrice: config.unitPrice,
+      fullCount: 0,
+      minimalCount: 1,
+      feePercent: config.nuvemPixPercent,
+      fixedFee: config.nuvemPixFixed,
+      discountPercent: 0,
+    }),
+    buildUnitMixScenarioRow({
+      config,
+      title: "Unitaria Minimalista / Cartao 2x / Cupom 10%",
+      basePrice: config.unitPrice,
+      fullCount: 0,
+      minimalCount: 1,
+      feePercent: config.nuvemCard2Percent,
+      fixedFee: config.nuvemCard2Fixed,
+      discountPercent: config.couponPercent,
+    }),
+    ...comboScenarioRows,
+  ];
   const debtWindowRows = buildDebtWindowRows(openDebts, dailyNetPaceValue);
   const stockActionRows = buildStockActionRows(stockItems);
   const highPriorityStock = stockActionRows.filter((row) => row.level === "alto").length;
@@ -486,12 +574,10 @@ function buildHomeSnapshot(params: {
     },
     {
       title: "Combo mais sensivel",
-      level: getMarginAlertLevel(worstRealisticCombo.fullMarginPercent),
-      detail: `No combo em 2x com cupom, o full fica com ${formatPercent(
-        worstRealisticCombo.fullMarginPercent,
-      )} de margem e o minimalista com ${formatPercent(
-        worstRealisticCombo.minimalMarginPercent,
-      )}.`,
+      level: getMarginAlertLevel(worstRealisticCombo.marginPercent),
+      detail: `No combo em 2x com cupom de ${worstRealisticCombo.mixLabel.toLowerCase()}, a margem cai para ${formatPercent(
+        worstRealisticCombo.marginPercent,
+      )} e o lucro fica em ${formatMoney(worstRealisticCombo.netProfit)}.`,
     },
     {
       title: "Fluxo do mes",
@@ -529,12 +615,12 @@ function buildHomeSnapshot(params: {
       {
         label: "Melhor combo hoje",
         value: formatMoney(bestCombo.netReceived),
-        detail: `Pix sem cupom deixa ${formatMoney(bestCombo.fullProfit)} de lucro se forem 3 full ou ${formatMoney(bestCombo.minimalProfit)} se forem 3 minimalistas.`,
+        detail: `${bestCombo.mixLabel} deixam ${formatMoney(bestCombo.netProfit)} de lucro no melhor cenario.`,
       },
       {
         label: "Combo mais apertado",
         value: formatMoney(worstRealisticCombo.netReceived),
-        detail: `Em 2x com cupom, o combo ainda deixa ${formatMoney(worstRealisticCombo.minimalProfit)} no minimalista.`,
+        detail: `${worstRealisticCombo.mixLabel} ainda deixam ${formatMoney(worstRealisticCombo.netProfit)} em 2x com cupom.`,
       },
       {
         label: "Meta para pagar o aberto com combo",
@@ -542,7 +628,7 @@ function buildHomeSnapshot(params: {
           worstRealisticCombo.netReceived > 0
             ? `${Math.ceil(openDebtTotal / worstRealisticCombo.netReceived)} combos`
             : "-",
-        detail: `Leitura usando o combo em 2x com cupom para cobrir ${formatMoney(openDebtTotal)} em aberto.`,
+        detail: `Leitura usando ${worstRealisticCombo.mixLabel.toLowerCase()} em 2x com cupom para cobrir ${formatMoney(openDebtTotal)} em aberto.`,
       },
     ],
     stockActionRows,
@@ -561,9 +647,9 @@ function buildHomeSnapshot(params: {
           )}.`,
     marginDiagnosis: `O combo continua sendo a leitura mais sensivel do caixa. No melhor caso ele gera ${formatMoney(
       bestCombo.netReceived,
-    )} liquidos; no cenario mais apertado de 2x com cupom cai para ${formatMoney(
+    )} liquidos com ${bestCombo.mixLabel.toLowerCase()}; no cenario mais apertado de 2x com cupom cai para ${formatMoney(
       worstRealisticCombo.netReceived,
-    )}. Isso e o que mais importa para saber se a operacao aguenta desconto e parcelamento sem engolir sua margem.`,
+    )} com ${worstRealisticCombo.mixLabel.toLowerCase()}. Isso e o que mais importa para saber se a operacao aguenta desconto e parcelamento sem engolir sua margem.`,
     averageTicket: customerSummary.averageTicket,
     totalOrdersLabel:
       orders.length > 0
@@ -574,34 +660,209 @@ function buildHomeSnapshot(params: {
   };
 }
 
-function toScenarioRow(
-  title: string,
-  scenario: ReturnType<typeof buildFinanceDashboard>["offers"][keyof ReturnType<
-    typeof buildFinanceDashboard
-  >["offers"]],
-) {
-  const fullProfit = scenario.netReceived - FULL_UNIT_COST * scenario.quantity;
-  const minimalProfit =
-    scenario.netReceived - MINIMAL_UNIT_COST * scenario.quantity;
-  const fullMarginPercent =
-    scenario.discountedRevenue > 0
-      ? (fullProfit / scenario.discountedRevenue) * 100
-      : 0;
-  const minimalMarginPercent =
-    scenario.discountedRevenue > 0
-      ? (minimalProfit / scenario.discountedRevenue) * 100
-      : 0;
+type DashboardScenarioRow = {
+  title: string;
+  quantity: number;
+  mixLabel: string;
+  discountedRevenue: number;
+  feeCost: number;
+  costTotal: number;
+  netReceived: number;
+  netProfit: number;
+  marginPercent: number;
+};
+
+type DashboardComboDefinition = {
+  label: string;
+  quantity: number;
+  fullCount: number;
+  minimalCount: number;
+  basePrice: number;
+  mixLabel: string;
+};
+
+function buildUnitMixScenarioRow(params: {
+  config: Awaited<ReturnType<typeof loadFinanceConfig>>["config"];
+  title: string;
+  basePrice: number;
+  fullCount: number;
+  minimalCount: number;
+  feePercent: number;
+  fixedFee: number;
+  discountPercent: number;
+}): DashboardScenarioRow {
+  return buildMixScenarioRow({
+    ...params,
+    quantity: params.fullCount + params.minimalCount,
+    mixLabel:
+      params.fullCount > 0
+        ? params.minimalCount > 0
+          ? `${params.fullCount} full + ${params.minimalCount} minimalista`
+          : `${params.fullCount} full`
+        : `${params.minimalCount} minimalista`,
+  });
+}
+
+function buildComboMixScenarioRow(params: {
+  config: Awaited<ReturnType<typeof loadFinanceConfig>>["config"];
+  title: string;
+  quantity: number;
+  basePrice: number;
+  fullCount: number;
+  minimalCount: number;
+  feePercent: number;
+  fixedFee: number;
+  discountPercent: number;
+  mixLabel: string;
+}): DashboardScenarioRow {
+  return buildMixScenarioRow(params);
+}
+
+function buildMixScenarioRow(params: {
+  config: Awaited<ReturnType<typeof loadFinanceConfig>>["config"];
+  title: string;
+  quantity: number;
+  basePrice: number;
+  fullCount: number;
+  minimalCount: number;
+  feePercent: number;
+  fixedFee: number;
+  discountPercent: number;
+  mixLabel: string;
+}): DashboardScenarioRow {
+  const discountedRevenue = params.basePrice * (1 - params.discountPercent / 100);
+  const feeCost =
+    discountedRevenue * (params.feePercent / 100) + params.fixedFee;
+  const netReceived = Math.max(discountedRevenue - feeCost, 0);
+  const costTotal =
+    params.fullCount * FULL_UNIT_COST +
+    params.minimalCount * MINIMAL_UNIT_COST +
+    params.config.freightSubsidy;
+  const netProfit = netReceived - costTotal;
+  const marginPercent =
+    discountedRevenue > 0 ? (netProfit / discountedRevenue) * 100 : 0;
 
   return {
-    title,
-    quantity: scenario.quantity,
-    feeCost: scenario.feeCost,
-    netReceived: scenario.netReceived,
-    fullProfit,
-    fullMarginPercent,
-    minimalProfit,
-    minimalMarginPercent,
+    title: params.title,
+    quantity: params.quantity,
+    mixLabel: params.mixLabel,
+    discountedRevenue,
+    feeCost,
+    costTotal,
+    netReceived,
+    netProfit,
+    marginPercent,
   };
+}
+
+function buildRealComboDefinitions(
+  rules: CompanyCartDiscountRule[],
+  unitPrice: number,
+) {
+  const activeRules = rules.filter((rule) => rule.active);
+  const preferred = [
+    ["COMBO PREMIUM", "premium"],
+    ["COMBO SMART", "smart"],
+    ["COMBO ENTRY", "entry"],
+  ] as const;
+  const selected = preferred
+    .map(([, keyword]) =>
+      activeRules.find((rule) =>
+        normalizeText(`${rule.title} ${rule.categoryName}`).includes(keyword),
+      ),
+    )
+    .filter((rule): rule is CompanyCartDiscountRule => Boolean(rule));
+
+  const sourceRules = selected.length > 0 ? selected : activeRules;
+
+  return sourceRules
+    .map((rule) => {
+      const mix = inferRuleMix(rule);
+      if (!mix || mix.quantity <= 0) {
+        return null;
+      }
+
+      return {
+        label: rule.title.trim() || "Combo ativo",
+        quantity: mix.quantity,
+        fullCount: mix.fullCount,
+        minimalCount: mix.minimalCount,
+        basePrice: Math.max(unitPrice * mix.quantity - rule.discountAmount, 0),
+        mixLabel: mix.mixLabel,
+      };
+    })
+    .filter((item): item is DashboardComboDefinition => Boolean(item));
+}
+
+function inferRuleMix(rule: CompanyCartDiscountRule) {
+  const text = normalizeText(
+    `${rule.title} ${rule.categoryName} ${rule.categoryNames.join(" ")} ${rule.notes}`,
+  );
+  const groups = rule.comboGroups.map((group) => ({
+    ...group,
+    normalized: normalizeText(`${group.categoryName} ${group.productNames.join(" ")}`),
+  }));
+  const fullCount = groups
+    .filter((group) => group.normalized.includes("full"))
+    .reduce((sum, group) => sum + group.minimumQuantity, 0);
+  const minimalCount = groups
+    .filter((group) => group.normalized.includes("minimal"))
+    .reduce((sum, group) => sum + group.minimumQuantity, 0);
+  const groupedQuantity = groups.reduce((sum, group) => sum + group.minimumQuantity, 0);
+
+  if (groupedQuantity > 0 && fullCount + minimalCount > 0) {
+    return {
+      fullCount,
+      minimalCount,
+      quantity: groupedQuantity,
+      mixLabel: buildMixLabel(fullCount, minimalCount),
+    };
+  }
+
+  if (text.includes("smart")) {
+    return {
+      fullCount: 2,
+      minimalCount: 1,
+      quantity: 3,
+      mixLabel: buildMixLabel(2, 1),
+    };
+  }
+
+  if (text.includes("entry") || text.includes("minimalista")) {
+    const quantity = Math.max(rule.minimumQuantity, 3);
+    return {
+      fullCount: 0,
+      minimalCount: quantity,
+      quantity,
+      mixLabel: buildMixLabel(0, quantity),
+    };
+  }
+
+  if (text.includes("premium")) {
+    const quantity = Math.max(rule.minimumQuantity, 3);
+    return {
+      fullCount: quantity,
+      minimalCount: 0,
+      quantity,
+      mixLabel: buildMixLabel(quantity, 0),
+    };
+  }
+
+  return null;
+}
+
+function buildMixLabel(fullCount: number, minimalCount: number) {
+  const parts = [];
+
+  if (fullCount > 0) {
+    parts.push(`${fullCount} full`);
+  }
+
+  if (minimalCount > 0) {
+    parts.push(`${minimalCount} minimalista${minimalCount > 1 ? "s" : ""}`);
+  }
+
+  return parts.join(" + ");
 }
 
 function buildCustomerMetrics(orders: FinanceFlowOrder[]) {
