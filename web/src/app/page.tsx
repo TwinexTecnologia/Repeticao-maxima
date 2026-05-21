@@ -185,6 +185,9 @@ export default async function Home() {
                     <th>Cenario</th>
                     <th>Composicao</th>
                     <th>Qtd</th>
+                    <th>Valor</th>
+                    <th>Taxa paga</th>
+                    <th>% taxa</th>
                     <th>Liquido</th>
                     <th>Custo</th>
                     <th>Lucro</th>
@@ -197,6 +200,9 @@ export default async function Home() {
                       <td>{row.title}</td>
                       <td>{row.mixLabel}</td>
                       <td>{row.quantity}</td>
+                      <td>{formatMoney(row.discountedRevenue)}</td>
+                      <td>{formatMoney(row.feeCost)}</td>
+                      <td>{formatPercent(row.feePercentOnRevenue)}</td>
                       <td>{formatMoney(row.netReceived)}</td>
                       <td>{formatMoney(row.costTotal)}</td>
                       <td className={getProfitToneClass(row.marginPercent)}>
@@ -451,7 +457,13 @@ function buildHomeSnapshot(params: {
       discountPercent: config.couponPercent,
     }),
     ...comboScenarioRows,
-  ];
+  ].sort((left, right) => {
+    if (right.marginPercent !== left.marginPercent) {
+      return right.marginPercent - left.marginPercent;
+    }
+
+    return right.netProfit - left.netProfit;
+  });
   const debtWindowRows = buildDebtWindowRows(openDebts, dailyNetPaceValue);
   const stockActionRows = buildStockActionRows(stockItems);
   const highPriorityStock = stockActionRows.filter((row) => row.level === "alto").length;
@@ -666,6 +678,7 @@ type DashboardScenarioRow = {
   mixLabel: string;
   discountedRevenue: number;
   feeCost: number;
+  feePercentOnRevenue: number;
   costTotal: number;
   netReceived: number;
   netProfit: number;
@@ -733,6 +746,8 @@ function buildMixScenarioRow(params: {
   const discountedRevenue = params.basePrice * (1 - params.discountPercent / 100);
   const feeCost =
     discountedRevenue * (params.feePercent / 100) + params.fixedFee;
+  const feePercentOnRevenue =
+    discountedRevenue > 0 ? (feeCost / discountedRevenue) * 100 : 0;
   const netReceived = Math.max(discountedRevenue - feeCost, 0);
   const costTotal =
     params.fullCount * FULL_UNIT_COST +
@@ -748,6 +763,7 @@ function buildMixScenarioRow(params: {
     mixLabel: params.mixLabel,
     discountedRevenue,
     feeCost,
+    feePercentOnRevenue,
     costTotal,
     netReceived,
     netProfit,
@@ -798,27 +814,6 @@ function inferRuleMix(rule: CompanyCartDiscountRule) {
   const text = normalizeText(
     `${rule.title} ${rule.categoryName} ${rule.categoryNames.join(" ")} ${rule.notes}`,
   );
-  const groups = rule.comboGroups.map((group) => ({
-    ...group,
-    normalized: normalizeText(`${group.categoryName} ${group.productNames.join(" ")}`),
-  }));
-  const fullCount = groups
-    .filter((group) => group.normalized.includes("full"))
-    .reduce((sum, group) => sum + group.minimumQuantity, 0);
-  const minimalCount = groups
-    .filter((group) => group.normalized.includes("minimal"))
-    .reduce((sum, group) => sum + group.minimumQuantity, 0);
-  const groupedQuantity = groups.reduce((sum, group) => sum + group.minimumQuantity, 0);
-
-  if (groupedQuantity > 0 && fullCount + minimalCount > 0) {
-    return {
-      fullCount,
-      minimalCount,
-      quantity: groupedQuantity,
-      mixLabel: buildMixLabel(fullCount, minimalCount),
-    };
-  }
-
   if (text.includes("smart")) {
     return {
       fullCount: 2,
@@ -845,6 +840,27 @@ function inferRuleMix(rule: CompanyCartDiscountRule) {
       minimalCount: 0,
       quantity,
       mixLabel: buildMixLabel(quantity, 0),
+    };
+  }
+
+  const groups = rule.comboGroups.map((group) => ({
+    ...group,
+    normalized: normalizeText(`${group.categoryName} ${group.productNames.join(" ")}`),
+  }));
+  const fullCount = groups
+    .filter((group) => group.normalized.includes("full"))
+    .reduce((sum, group) => sum + group.minimumQuantity, 0);
+  const minimalCount = groups
+    .filter((group) => group.normalized.includes("minimal"))
+    .reduce((sum, group) => sum + group.minimumQuantity, 0);
+  const groupedQuantity = groups.reduce((sum, group) => sum + group.minimumQuantity, 0);
+
+  if (groupedQuantity > 0 && fullCount + minimalCount > 0) {
+    return {
+      fullCount,
+      minimalCount,
+      quantity: groupedQuantity,
+      mixLabel: buildMixLabel(fullCount, minimalCount),
     };
   }
 
