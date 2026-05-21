@@ -1,5 +1,6 @@
 import { AppShell } from "@/components/app-shell";
 import styles from "@/components/panel.module.css";
+import { loadFinanceConfig } from "@/lib/financeiro/repository";
 import {
   getNuvemshopCredentials,
   NuvemshopApiError,
@@ -19,10 +20,34 @@ type InfluencerRow = {
   code: string;
   orders: number;
   revenue: number;
+  netRevenue: number;
   averageTicket: number;
   lastOrderAt: string | null;
   channels: string[];
+  currentTierLabel: string;
+  unlockedCredit: number;
+  nextGoalAmount: number | null;
+  amountToNextGoal: number | null;
+  nextTierLabel: string | null;
 };
+
+const INFLUENCER_TIERS = [
+  {
+    label: "Nivel 1",
+    goal: 500,
+    credit: 80,
+  },
+  {
+    label: "Nivel 2",
+    goal: 1000,
+    credit: 180,
+  },
+  {
+    label: "Nivel 3",
+    goal: 2000,
+    credit: 350,
+  },
+] as const;
 
 function getSearchValue(
   searchParams: Record<string, string | string[] | undefined>,
@@ -38,6 +63,33 @@ function normalizeText(value: string) {
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase();
+}
+
+function getCurrentMonthInput() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function getMonthRange(monthInput: string) {
+  if (!/^\d{4}-\d{2}$/.test(monthInput)) {
+    const current = getCurrentMonthInput();
+    return getMonthRange(current);
+  }
+
+  const [yearText, monthText] = monthInput.split("-");
+  const year = Number.parseInt(yearText || "", 10);
+  const monthIndex = Number.parseInt(monthText || "", 10) - 1;
+  const start = new Date(year, monthIndex, 1);
+  const end = new Date(year, monthIndex + 1, 0);
+
+  return {
+    startDate: `${yearText}-${monthText}-01`,
+    endDate: `${yearText}-${monthText}-${String(end.getDate()).padStart(2, "0")}`,
+    label: new Intl.DateTimeFormat("pt-BR", {
+      month: "long",
+      year: "numeric",
+    }).format(start),
+  };
 }
 
 function parseMoney(value?: string | null) {
@@ -71,6 +123,59 @@ function formatDate(value?: string | null) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function getInfluencerTier(netRevenue: number) {
+  const reachedTier =
+    [...INFLUENCER_TIERS].reverse().find((tier) => netRevenue >= tier.goal) || null;
+  const nextTier = INFLUENCER_TIERS.find((tier) => netRevenue < tier.goal) || null;
+
+  return {
+    reachedTier,
+    nextTier,
+    unlockedCredit: reachedTier?.credit ?? 0,
+    amountToNextGoal: nextTier ? Math.max(nextTier.goal - netRevenue, 0) : null,
+  };
+}
+
+function getNuvemFeeRule(order: NuvemshopOrder, financeConfig: Awaited<ReturnType<typeof loadFinanceConfig>>["config"]) {
+  const method = normalizeText(
+    `${order.payment_details?.method || ""} ${order.gateway_name || ""} ${order.gateway || ""} ${order.payment_status || ""}`,
+  );
+  const installments = Math.max(order.payment_details?.installments || 1, 1);
+
+  if (method.includes("pix")) {
+    return {
+      percent: financeConfig.nuvemPixPercent,
+      fixed: financeConfig.nuvemPixFixed,
+    };
+  }
+
+  if (installments >= 3) {
+    return {
+      percent: financeConfig.nuvemCard3Percent,
+      fixed: financeConfig.nuvemCard3Fixed,
+    };
+  }
+
+  if (installments === 2) {
+    return {
+      percent: financeConfig.nuvemCard2Percent,
+      fixed: financeConfig.nuvemCard2Fixed,
+    };
+  }
+
+  return {
+    percent: financeConfig.nuvemCard1Percent,
+    fixed: financeConfig.nuvemCard1Fixed,
+  };
+}
+
+function getNetRevenue(order: NuvemshopOrder, financeConfig: Awaited<ReturnType<typeof loadFinanceConfig>>["config"]) {
+  const gross = parseMoney(order.total);
+  const feeRule = getNuvemFeeRule(order, financeConfig);
+  const feeCost = gross * (feeRule.percent / 100) + feeRule.fixed;
+  return Math.max(gross - feeCost, 0);
 }
 
 function matchesDateRange(order: NuvemshopOrder, startDate: string, endDate: string) {
@@ -131,12 +236,14 @@ async function fetchAllOrders(client: NuvemshopClient) {
 async function loadInfluencerDashboard(
   client: NuvemshopClient,
   filters: {
+    month: string;
     startDate: string;
     endDate: string;
     couponQuery: string;
     selectedCoupon: string;
     commissionRate: string;
   },
+  financeConfig: Awaited<ReturnType<typeof loadFinanceConfig>>["config"],
 ) {
   try {
     const orders = await fetchAllOrders(client);
@@ -162,13 +269,20 @@ async function loadInfluencerDashboard(
         code,
         orders: 0,
         revenue: 0,
+        netRevenue: 0,
         averageTicket: 0,
         lastOrderAt: null,
         channels: [],
+        currentTierLabel: "Sem meta batida",
+        unlockedCredit: 0,
+        nextGoalAmount: null,
+        amountToNextGoal: null,
+        nextTierLabel: null,
       };
 
       current.orders += 1;
       current.revenue += parseMoney(item.order.total);
+      current.netRevenue += getNetRevenue(item.order, financeConfig);
 
       const channel = getChannelLabel(item.order);
       if (!current.channels.includes(channel)) {
@@ -186,13 +300,33 @@ async function loadInfluencerDashboard(
       .map((row) => ({
         ...row,
         averageTicket: row.orders > 0 ? row.revenue / row.orders : 0,
+        ...(() => {
+          const tier = getInfluencerTier(row.netRevenue);
+          return {
+            currentTierLabel: tier.reachedTier
+              ? `${tier.reachedTier.label} · ${formatMoney(tier.reachedTier.credit)} liberados`
+              : "Sem meta batida",
+            unlockedCredit: tier.unlockedCredit,
+            nextGoalAmount: tier.nextTier?.goal ?? null,
+            amountToNextGoal: tier.amountToNextGoal,
+            nextTierLabel: tier.nextTier?.label ?? null,
+          };
+        })(),
       }))
-      .sort((left, right) => right.revenue - left.revenue);
+      .sort((left, right) => right.netRevenue - left.netRevenue);
 
     const topCoupon = influencerRows[0] || null;
     const totalRevenue = influencerRows.reduce((sum, row) => sum + row.revenue, 0);
+    const totalNetRevenue = influencerRows.reduce((sum, row) => sum + row.netRevenue, 0);
     const totalOrders = influencerRows.reduce((sum, row) => sum + row.orders, 0);
     const totalCommission = totalRevenue * (commissionRate / 100);
+    const totalUnlockedCredit = influencerRows.reduce(
+      (sum, row) => sum + row.unlockedCredit,
+      0,
+    );
+    const influencersNearGoal = influencerRows.filter(
+      (row) => row.amountToNextGoal !== null && row.amountToNextGoal <= 150,
+    ).length;
     const selectedCoupon =
       influencerRows.find((row) => row.code === filters.selectedCoupon) || null;
     const selectedCouponOrders = selectedCoupon
@@ -214,9 +348,12 @@ async function loadInfluencerDashboard(
         selectedCoupon,
         selectedCouponOrders,
         topCoupon,
+        totalNetRevenue,
         totalCommission,
+        totalUnlockedCredit,
         totalOrders,
         totalRevenue,
+        influencersNearGoal,
       },
     };
   } catch (error) {
@@ -234,14 +371,18 @@ async function loadInfluencerDashboard(
 
 export default async function InfluenciadoresPage({ searchParams }: PageProps) {
   const resolvedSearchParams = (await searchParams) || {};
+  const selectedMonth = getSearchValue(resolvedSearchParams, "month") || getCurrentMonthInput();
+  const monthRange = getMonthRange(selectedMonth);
   const filters = {
-    startDate: getSearchValue(resolvedSearchParams, "startDate"),
-    endDate: getSearchValue(resolvedSearchParams, "endDate"),
+    month: selectedMonth,
+    startDate: getSearchValue(resolvedSearchParams, "startDate") || monthRange.startDate,
+    endDate: getSearchValue(resolvedSearchParams, "endDate") || monthRange.endDate,
     couponQuery: getSearchValue(resolvedSearchParams, "couponQuery"),
     selectedCoupon: getSearchValue(resolvedSearchParams, "selectedCoupon"),
     commissionRate: getSearchValue(resolvedSearchParams, "commissionRate") || "8",
   };
   const credentials = getNuvemshopCredentials();
+  const { config: financeConfig } = await loadFinanceConfig();
 
   if (!credentials.ok) {
     return (
@@ -263,7 +404,7 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
   }
 
   const client = new NuvemshopClient(credentials.credentials);
-  const dashboard = await loadInfluencerDashboard(client, filters);
+  const dashboard = await loadInfluencerDashboard(client, filters, financeConfig);
 
   if (!dashboard.ok) {
     return (
@@ -288,17 +429,51 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
     selectedCoupon,
     selectedCouponOrders,
     topCoupon,
+    totalNetRevenue,
     totalCommission,
+    totalUnlockedCredit,
     totalOrders,
     totalRevenue,
+    influencersNearGoal,
   } = dashboard.data;
 
   return (
       <AppShell
         title="Influenciadores"
-        subtitle="Estrutura da tela baseada nos pedidos e cupons reais que chegam da Nuvemshop."
+        subtitle="Programa mensal por receita liquida, com credito interno liberado conforme a meta batida por cupom."
         currentPath="/influenciadores"
       >
+        <section className={styles.section}>
+          <div className={styles.twoColumn}>
+            <div className={styles.callout}>
+              <h3>Programa do mes</h3>
+              <p>
+                O modelo mais saudavel agora e liberar credito interno com base na
+                receita liquida gerada por cada cupom no mes. Assim voce nao
+                registra venda zerada na Nuvemshop e evita confundir faturamento com
+                custo de marketing.
+              </p>
+            </div>
+            <div className={styles.list}>
+              {INFLUENCER_TIERS.map((tier) => (
+                <article key={tier.label} className={styles.listItem}>
+                  <div className={styles.listTitleRow}>
+                    <div className={styles.listTitle}>{tier.label}</div>
+                    <span className={`${styles.pill} ${styles.pillLow}`}>
+                      {formatMoney(tier.credit)}
+                    </span>
+                  </div>
+                  <p className={styles.listDetail}>
+                    Bateu {formatMoney(tier.goal)} de receita liquida em {monthRange.label},
+                    libera {formatMoney(tier.credit)} de credito para escolher
+                    produtos na loja.
+                  </p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
             <div>
@@ -310,6 +485,10 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
           </div>
 
           <form className={styles.filterGrid} method="get">
+            <label className={styles.filterField}>
+              <span>Mes</span>
+              <input type="month" name="month" defaultValue={filters.month} />
+            </label>
             <label className={styles.filterField}>
               <span>Data inicial</span>
               <input type="date" name="startDate" defaultValue={filters.startDate} />
@@ -376,15 +555,30 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
               <div className={styles.metricHint}>Receita dos pedidos com cupom</div>
             </article>
             <article className={styles.metricCard}>
+              <div className={styles.metricLabel}>Receita liquida gerada</div>
+              <div className={styles.metricValue}>{formatMoney(totalNetRevenue)}</div>
+              <div className={styles.metricHint}>Base usada para bater meta e liberar credito</div>
+            </article>
+            <article className={styles.metricCard}>
               <div className={styles.metricLabel}>Comissao prevista</div>
               <div className={styles.metricValue}>{formatMoney(totalCommission)}</div>
               <div className={styles.metricHint}>Baseada em {commissionRate}%</div>
             </article>
             <article className={styles.metricCard}>
+              <div className={styles.metricLabel}>Credito liberado no mes</div>
+              <div className={styles.metricValue}>{formatMoney(totalUnlockedCredit)}</div>
+              <div className={styles.metricHint}>Soma dos niveis batidos por todos os cupons</div>
+            </article>
+            <article className={styles.metricCard}>
+              <div className={styles.metricLabel}>Quase batendo meta</div>
+              <div className={styles.metricValue}>{influencersNearGoal}</div>
+              <div className={styles.metricHint}>Cupons a ate R$ 150 do proximo nivel</div>
+            </article>
+            <article className={styles.metricCard}>
               <div className={styles.metricLabel}>Melhor cupom</div>
               <div className={styles.metricValue}>{topCoupon?.code || "-"}</div>
               <div className={styles.metricHint}>
-                {topCoupon ? `${formatMoney(topCoupon.revenue)} em receita` : "Sem vendas com cupom"}
+                {topCoupon ? `${formatMoney(topCoupon.netRevenue)} de receita liquida` : "Sem vendas com cupom"}
               </div>
             </article>
           </div>
@@ -411,8 +605,12 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
                   <tr>
                     <th>Cupom</th>
                     <th>Pedidos</th>
-                    <th>Receita</th>
+                    <th>Receita bruta</th>
+                    <th>Receita liquida</th>
                     <th>Ticket medio</th>
+                    <th>Nivel atual</th>
+                    <th>Credito liberado</th>
+                    <th>Falta para proxima meta</th>
                     <th>Comissao</th>
                     <th>Canais</th>
                     <th>Ultimo pedido</th>
@@ -431,7 +629,15 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
                       </td>
                       <td>{row.orders}</td>
                       <td>{formatMoney(row.revenue)}</td>
+                      <td>{formatMoney(row.netRevenue)}</td>
                       <td>{formatMoney(row.averageTicket)}</td>
+                      <td>{row.currentTierLabel}</td>
+                      <td>{formatMoney(row.unlockedCredit)}</td>
+                      <td>
+                        {row.amountToNextGoal !== null
+                          ? `${formatMoney(row.amountToNextGoal)} para ${row.nextTierLabel}`
+                          : "Meta maxima batida"}
+                      </td>
                       <td>{formatMoney(row.revenue * (commissionRate / 100))}</td>
                       <td>{row.channels.join(" / ")}</td>
                       <td>{formatDate(row.lastOrderAt)}</td>
@@ -480,6 +686,31 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
                     <div className={styles.metricHint}>Faturamento gerado pelo cupom</div>
                   </article>
                   <article className={styles.metricCard}>
+                    <div className={styles.metricLabel}>Receita liquida</div>
+                    <div className={styles.metricValue}>{formatMoney(selectedCoupon.netRevenue)}</div>
+                    <div className={styles.metricHint}>Base usada para bater a meta do mes</div>
+                  </article>
+                  <article className={styles.metricCard}>
+                    <div className={styles.metricLabel}>Credito liberado</div>
+                    <div className={styles.metricValue}>
+                      {formatMoney(selectedCoupon.unlockedCredit)}
+                    </div>
+                    <div className={styles.metricHint}>{selectedCoupon.currentTierLabel}</div>
+                  </article>
+                  <article className={styles.metricCard}>
+                    <div className={styles.metricLabel}>Falta para proxima meta</div>
+                    <div className={styles.metricValue}>
+                      {selectedCoupon.amountToNextGoal !== null
+                        ? formatMoney(selectedCoupon.amountToNextGoal)
+                        : "-"}
+                    </div>
+                    <div className={styles.metricHint}>
+                      {selectedCoupon.amountToNextGoal !== null
+                        ? `Para chegar em ${selectedCoupon.nextTierLabel}`
+                        : "Ja bateu o maior nivel do programa"}
+                    </div>
+                  </article>
+                  <article className={styles.metricCard}>
                     <div className={styles.metricLabel}>Comissao</div>
                     <div className={styles.metricValue}>
                       {formatMoney(selectedCoupon.revenue * (commissionRate / 100))}
@@ -515,6 +746,15 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
                       ))}
                     </tbody>
                   </table>
+                </div>
+
+                <div className={styles.callout}>
+                  <h3>Leitura pratica do parceiro</h3>
+                  <p>
+                    {selectedCoupon.amountToNextGoal !== null
+                      ? `Hoje o cupom ${selectedCoupon.code} gerou ${formatMoney(selectedCoupon.netRevenue)} liquidos em ${monthRange.label}. Faltam ${formatMoney(selectedCoupon.amountToNextGoal)} para bater ${selectedCoupon.nextTierLabel} e liberar mais credito no mes.`
+                      : `Hoje o cupom ${selectedCoupon.code} ja bateu o maior nivel do programa em ${monthRange.label} e liberou ${formatMoney(selectedCoupon.unlockedCredit)} de credito interno.`}
+                  </p>
                 </div>
               </>
             ) : (
