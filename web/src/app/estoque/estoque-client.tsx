@@ -48,7 +48,11 @@ export function EstoqueClient({
   initialNuvemshopStock,
   initialNuvemshopStockState,
 }: EstoqueClientProps) {
-  const defaultBaseCategory = getDefaultStockCategory(initialNuvemshopStock);
+  const baseCategoryOptions = useMemo(
+    () => getStockBaseCategoryOptions(initialNuvemshopStock),
+    [initialNuvemshopStock],
+  );
+  const defaultBaseCategory = baseCategoryOptions[0] ?? "";
   const [items, setItems] = useState(initialItems);
   const [persistence, setPersistence] =
     useState<OperationalPersistenceState>(initialPersistence);
@@ -213,6 +217,22 @@ export function EstoqueClient({
       ) ?? null,
     [items, selectedColor, selectedSize, selectedSku],
   );
+
+  const matchingFormItem = useMemo(
+    () =>
+      items.find(
+        (item) =>
+          item.sku === form.sku &&
+          item.color === form.color &&
+          item.size === form.size,
+      ) ?? null,
+    [form.color, form.size, form.sku, items],
+  );
+
+  const addQuantityPreview = Math.max(parsePositiveInteger(form.total), 0);
+  const projectedTotal = matchingFormItem
+    ? matchingFormItem.total + addQuantityPreview
+    : addQuantityPreview;
 
   const selectedDtfItem = useMemo(
     () => dtfItems.find((item) => item.id === selectedDtfId) ?? null,
@@ -701,10 +721,11 @@ export function EstoqueClient({
       <section className={styles.section}>
         <div className={styles.sectionHeader}>
           <div>
-            <div className={styles.sectionTitle}>Banco interno do estoque</div>
+            <div className={styles.sectionTitle}>Central do estoque base</div>
             <p className={styles.sectionSubtitle}>
-              O estoque base e interno da marca, entao ele fica salvo no nosso
-              banco e pode ser alterado direto pelo sistema.
+              Aqui voce adiciona saldo novo, revisa uma linha especifica e bate
+              o olho no total real, nas estampadas da Nuvemshop e no que segue
+              livre para vender ou estampar.
             </p>
           </div>
         </div>
@@ -722,22 +743,24 @@ export function EstoqueClient({
               : ""}
           </p>
         </div>
-      </section>
 
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <div className={styles.sectionTitle}>Salvar linha de estoque</div>
-            <p className={styles.sectionSubtitle}>
-              Cadastre por cor e tamanho o que chegou da fabrica. Se a
-              combinacao ja existir, o sistema atualiza essa mesma linha no
-              banco.
-            </p>
-          </div>
+        <div className={styles.metricGrid} style={{ marginTop: 16 }}>
+          {metrics.map((metric) => (
+            <article key={metric.label} className={styles.metricCard}>
+              <div className={styles.metricLabel}>{metric.label}</div>
+              <div className={styles.metricValue}>{metric.value}</div>
+              <div className={styles.metricHint}>{metric.detail}</div>
+            </article>
+          ))}
         </div>
 
-        <div className={styles.configGrid}>
-          <article className={styles.configCard}>
+        <div className={styles.stockSplitGrid} style={{ marginTop: 16 }}>
+          <article className={styles.stockPanel}>
+            <div className={styles.listTitle}>Adicionar ao estoque</div>
+            <p className={styles.sectionSubtitle}>
+              Use esse bloco para registrar lote novo. Se a combinacao ja
+              existir, a quantidade informada sera somada ao total atual.
+            </p>
             <div className={styles.formStack}>
               <label className={styles.filterField}>
                 <span>Produto base</span>
@@ -750,10 +773,10 @@ export function EstoqueClient({
                     }))
                   }
                 >
-                  {nuvemshopCategoryOptions.length === 0 ? (
+                  {baseCategoryOptions.length === 0 ? (
                     <option value="">Sem categorias da Nuvemshop</option>
                   ) : (
-                    nuvemshopCategoryOptions.map((category) => (
+                    baseCategoryOptions.map((category) => (
                       <option key={category} value={category}>
                         {category}
                       </option>
@@ -836,6 +859,19 @@ export function EstoqueClient({
               </label>
             </div>
 
+            <div className={styles.callout} style={{ marginTop: 16 }}>
+              <h3>
+                {matchingFormItem
+                  ? "Essa linha ja existe no banco"
+                  : "Voce vai criar uma linha nova"}
+              </h3>
+              <p>
+                {matchingFormItem
+                  ? `Hoje essa combinacao esta com ${matchingFormItem.total} no total. Ao adicionar ${addQuantityPreview}, ela passa para ${projectedTotal}.`
+                  : `Ao salvar ${addQuantityPreview}, essa combinacao entra como nova linha no estoque base.`}
+              </p>
+            </div>
+
             <div className={styles.filterActions}>
               <button
                 type="button"
@@ -843,38 +879,18 @@ export function EstoqueClient({
                 onClick={handleCreateItem}
                 disabled={!persistence.enabled || isCreating}
               >
-                {isCreating ? "Salvando..." : "Salvar linha"}
+                {isCreating ? "Salvando..." : "Adicionar saldo"}
               </button>
             </div>
           </article>
 
-          <article className={styles.configCard}>
-            <div className={styles.callout}>
-              <h3>Como esse salvar funciona</h3>
-              <p>
-                O cadastro usa o schema repeticao_maxima e evita duplicidade por
-                produto base, cor e tamanho. Se voce repetir a combinacao, ele
-                atualiza a linha existente.
-              </p>
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <div className={styles.sectionTitle}>Atualizar saldos</div>
+          <article className={styles.stockPanel}>
+            <div className={styles.listTitle}>Revisar uma linha especifica</div>
             <p className={styles.sectionSubtitle}>
-              Escolha modelo, cor e tamanho. So depois disso os campos de
-              edicao aparecem. Estampadas vem da Nuvemshop e nao sao alteradas
-              aqui.
+              Aqui voce corrige o saldo final de uma linha ja criada. As
+              estampadas continuam vindo da Nuvemshop e nao sao alteradas
+              manualmente.
             </p>
-          </div>
-        </div>
-
-        <div className={styles.configGrid}>
-          <article className={styles.configCard}>
             <div className={styles.formStack}>
               <label className={styles.filterField}>
                 <span>Modelo</span>
@@ -916,83 +932,85 @@ export function EstoqueClient({
                 </select>
               </label>
             </div>
-          </article>
 
-          {selectedItem ? (
-            <article className={styles.configCard}>
-              {(() => {
-                const draft = drafts[selectedItem.id] ?? selectedItem;
+            {selectedItem
+              ? (() => {
+                  const draft = drafts[selectedItem.id] ?? selectedItem;
 
-                return (
-                  <>
-                    <div className={styles.listTitle}>{`${selectedItem.sku} · ${selectedItem.color} · ${selectedItem.size}`}</div>
-                    <div className={styles.formStack}>
-                      <label className={styles.filterField}>
-                        <span>Total</span>
-                        <input
-                          type="number"
-                          value={draft.total}
-                          onChange={(event) =>
-                            updateDraft(
-                              selectedItem.id,
-                              "total",
-                              Number.parseInt(event.target.value || "0", 10),
-                            )
+                  return (
+                    <>
+                      <div className={styles.callout} style={{ marginTop: 16 }}>
+                        <h3>{`${selectedItem.sku} · ${selectedItem.color} · ${selectedItem.size}`}</h3>
+                        <p>
+                          Total atual {draft.total}, estampadas {draft.printed} e
+                          livres {draft.free}.
+                        </p>
+                      </div>
+                      <div className={styles.formStack}>
+                        <label className={styles.filterField}>
+                          <span>Total</span>
+                          <input
+                            type="number"
+                            value={draft.total}
+                            onChange={(event) =>
+                              updateDraft(
+                                selectedItem.id,
+                                "total",
+                                Number.parseInt(event.target.value || "0", 10),
+                              )
+                            }
+                          />
+                        </label>
+                        <label className={styles.filterField}>
+                          <span>Ja estampadas</span>
+                          <input type="number" value={draft.printed} disabled />
+                        </label>
+                        <label className={styles.filterField}>
+                          <span>Livres</span>
+                          <input type="number" value={draft.free} disabled />
+                        </label>
+                        <label className={styles.filterField}>
+                          <span>Ponto de reposicao</span>
+                          <input
+                            type="number"
+                            value={draft.reorderPoint}
+                            onChange={(event) =>
+                              updateDraft(
+                                selectedItem.id,
+                                "reorderPoint",
+                                Number.parseInt(event.target.value || "0", 10),
+                              )
+                            }
+                          />
+                        </label>
+                        <label className={styles.filterField}>
+                          <span>Observacao</span>
+                          <input
+                            value={draft.notes}
+                            onChange={(event) =>
+                              updateDraft(selectedItem.id, "notes", event.target.value)
+                            }
+                          />
+                        </label>
+                      </div>
+                      <div className={styles.filterActions}>
+                        <button
+                          type="button"
+                          className={styles.secondaryButton}
+                          onClick={() => handleSaveItem(selectedItem.id)}
+                          disabled={
+                            !persistence.enabled || savingItemId === selectedItem.id
                           }
-                        />
-                      </label>
-                      <label className={styles.filterField}>
-                        <span>Ja estampadas</span>
-                        <input type="number" value={draft.printed} disabled />
-                      </label>
-                      <label className={styles.filterField}>
-                        <span>Livres</span>
-                        <input type="number" value={draft.free} disabled />
-                      </label>
-                      <label className={styles.filterField}>
-                        <span>Ponto de reposicao</span>
-                        <input
-                          type="number"
-                          value={draft.reorderPoint}
-                          onChange={(event) =>
-                            updateDraft(
-                              selectedItem.id,
-                              "reorderPoint",
-                              Number.parseInt(event.target.value || "0", 10),
-                            )
-                          }
-                        />
-                      </label>
-                      <label className={styles.filterField}>
-                        <span>Observacao</span>
-                        <input
-                          value={draft.notes}
-                          onChange={(event) =>
-                            updateDraft(selectedItem.id, "notes", event.target.value)
-                          }
-                        />
-                      </label>
-                    </div>
-                    <div className={styles.filterActions}>
-                      <button
-                        type="button"
-                        className={styles.secondaryButton}
-                        onClick={() => handleSaveItem(selectedItem.id)}
-                        disabled={
-                          !persistence.enabled || savingItemId === selectedItem.id
-                        }
-                      >
-                        {savingItemId === selectedItem.id
-                          ? "Salvando..."
-                          : "Salvar saldos"}
-                      </button>
-                    </div>
-                  </>
-                );
-              })()}
-            </article>
-          ) : (
-            <article className={styles.configCard}>
+                        >
+                          {savingItemId === selectedItem.id
+                            ? "Salvando..."
+                            : "Salvar saldos"}
+                        </button>
+                      </div>
+                    </>
+                  );
+                })()
+              : (
               <div className={styles.callout}>
                 <h3>Nenhuma combinacao encontrada</h3>
                 <p>
@@ -1000,30 +1018,46 @@ export function EstoqueClient({
                   estoque.
                 </p>
               </div>
-            </article>
-          )}
-        </div>
-      </section>
-
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <div className={styles.sectionTitle}>Leitura do estoque atual</div>
-            <p className={styles.sectionSubtitle}>
-              Agora o resumo bate com a sua rotina: total em maos, estampadas
-              na Nuvemshop e livres para novas vendas.
-            </p>
-          </div>
+            )}
+          </article>
         </div>
 
-        <div className={styles.metricGrid}>
-          {metrics.map((metric) => (
-            <article key={metric.label} className={styles.metricCard}>
-              <div className={styles.metricLabel}>{metric.label}</div>
-              <div className={styles.metricValue}>{metric.value}</div>
-              <div className={styles.metricHint}>{metric.detail}</div>
-            </article>
-          ))}
+        <div className={styles.stockSplitGrid} style={{ marginTop: 16 }}>
+          <article className={styles.stockPanel}>
+            <div className={styles.listTitle}>Como a leitura funciona</div>
+            <div className={styles.stockList}>
+              <div className={styles.stockRow}>
+                <span>Total base</span>
+                <strong>Vem do seu banco interno</strong>
+              </div>
+              <div className={styles.stockRow}>
+                <span>Ja estampadas</span>
+                <strong>Soma o estoque da Nuvemshop por cor e tamanho</strong>
+              </div>
+              <div className={styles.stockRow}>
+                <span>Livres</span>
+                <strong>Total base menos o que ja esta estampado</strong>
+              </div>
+            </div>
+          </article>
+
+          <article className={styles.stockPanel}>
+            <div className={styles.listTitle}>Fluxo recomendado</div>
+            <div className={styles.stockList}>
+              <div className={styles.stockRow}>
+                <span>Chegou lote novo</span>
+                <strong>Use "Adicionar ao estoque"</strong>
+              </div>
+              <div className={styles.stockRow}>
+                <span>Quer corrigir uma linha</span>
+                <strong>Use "Revisar uma linha especifica"</strong>
+              </div>
+              <div className={styles.stockRow}>
+                <span>Quer conferir estampadas</span>
+                <strong>Olhe a foto da Nuvemshop abaixo</strong>
+              </div>
+            </div>
+          </article>
         </div>
       </section>
 
@@ -1032,8 +1066,9 @@ export function EstoqueClient({
           <div>
             <div className={styles.sectionTitle}>Cobertura por cor e tamanho</div>
             <p className={styles.sectionSubtitle}>
-              Essa grade mostra a foto atual do banco depois dos ajustes que
-              voce faz no topo da tela.
+              Essa grade mostra a foto consolidada do banco interno: o total que
+              voce controla, o que ja aparece estampado na loja e o saldo livre
+              real por combinacao.
             </p>
           </div>
         </div>
@@ -1673,16 +1708,30 @@ function normalizeFilterValue(value: string) {
     .toLowerCase();
 }
 
-function getDefaultStockCategory(products: NuvemshopStockProduct[]) {
+function getStockBaseCategoryOptions(products: NuvemshopStockProduct[]) {
   const categories = Array.from(
     new Set(products.flatMap((product) => product.categories)),
   ).sort();
+  const blockedCategories = new Set(["full estampa", "minimalista", "outlet"]);
+  const filtered = categories.filter(
+    (category) => !blockedCategories.has(normalizeFilterValue(category)),
+  );
+
+  return filtered.length > 0 ? filtered : categories;
+}
+
+function getDefaultStockCategory(products: NuvemshopStockProduct[]) {
+  const categories = getStockBaseCategoryOptions(products);
 
   return (
     categories.find((category) => normalizeFilterValue(category) === "oversized") ??
     categories[0] ??
     ""
   );
+}
+
+function parsePositiveInteger(value: string) {
+  return Number.parseInt(value || "0", 10) || 0;
 }
 
 function sortStockItems(items: BaseStockItem[]) {
