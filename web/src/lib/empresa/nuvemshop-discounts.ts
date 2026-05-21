@@ -277,7 +277,7 @@ export function buildCompanyDiscountCallbackDecision(
   const matchingRules = publishedRules
     .map((rule) => ({
       rule,
-      quantity: getEligibleQuantity(rule, lineItems),
+      quantity: getMatchedQuantity(rule, lineItems),
     }))
     .filter((entry) => entry.quantity >= entry.rule.minimumQuantity)
     .sort((left, right) => {
@@ -443,6 +443,58 @@ function extractMatchIds(value: Record<string, unknown>) {
       ].filter(Boolean),
     ),
   );
+}
+
+function getMatchedQuantity(rule: CompanyCartDiscountRule, items: CartLineItem[]) {
+  if (rule.comboGroups.length > 0) {
+    return getEligibleGroupedQuantity(rule, items);
+  }
+
+  return getEligibleQuantity(rule, items);
+}
+
+function getEligibleGroupedQuantity(
+  rule: CompanyCartDiscountRule,
+  items: CartLineItem[],
+) {
+  const remainingItems = items.map((item) => ({
+    matchIds: item.matchIds,
+    quantity: item.quantity,
+  }));
+  let matchedQuantity = 0;
+
+  for (const group of rule.comboGroups) {
+    const eligibleIds = new Set(group.productIds);
+    let groupQuantity = 0;
+
+    for (const item of remainingItems) {
+      if (groupQuantity >= group.minimumQuantity) {
+        break;
+      }
+
+      if (
+        item.quantity <= 0 ||
+        !item.matchIds.some((matchId) => eligibleIds.has(matchId))
+      ) {
+        continue;
+      }
+
+      const allocatable = Math.min(
+        item.quantity,
+        group.minimumQuantity - groupQuantity,
+      );
+      item.quantity -= allocatable;
+      groupQuantity += allocatable;
+    }
+
+    if (groupQuantity < group.minimumQuantity) {
+      return 0;
+    }
+
+    matchedQuantity += groupQuantity;
+  }
+
+  return matchedQuantity;
 }
 
 function getEligibleQuantity(rule: CompanyCartDiscountRule, items: CartLineItem[]) {

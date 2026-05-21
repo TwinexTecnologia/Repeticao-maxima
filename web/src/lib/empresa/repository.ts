@@ -43,6 +43,14 @@ export type CompanyDiscountProductOption = {
   matchIds: string[];
 };
 
+export type CompanyCartDiscountGroup = {
+  categoryId: string;
+  categoryName: string;
+  minimumQuantity: number;
+  productIds: string[];
+  productNames: string[];
+};
+
 export type CompanyCartDiscountRule = {
   id: string;
   title: string;
@@ -51,6 +59,7 @@ export type CompanyCartDiscountRule = {
   categoryName: string;
   categoryIds: string[];
   categoryNames: string[];
+  comboGroups: CompanyCartDiscountGroup[];
   productIds: string[];
   productNames: string[];
   minimumQuantity: number;
@@ -150,6 +159,7 @@ export async function createCompanyCartDiscountRule(
         category_name: row.categoryName,
         category_ids: row.categoryIds,
         category_names: row.categoryNames,
+        combo_groups: row.comboGroups,
         product_ids: row.productIds,
         product_names: row.productNames,
         minimum_quantity: row.minimumQuantity,
@@ -296,6 +306,7 @@ export async function updateCompanyCartDiscountRule(
         category_name: row.categoryName,
         category_ids: row.categoryIds,
         category_names: row.categoryNames,
+        combo_groups: row.comboGroups,
         product_ids: row.productIds,
         product_names: row.productNames,
         minimum_quantity: row.minimumQuantity,
@@ -368,6 +379,17 @@ export async function loadPublishedCompanyDiscountRulesForCallback() {
       .map(rowToCompanyCartDiscountRule)
       .map((rule) => ({
         ...rule,
+        comboGroups: rule.comboGroups.map((group) => ({
+          ...group,
+          productIds: Array.from(
+            new Set(
+              group.productIds.flatMap((productId) => {
+                const matchIds = productMatchMap.get(productId);
+                return matchIds && matchIds.length > 0 ? matchIds : [productId];
+              }),
+            ),
+          ),
+        })),
         productIds: Array.from(
           new Set(
             rule.productIds.flatMap((productId) => {
@@ -540,6 +562,7 @@ function rowToCompanyCartDiscountRule(
         : String(row.category_name ?? "").trim()
           ? [String(row.category_name ?? "").trim()]
           : [],
+    comboGroups: getDiscountGroupArrayValue(row.combo_groups),
     productIds: getTextArrayValue(row.product_ids),
     productNames: getTextArrayValue(row.product_names),
     minimumQuantity: Math.max(getIntegerValue(row.minimum_quantity), 1),
@@ -568,6 +591,14 @@ function normalizeCompanyCartDiscountInput(input: unknown) {
   const categoryNames = getTextArrayValue(source.categoryNames).filter(Boolean);
   const fallbackCategoryId = String(source.categoryId ?? "").trim();
   const fallbackCategoryName = String(source.categoryName ?? "").trim();
+  const comboGroups = getDiscountGroupArrayValue(source.comboGroups);
+  const comboGroupProductIds = Array.from(
+    new Set(comboGroups.flatMap((group) => group.productIds)),
+  );
+  const comboGroupProductNames = Array.from(
+    new Set(comboGroups.flatMap((group) => group.productNames)),
+  );
+  const productIds = getTextArrayValue(source.productIds).filter(Boolean);
   const productNames = getTextArrayValue(source.productNames).filter(Boolean);
   const resolvedCategoryIds =
     categoryIds.length > 0
@@ -581,27 +612,50 @@ function normalizeCompanyCartDiscountInput(input: unknown) {
       : fallbackCategoryName
         ? [fallbackCategoryName]
         : [];
+  const resolvedProductIds =
+    productIds.length > 0 ? productIds : comboGroupProductIds;
+  const resolvedProductNames =
+    productNames.length > 0 ? productNames : comboGroupProductNames;
+  const resolvedMinimumQuantity =
+    comboGroups.length > 0
+      ? comboGroups.reduce((sum, group) => sum + group.minimumQuantity, 0)
+      : Math.max(getIntegerValue(source.minimumQuantity), 1);
 
   if (resolvedCategoryIds.length === 0) {
     throw new Error("Escolha pelo menos uma categoria da Nuvemshop para a promocao.");
   }
 
-  if (productNames.length === 0) {
+  if (resolvedProductNames.length === 0 || resolvedProductIds.length === 0) {
     throw new Error("Selecione pelo menos um produto participante da promocao.");
+  }
+
+  if (
+    ruleMode === "misto" &&
+    comboGroups.length > 0 &&
+    comboGroups.some(
+      (group) =>
+        !resolvedCategoryIds.includes(group.categoryId) ||
+        group.productIds.length === 0,
+    )
+  ) {
+    throw new Error(
+      "Revise os grupos da promocao composta para garantir categoria e produtos em cada bloco.",
+    );
   }
 
   return {
     title:
       String(source.title ?? "").trim() ||
-      `Leve ${Math.max(getIntegerValue(source.minimumQuantity), 1)} com desconto em ${resolvedCategoryNames.join(", ") || "categoria selecionada"}`,
+      `Leve ${resolvedMinimumQuantity} com desconto em ${resolvedCategoryNames.join(", ") || "categoria selecionada"}`,
     ruleMode,
     categoryId: resolvedCategoryIds[0] || "",
     categoryName: resolvedCategoryNames[0] || "",
     categoryIds: resolvedCategoryIds,
     categoryNames: resolvedCategoryNames,
-    productIds: getTextArrayValue(source.productIds).filter(Boolean),
-    productNames,
-    minimumQuantity: Math.max(getIntegerValue(source.minimumQuantity), 1),
+    comboGroups,
+    productIds: resolvedProductIds,
+    productNames: resolvedProductNames,
+    minimumQuantity: resolvedMinimumQuantity,
     discountAmount: Math.max(getNumberValue(source.discountAmount), 0),
     active: source.active === undefined ? true : Boolean(source.active),
     notes: String(source.notes ?? "").trim(),
@@ -660,6 +714,30 @@ function getTextArrayValue(value: unknown) {
   return value
     .map((item) => String(item ?? "").trim())
     .filter((item) => item.length > 0);
+}
+
+function getDiscountGroupArrayValue(value: unknown): CompanyCartDiscountGroup[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      const source = isRecord(item) ? item : {};
+      return {
+        categoryId: String(source.categoryId ?? "").trim(),
+        categoryName: String(source.categoryName ?? "").trim(),
+        minimumQuantity: Math.max(getIntegerValue(source.minimumQuantity), 1),
+        productIds: getTextArrayValue(source.productIds).filter(Boolean),
+        productNames: getTextArrayValue(source.productNames).filter(Boolean),
+      };
+    })
+    .filter(
+      (group) =>
+        Boolean(group.categoryId) &&
+        Boolean(group.categoryName) &&
+        group.productIds.length > 0,
+    );
 }
 
 function getNullableTextValue(value: unknown) {
