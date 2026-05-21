@@ -40,42 +40,26 @@ export default async function Home() {
   return (
     <AppShell
       title="Centro da operacao"
-      subtitle="Uma visao geral para sair da Dash sabendo quanto o estoque representa, quais cenarios mais apertam o caixa e quanto falta para pagar o que esta em aberto."
+      subtitle="Uma leitura estrategica do mes para entender saude da loja, cobertura das dividas e onde o estoque pede recompra ou remanejamento."
       currentPath="/"
     >
       <section className={styles.section}>
         <div className={styles.hero}>
           <div className={styles.heroCard}>
-            <h2>O foco da Dash agora e diagnostico, nao repeticao.</h2>
+            <h2>O que esta acontecendo na loja neste mes.</h2>
             <p>
-              A tela principal cruza estoque, dividas, pedidos do mes e regras
-              de taxa para te responder tres coisas: quanto o lote vale hoje,
-              como os cenarios de venda mexem no caixa e se o ritmo atual paga
-              o que esta aberto.
+              A Dash agora cruza pedidos do mes, dividas abertas, custos e
+              cobertura do estoque para te responder tres coisas: se o caixa
+              aguenta os proximos vencimentos, qual cenario comercial aperta a
+              margem e quais bases precisam de pedido ou remanejamento.
             </p>
             <div className={styles.heroBulletList}>
-              <div className={styles.heroBullet}>
-                <span>01</span>
-                <span>
-                  Estoque atual: {snapshot.totalUnits} pecas, entre{" "}
-                  {formatMoney(snapshot.stockValueMinimal)} e{" "}
-                  {formatMoney(snapshot.stockValueFull)} em custo.
-                </span>
-              </div>
-              <div className={styles.heroBullet}>
-                <span>02</span>
-                <span>
-                  Dividas em aberto: {formatMoney(snapshot.openDebtTotal)}. No
-                  pior cenario do combo, o lote gera{" "}
-                  {formatMoney(snapshot.stockPotentialWorstNet)} liquidos.
-                </span>
-              </div>
-              <div className={styles.heroBullet}>
-                <span>03</span>
-                <span>
-                  Perfil do mes: {snapshot.customerProfileSummary}.
-                </span>
-              </div>
+              {snapshot.heroBullets.map((bullet, index) => (
+                <div key={bullet} className={styles.heroBullet}>
+                  <span>{String(index + 1).padStart(2, "0")}</span>
+                  <span>{bullet}</span>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -94,16 +78,16 @@ export default async function Home() {
       <section className={styles.section}>
         <div className={styles.sectionHeader}>
           <div>
-            <div className={styles.sectionTitle}>Visao geral do momento</div>
+            <div className={styles.sectionTitle}>Radar do mes</div>
             <p className={styles.sectionSubtitle}>
-              Esses cards juntam saude do estoque, caixa do mes e peso das
-              dividas sem repetir os detalhes das outras abas.
+              O painel abaixo resume faturamento, liquido, vencimentos e pressao
+              do estoque em uma leitura rapida.
             </p>
           </div>
         </div>
 
         <div className={styles.metricGrid}>
-          {snapshot.overviewMetrics.map((metric) => (
+          {snapshot.financeMetrics.map((metric) => (
             <article key={metric.label} className={styles.metricCard}>
               <div className={styles.metricLabel}>{metric.label}</div>
               <div className={styles.metricValue}>{metric.value}</div>
@@ -118,11 +102,71 @@ export default async function Home() {
           <div>
             <div className={styles.sectionHeader}>
               <div>
-                <div className={styles.sectionTitle}>Cenarios que mexem no caixa</div>
+                <div className={styles.sectionTitle}>Dividas por janela</div>
                 <p className={styles.sectionSubtitle}>
-                  A leitura abaixo abre todos os cenarios salvos hoje, com taxa,
-                  liquido, lucro total e margem percentual para pedido unitario
-                  e combo.
+                  Aqui o foco e simples: quanto vence em cada janela e se o
+                  ritmo liquido atual da operacao cobre esse bloco.
+                </p>
+              </div>
+            </div>
+
+            <div className={styles.list}>
+              {snapshot.debtWindowRows.map((row) => (
+                <article key={row.label} className={styles.listItem}>
+                  <div className={styles.listTitleRow}>
+                    <div className={styles.listTitle}>{row.label}</div>
+                    <span className={`${styles.pill} ${getAlertPillClass(row.level)}`}>
+                      {row.badge}
+                    </span>
+                  </div>
+                  <p className={styles.listDetail}>{row.detail}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+
+          <div className={styles.stack}>
+            <div className={styles.callout}>
+              <h3>Leitura financeira direta</h3>
+              <p>{snapshot.financialDiagnosis}</p>
+            </div>
+
+            <article className={styles.metricCard}>
+              <div className={styles.metricLabel}>Liquido por dia no ritmo atual</div>
+              <div className={styles.metricValue}>{snapshot.dailyNetPace}</div>
+              <div className={styles.metricHint}>
+                Considera Nuvemshop do mes atual e a parcela diaria do TikTok.
+              </div>
+            </article>
+
+            <article className={styles.metricCard}>
+              <div className={styles.metricLabel}>Projecao liquida ate o fim do mes</div>
+              <div className={styles.metricValue}>{snapshot.projectedMonthNet}</div>
+              <div className={styles.metricHint}>
+                Folga estimada da operacao antes de olhar o valor do lote.
+              </div>
+            </article>
+
+            <article className={styles.metricCard}>
+              <div className={styles.metricLabel}>Ticket medio do mes</div>
+              <div className={styles.metricValue}>{snapshot.averageTicket}</div>
+              <div className={styles.metricHint}>
+                {snapshot.totalOrdersLabel} no mes atual da Nuvemshop.
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.twoColumn}>
+          <div>
+            <div className={styles.sectionHeader}>
+              <div>
+                <div className={styles.sectionTitle}>Cenarios que mais mexem na margem</div>
+                <p className={styles.sectionSubtitle}>
+                  A tabela abaixo foca nos cenarios mais provaveis hoje: Pix,
+                  cupom e cartao ate 2x, tanto no unitario quanto no combo.
                 </p>
               </div>
             </div>
@@ -133,7 +177,6 @@ export default async function Home() {
                   <tr>
                     <th>Cenario</th>
                     <th>Qtd</th>
-                    <th>Taxa</th>
                     <th>Liquido</th>
                     <th>Lucro full</th>
                     <th>Margem full</th>
@@ -142,11 +185,10 @@ export default async function Home() {
                   </tr>
                 </thead>
                 <tbody>
-                  {snapshot.scenarioRows.map((row) => (
+                  {snapshot.strategicScenarioRows.map((row) => (
                     <tr key={row.title}>
                       <td>{row.title}</td>
                       <td>{row.quantity}</td>
-                      <td>{formatMoney(row.feeCost)}</td>
                       <td>{formatMoney(row.netReceived)}</td>
                       <td className={getProfitToneClass(row.fullMarginPercent)}>
                         {formatMoney(row.fullProfit)}
@@ -169,25 +211,17 @@ export default async function Home() {
 
           <div className={styles.stack}>
             <div className={styles.callout}>
-              <h3>Leitura direta do lote</h3>
-              <p>{snapshot.directDiagnosis}</p>
+              <h3>Leitura comercial direta</h3>
+              <p>{snapshot.marginDiagnosis}</p>
             </div>
 
-            <article className={styles.metricCard}>
-              <div className={styles.metricLabel}>Ticket medio do mes</div>
-              <div className={styles.metricValue}>{snapshot.averageTicket}</div>
-              <div className={styles.metricHint}>
-                {snapshot.totalOrdersLabel} no mes atual da Nuvemshop.
-              </div>
-            </article>
-
-            <article className={styles.metricCard}>
-              <div className={styles.metricLabel}>Pior padrao do mes</div>
-              <div className={styles.metricValue}>{snapshot.worstPatternShare}</div>
-              <div className={styles.metricHint}>
-                Pedidos em 3x ou mais com cupom.
-              </div>
-            </article>
+            {snapshot.pricingFocusMetrics.map((metric) => (
+              <article key={metric.label} className={styles.metricCard}>
+                <div className={styles.metricLabel}>{metric.label}</div>
+                <div className={styles.metricValue}>{metric.value}</div>
+                <div className={styles.metricHint}>{metric.detail}</div>
+              </article>
+            ))}
           </div>
         </div>
       </section>
@@ -198,7 +232,7 @@ export default async function Home() {
             <div className={styles.sectionTitle}>Saude da base compradora</div>
             <p className={styles.sectionSubtitle}>
               O objetivo aqui e entender se a base esta ajudando seu caixa ou se
-              esta puxando demais para o pior cenario.
+              esta puxando demais para cenarios com cupom e parcelamento.
             </p>
           </div>
         </div>
@@ -219,29 +253,24 @@ export default async function Home() {
           <div>
             <div className={styles.sectionHeader}>
               <div>
-                <div className={styles.sectionTitle}>Quanto falta para pagar o aberto</div>
+                <div className={styles.sectionTitle}>Estoque que pede decisao</div>
                 <p className={styles.sectionSubtitle}>
-                  Leitura pratica para saber quantos combos voce precisa girar
-                  para cobrir as dividas atuais em cada cenario.
+                  Aqui a Dash explica o por que de pedir, remanejar ou observar
+                  cada base agora.
                 </p>
               </div>
             </div>
 
             <div className={styles.list}>
-              {snapshot.coverageRows.map((row) => (
-                <article key={row.label} className={styles.listItem}>
+              {snapshot.stockActionRows.map((row) => (
+                <article key={row.title} className={styles.listItem}>
                   <div className={styles.listTitleRow}>
-                    <div className={styles.listTitle}>{row.label}</div>
-                    <span className={`${styles.pill} ${styles.pillLow}`}>
-                      {row.combosNeeded} combos
+                    <div className={styles.listTitle}>{row.title}</div>
+                    <span className={`${styles.pill} ${getAlertPillClass(row.level)}`}>
+                      {row.badge}
                     </span>
                   </div>
-                  <p className={styles.listDetail}>
-                    {row.piecesNeeded} pecas para cobrir{" "}
-                    {formatMoney(snapshot.openDebtTotal)} em aberto. Sobra
-                    estimada de {formatMoney(row.surplusAfterCoverage)} apos
-                    bater a meta de caixa desse bloco.
-                  </p>
+                  <p className={styles.listDetail}>{row.detail}</p>
                 </article>
               ))}
             </div>
@@ -258,26 +287,17 @@ export default async function Home() {
             </div>
 
             <div className={styles.list}>
-              {snapshot.alerts.map((alert) => {
-                const pillClass =
-                  alert.level === "alto"
-                    ? styles.pillHigh
-                    : alert.level === "medio"
-                      ? styles.pillMedium
-                      : styles.pillLow;
-
-                return (
-                  <article key={alert.title} className={styles.listItem}>
-                    <div className={styles.listTitleRow}>
-                      <div className={styles.listTitle}>{alert.title}</div>
-                      <span className={`${styles.pill} ${pillClass}`}>
-                        {alert.level}
-                      </span>
-                    </div>
-                    <p className={styles.listDetail}>{alert.detail}</p>
-                  </article>
-                );
-              })}
+              {snapshot.alerts.map((alert) => (
+                <article key={alert.title} className={styles.listItem}>
+                  <div className={styles.listTitleRow}>
+                    <div className={styles.listTitle}>{alert.title}</div>
+                    <span className={`${styles.pill} ${getAlertPillClass(alert.level)}`}>
+                      {alert.level}
+                    </span>
+                  </div>
+                  <p className={styles.listDetail}>{alert.detail}</p>
+                </article>
+              ))}
             </div>
           </div>
         </div>
@@ -294,47 +314,73 @@ function buildHomeSnapshot(params: {
   financeDashboard: ReturnType<typeof buildFinanceDashboard>;
   comboQuantity: number;
 }) {
-  const { stockItems, debts, orders, cashFlow, financeDashboard, comboQuantity } =
-    params;
+  const { stockItems, debts, orders, cashFlow, financeDashboard } = params;
 
   const totalUnits = stockItems.reduce((sum, item) => sum + item.total, 0);
   const freeUnits = stockItems.reduce((sum, item) => sum + item.free, 0);
   const publishedUnits = stockItems.reduce((sum, item) => sum + item.published, 0);
-  const reorderCount = stockItems.filter(
-    (item) =>
-      item.overcommitted > 0 ||
-      item.free <= item.reorderPoint ||
-      (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays),
-  ).length;
+  const reorderCount = stockItems.filter(isStockItemInAlert).length;
   const stockValueMinimal = totalUnits * MINIMAL_UNIT_COST;
   const stockValueFull = totalUnits * FULL_UNIT_COST;
   const monthlySalesCount = orders.length;
   const monthlyGrossSales = orders.reduce((sum, order) => sum + order.total, 0);
+  const nuvemNet = cashFlow.nuvemRows.reduce((sum, row) => sum + row.netReceived, 0);
+  const tiktokNet =
+    cashFlow.channelRows.find((row) => row.channel === "TikTok Shop")?.net ?? 0;
+  const today = new Date();
+  const currentDay = Math.max(today.getDate(), 1);
+  const daysInMonth = new Date(
+    today.getFullYear(),
+    today.getMonth() + 1,
+    0,
+  ).getDate();
+  const dailyNuvemNetPace = nuvemNet / currentDay;
+  const dailyTiktokNetPace = daysInMonth > 0 ? tiktokNet / daysInMonth : 0;
+  const dailyNetPaceValue = dailyNuvemNetPace + dailyTiktokNetPace;
+  const projectedMonthNetValue = dailyNetPaceValue * daysInMonth;
 
   const openDebts = debts.filter(
     (debt) => debt.status !== "paga" && debt.status !== "cancelada",
   );
   const openDebtTotal = openDebts.reduce((sum, debt) => sum + debt.amount, 0);
-  const dueSoonDebts = openDebts.filter((debt) => isWithinNextDays(debt.dueDate, 15));
-  const dueSoonTotal = dueSoonDebts.reduce((sum, debt) => sum + debt.amount, 0);
-
-  const comboBest = financeDashboard.offers.comboPixNoCoupon;
-  const comboPixCoupon = financeDashboard.offers.comboPixCoupon;
-  const comboWorst = financeDashboard.offers.comboCard3Coupon;
-  const stockPotentialWorstNet = totalUnits * comboWorst.netReceivedPerPiece;
-  const saldoAposAberto = stockPotentialWorstNet - openDebtTotal;
+  const dueSoonTotal = sumDebtsWithinNextDays(openDebts, 15);
+  const dueFortyFiveTotal = sumDebtsWithinNextDays(openDebts, 45);
 
   const customerSummary = buildCustomerMetrics(orders);
-  const overviewMetrics = [
+  const worstRealisticCombo = toScenarioRow(
+    "Combo / Cartao 2x / Cupom 10%",
+    financeDashboard.offers.comboCard2Coupon,
+  );
+  const bestCombo = toScenarioRow(
+    "Combo / Pix / Sem cupom",
+    financeDashboard.offers.comboPixNoCoupon,
+  );
+  const strategicScenarioRows = [
+    financeDashboard.offers.unitPixNoCoupon,
+    financeDashboard.offers.unitCard1Coupon,
+    financeDashboard.offers.unitCard2Coupon,
+    financeDashboard.offers.comboPixNoCoupon,
+    financeDashboard.offers.comboPixCoupon,
+    financeDashboard.offers.comboCard1Coupon,
+    financeDashboard.offers.comboCard2Coupon,
+  ].map((scenario) => toScenarioRow(scenario.title, scenario));
+  const debtWindowRows = buildDebtWindowRows(openDebts, dailyNetPaceValue);
+  const stockActionRows = buildStockActionRows(stockItems);
+  const highPriorityStock = stockActionRows.filter((row) => row.level === "alto").length;
+
+  const financeMetrics = [
     {
-      label: "Estoque em custo minimalista",
-      value: formatMoney(stockValueMinimal),
-      detail: `Leitura usando ${formatMoney(MINIMAL_UNIT_COST)} por peca.`,
+      label: "Faturamento bruto do mes",
+      value: formatMoney(monthlyGrossSales),
+      detail:
+        monthlySalesCount > 0
+          ? `${monthlySalesCount} pedidos puxados da Nuvemshop.`
+          : "Sem pedidos carregados no mes atual.",
     },
     {
-      label: "Estoque em custo full",
-      value: formatMoney(stockValueFull),
-      detail: `Leitura usando ${formatMoney(FULL_UNIT_COST)} por peca.`,
+      label: "Liquido capturado no mes",
+      value: formatMoney(cashFlow.entradasTotais),
+      detail: `${formatMoney(nuvemNet)} na Nuvemshop e ${formatMoney(tiktokNet)} no TikTok.`,
     },
     {
       label: "Dividas em aberto",
@@ -345,12 +391,27 @@ function buildHomeSnapshot(params: {
           : "Sem pressao de vencimento nos proximos 15 dias.",
     },
     {
-      label: "Lote no pior cenario",
-      value: formatMoney(stockPotentialWorstNet),
+      label: "Dividas em ate 45 dias",
+      value: formatMoney(dueFortyFiveTotal),
+      detail: "Leitura de curto prazo para nao ser pego na curva do fornecedor.",
+    },
+    {
+      label: "Saldo projetado do mes",
+      value: formatMoney(cashFlow.saldoProjetado),
       detail:
-        saldoAposAberto >= 0
-          ? `Ainda sobra ${formatMoney(saldoAposAberto)} depois do aberto.`
-          : `Ainda faltam ${formatMoney(Math.abs(saldoAposAberto))} para zerar o aberto.`,
+        cashFlow.saldoProjetado >= 0
+          ? "Entradas do mes atual ainda fecham com folga."
+          : "O fluxo do mes atual ainda fecha no aperto.",
+    },
+    {
+      label: "Estoque em custo minimalista",
+      value: formatMoney(stockValueMinimal),
+      detail: `Leitura usando ${formatMoney(MINIMAL_UNIT_COST)} por peca.`,
+    },
+    {
+      label: "Estoque em custo full",
+      value: formatMoney(stockValueFull),
+      detail: `Leitura usando ${formatMoney(FULL_UNIT_COST)} por peca.`,
     },
   ];
 
@@ -369,64 +430,46 @@ function buildHomeSnapshot(params: {
       detail: "Faturamento bruto do mes antes das taxas.",
     },
     {
-      label: "Saldo projetado do mes",
-      value: formatMoney(cashFlow.saldoProjetado),
+      label: "Liquido do mes",
+      value: formatMoney(cashFlow.entradasTotais),
       detail:
-        cashFlow.saldoProjetado >= 0
-          ? "O fluxo atual fecha positivo."
-          : "O fluxo do mes ainda fecha apertado.",
+        cashFlow.entradasTotais > 0
+          ? "Recebimento estimado depois das taxas e descontos."
+          : "Sem entradas liquidas carregadas no periodo.",
     },
     {
-      label: "Pecas livres",
-      value: String(freeUnits),
-      detail: `${publishedUnits} estao publicados hoje na Nuvemshop.`,
+      label: "Dividas nos proximos 15 dias",
+      value: formatMoney(dueSoonTotal),
+      detail: "Primeira trava para saber se o caixa precisa acelerar.",
     },
     {
       label: "Reposicoes em alerta",
       value: String(reorderCount),
-      detail: "Linhas de estoque que ja pedem recompra ou atencao.",
+      detail:
+        highPriorityStock > 0
+          ? `${highPriorityStock} linhas ja pedem acao imediata.`
+          : "Nenhuma base critica neste momento.",
+    },
+    {
+      label: "Pecas livres para remanejar",
+      value: String(freeUnits),
+      detail: `${publishedUnits} estao publicadas hoje na Nuvemshop.`,
     },
   ];
 
-  const scenarioRows = financeDashboard.comparisonRows.map((scenario) =>
-    toScenarioRow(scenario.title, scenario),
-  );
-
-  const coverageRows = [
-    comboBest,
-    comboPixCoupon,
-    comboWorst,
-  ].map((scenario) => {
-    const combosNeeded =
-      scenario.netReceived > 0 ? Math.ceil(openDebtTotal / scenario.netReceived) : 0;
-    const piecesNeeded = combosNeeded * comboQuantity;
-    const surplusAfterCoverage = combosNeeded * scenario.netReceived - openDebtTotal;
-
-    return {
-      label: scenario.title,
-      combosNeeded,
-      piecesNeeded,
-      surplusAfterCoverage,
-    };
-  });
-
   const alerts = [
     {
-      title: "Cobertura das dividas abertas",
-      level: saldoAposAberto >= 0 ? ("baixo" as const) : ("alto" as const),
+      title: "Vencimentos dos proximos 15 dias",
+      level: debtWindowRows[0]?.level ?? ("baixo" as const),
       detail:
-        saldoAposAberto >= 0
-          ? `Mesmo no pior cenario do combo, o lote cobre o aberto e sobra ${formatMoney(
-              saldoAposAberto,
-            )}.`
-          : `Mesmo vendendo todo o lote no pior cenario, ainda faltam ${formatMoney(
-              Math.abs(saldoAposAberto),
-            )} para cobrir o aberto.`,
+        debtWindowRows[0]?.detail ??
+        "Sem vencimentos muito proximos na leitura atual.",
     },
     {
       title: "Perfil de pagamento da base",
       level:
-        customerSummary.worstPatternShareValue >= 20
+        customerSummary.worstPatternShareValue >= 20 ||
+        customerSummary.couponShareValue >= 40
           ? ("alto" as const)
           : customerSummary.pixShareValue >= 40
             ? ("baixo" as const)
@@ -437,9 +480,18 @@ function buildHomeSnapshot(params: {
       title: "Pressao de estoque",
       level: reorderCount >= 3 ? ("alto" as const) : reorderCount > 0 ? ("medio" as const) : ("baixo" as const),
       detail:
-        reorderCount > 0
-          ? `${reorderCount} linhas precisam de recompra antes de apertar a operacao.`
+        stockActionRows.length > 0
+          ? stockActionRows[0]!.detail
           : "As linhas atuais ainda nao encostaram no ponto de reposicao.",
+    },
+    {
+      title: "Combo mais sensivel",
+      level: getMarginAlertLevel(worstRealisticCombo.fullMarginPercent),
+      detail: `No combo em 2x com cupom, o full fica com ${formatPercent(
+        worstRealisticCombo.fullMarginPercent,
+      )} de margem e o minimalista com ${formatPercent(
+        worstRealisticCombo.minimalMarginPercent,
+      )}.`,
     },
     {
       title: "Fluxo do mes",
@@ -459,37 +511,66 @@ function buildHomeSnapshot(params: {
     totalUnits,
     stockValueMinimal,
     stockValueFull,
-    stockPotentialWorstNet,
     openDebtTotal,
+    heroBullets: [
+      `${formatMoney(cashFlow.entradasTotais)} liquidos entraram no mes ate agora e ${formatMoney(
+        dueSoonTotal,
+      )} vencem nos proximos 15 dias.`,
+      `${customerSummary.summary} O combo mais sensivel hoje e ${worstRealisticCombo.title.toLowerCase()}.`,
+      stockActionRows.length > 0
+        ? `${stockActionRows[0]!.title}: ${stockActionRows[0]!.shortReason}`
+        : "Nenhuma base pede pedido imediato agora; a pressao maior segue no financeiro.",
+    ],
     topMetrics,
-    overviewMetrics,
-    scenarioRows,
-    coverageRows,
+    financeMetrics,
+    debtWindowRows,
+    strategicScenarioRows,
+    pricingFocusMetrics: [
+      {
+        label: "Melhor combo hoje",
+        value: formatMoney(bestCombo.netReceived),
+        detail: `Pix sem cupom deixa ${formatMoney(bestCombo.fullProfit)} de lucro se forem 3 full ou ${formatMoney(bestCombo.minimalProfit)} se forem 3 minimalistas.`,
+      },
+      {
+        label: "Combo mais apertado",
+        value: formatMoney(worstRealisticCombo.netReceived),
+        detail: `Em 2x com cupom, o combo ainda deixa ${formatMoney(worstRealisticCombo.minimalProfit)} no minimalista.`,
+      },
+      {
+        label: "Meta para pagar o aberto com combo",
+        value:
+          worstRealisticCombo.netReceived > 0
+            ? `${Math.ceil(openDebtTotal / worstRealisticCombo.netReceived)} combos`
+            : "-",
+        detail: `Leitura usando o combo em 2x com cupom para cobrir ${formatMoney(openDebtTotal)} em aberto.`,
+      },
+    ],
+    stockActionRows,
     alerts,
     customerMetrics: customerSummary.metrics,
     customerProfileSummary: customerSummary.summary,
-    directDiagnosis:
+    financialDiagnosis:
       openDebtTotal <= 0
-        ? `Hoje a operacao nao tem dividas abertas. O foco principal passa a ser proteger margem e reposicao, porque o lote atual representa ${formatMoney(
-            stockValueFull,
-          )} se todo ele virar full.`
-        : `Se voce olhar o lote atual como caixa futuro, ele representa entre ${formatMoney(
+        ? `Hoje a operacao nao tem dividas abertas. O foco principal passa a ser defender margem e usar o estoque de forma inteligente, porque o lote representa entre ${formatMoney(
             stockValueMinimal,
-          )} e ${formatMoney(
-            stockValueFull,
-          )} em custo e gera ${formatMoney(
-            stockPotentialWorstNet,
-          )} liquidos no pior cenario do combo. Contra ${formatMoney(
-            openDebtTotal,
-          )} em aberto, a leitura de hoje e ${
-            saldoAposAberto >= 0 ? "de folga" : "de aperto"
-          }.`,
+          )} e ${formatMoney(stockValueFull)} em custo.`
+        : `Hoje existem ${formatMoney(openDebtTotal)} em aberto. No ritmo liquido atual, a operacao projeta ${formatMoney(
+            projectedMonthNetValue,
+          )} para o mes e precisa vigiar principalmente a janela de 15 dias, onde vencem ${formatMoney(
+            dueSoonTotal,
+          )}.`,
+    marginDiagnosis: `O combo continua sendo a leitura mais sensivel do caixa. No melhor caso ele gera ${formatMoney(
+      bestCombo.netReceived,
+    )} liquidos; no cenario mais apertado de 2x com cupom cai para ${formatMoney(
+      worstRealisticCombo.netReceived,
+    )}. Isso e o que mais importa para saber se a operacao aguenta desconto e parcelamento sem engolir sua margem.`,
     averageTicket: customerSummary.averageTicket,
     totalOrdersLabel:
       orders.length > 0
         ? `${orders.length} pedidos e ${customerSummary.uniqueCustomers} clientes unicos`
         : "Nenhum pedido carregado",
-    worstPatternShare: customerSummary.worstPatternShare,
+    projectedMonthNet: formatMoney(projectedMonthNetValue),
+    dailyNetPace: formatMoney(dailyNetPaceValue),
   };
 }
 
@@ -555,6 +636,7 @@ function buildCustomerMetrics(orders: FinanceFlowOrder[]) {
       uniqueCustomers: 0,
       pixShare: "-",
       pixShareValue: 0,
+      couponShareValue: 0,
       worstPatternShare: "-",
       worstPatternShareValue: 0,
     };
@@ -606,9 +688,167 @@ function buildCustomerMetrics(orders: FinanceFlowOrder[]) {
     uniqueCustomers,
     pixShare,
     pixShareValue,
+    couponShareValue: (couponCount / totalOrders) * 100,
     worstPatternShare,
     worstPatternShareValue,
   };
+}
+
+function buildDebtWindowRows(debts: InternalDebt[], dailyNetPace: number) {
+  return [15, 30, 45].map((days) => {
+    const dueTotal = sumDebtsWithinNextDays(debts, days);
+    const projectedCoverage = dailyNetPace * days;
+    const gap = projectedCoverage - dueTotal;
+    const level =
+      dueTotal <= 0
+        ? ("baixo" as const)
+        : gap >= 0
+          ? ("baixo" as const)
+          : Math.abs(gap) <= dueTotal * 0.25
+            ? ("medio" as const)
+            : ("alto" as const);
+
+    return {
+      label: `Vence em ate ${days} dias`,
+      badge: dueTotal > 0 ? formatMoney(dueTotal) : "sem vencimento",
+      level,
+      detail:
+        dueTotal <= 0
+          ? `Nao existem dividas abertas com vencimento em ate ${days} dias.`
+          : gap >= 0
+            ? `No ritmo liquido atual, a operacao projeta ${formatMoney(
+                projectedCoverage,
+              )} ate essa janela e cobre os ${formatMoney(
+                dueTotal,
+              )} com folga de ${formatMoney(gap)}.`
+            : `No ritmo liquido atual, a operacao projeta ${formatMoney(
+                projectedCoverage,
+              )} ate essa janela e ainda faltam ${formatMoney(
+                Math.abs(gap),
+              )} para cobrir ${formatMoney(dueTotal)}.`,
+    };
+  });
+}
+
+function buildStockActionRows(stockItems: BaseStockItem[]) {
+  return [...stockItems]
+    .filter(isStockItemInAlert)
+    .sort((left, right) => getStockRiskScore(right) - getStockRiskScore(left))
+    .slice(0, 6)
+    .map((item) => {
+      const label = `${item.sku} · ${item.color} ${item.size}`;
+      const coverageText =
+        item.coverageDays === null ? "sem historico de giro" : `${item.coverageDays} dias`;
+      const parts: string[] = [];
+      let title = `Acompanhar ${label}`;
+      let shortReason = `base em atencao`;
+      let level: "alto" | "medio" | "baixo" = "medio";
+
+      if (item.overcommitted > 0) {
+        title = `Remanejar ${label}`;
+        shortReason = `publicado acima do fisico`;
+        level = "alto";
+        parts.push(
+          `Publicado ${item.published} para um fisico total de ${item.total}; hoje faltam ${item.overcommitted} unidades para sustentar a vitrine sem remanejamento.`,
+        );
+      }
+
+      if (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays) {
+        title = item.overcommitted > 0 ? title : `Pedir ${label}`;
+        shortReason = `cobertura menor que o prazo`;
+        level = item.overcommitted > 0 ? "alto" : "medio";
+        parts.push(
+          `No ritmo atual, a cobertura e ${coverageText} e a reposicao leva ${item.leadTimeDays} dias.`,
+        );
+      }
+
+      if (item.plain <= item.reorderPoint) {
+        title =
+          item.overcommitted > 0 || item.coverageDays !== null
+            ? title
+            : `Pedir ${label}`;
+        shortReason = shortReason === "base em atencao" ? `lisas abaixo do ponto` : shortReason;
+        level = level === "alto" ? "alto" : "medio";
+        parts.push(
+          `Sobram ${item.plain} lisas para estampar e o ponto de reposicao esta em ${item.reorderPoint}.`,
+        );
+      }
+
+      if (parts.length === 0) {
+        parts.push(
+          `A base ainda tem ${item.free} unidades livres e ${item.published} publicadas na loja.`,
+        );
+      }
+
+      return {
+        title,
+        shortReason,
+        level,
+        badge:
+          level === "alto"
+            ? "agir agora"
+            : level === "medio"
+              ? "acompanhar"
+              : "ok",
+        detail: `${parts.join(" ")} Hoje existem ${item.printedReal} estampadas reais, ${item.plain} lisas em maos e ${item.published} publicadas na Nuvemshop.`,
+      };
+    });
+}
+
+function isStockItemInAlert(item: BaseStockItem) {
+  return (
+    item.overcommitted > 0 ||
+    item.plain <= item.reorderPoint ||
+    (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays)
+  );
+}
+
+function getStockRiskScore(item: BaseStockItem) {
+  let score = 0;
+
+  if (item.overcommitted > 0) {
+    score += 100 + item.overcommitted * 5;
+  }
+
+  if (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays) {
+    score += 60 + (item.leadTimeDays - item.coverageDays);
+  }
+
+  if (item.plain <= item.reorderPoint) {
+    score += 30 + (item.reorderPoint - item.plain);
+  }
+
+  return score;
+}
+
+function sumDebtsWithinNextDays(debts: InternalDebt[], days: number) {
+  return debts
+    .filter((debt) => isWithinNextDays(debt.dueDate, days))
+    .reduce((sum, debt) => sum + debt.amount, 0);
+}
+
+function getMarginAlertLevel(marginPercent: number): "alto" | "medio" | "baixo" {
+  if (marginPercent < 10) {
+    return "alto";
+  }
+
+  if (marginPercent < 20) {
+    return "medio";
+  }
+
+  return "baixo";
+}
+
+function getAlertPillClass(level: "alto" | "medio" | "baixo") {
+  if (level === "alto") {
+    return styles.pillHigh;
+  }
+
+  if (level === "medio") {
+    return styles.pillMedium;
+  }
+
+  return styles.pillLow;
 }
 
 function isPixOrder(order: FinanceFlowOrder) {
