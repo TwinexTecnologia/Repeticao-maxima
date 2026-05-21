@@ -396,7 +396,7 @@ function buildHomeSnapshot(params: {
   const worstRealisticCombo =
     comboScenarioRows
       .filter((row) => row.title.includes("/ Cartao 2x / Cupom 10%"))
-      .sort((left, right) => left.fullMarginPercent - right.fullMarginPercent)[0] ??
+      .sort((left, right) => left.marginPercent - right.marginPercent)[0] ??
     buildComboMixScenarioRow({
       config,
       title: "Combo / Cartao 2x / Cupom 10%",
@@ -1110,6 +1110,14 @@ function getAlertPillClass(level: "alto" | "medio" | "baixo") {
   }
 
   return styles.pillLow;
+}
+
+function normalizeText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
 }
 
 function isPixOrder(order: FinanceFlowOrder) {
