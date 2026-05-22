@@ -130,6 +130,13 @@
   grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
 }
 
+.heroCompact {
+  margin-top: 18px;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.95fr);
+}
+
 .heroCard {
   padding: 24px;
   border-radius: 24px;
@@ -168,6 +175,12 @@
   display: grid;
   gap: 16px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.metricGridCompact {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .metricCard {
@@ -336,6 +349,89 @@
 .tableCellTight div {
   color: #6f5b82;
   font-size: 0.88rem;
+}
+
+.scenarioTableWrap {
+  overflow: hidden;
+}
+
+.scenarioTable {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.scenarioTable th,
+.scenarioTable td {
+  padding: 9px 8px;
+  font-size: 0.78rem;
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.scenarioTable th {
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+}
+
+.scenarioTable th:nth-child(1),
+.scenarioTable td:nth-child(1) {
+  width: 10%;
+}
+
+.scenarioTable th:nth-child(2),
+.scenarioTable td:nth-child(2) {
+  width: 9%;
+}
+
+.scenarioTable th:nth-child(3),
+.scenarioTable td:nth-child(3) {
+  width: 3%;
+  text-align: center;
+}
+
+.scenarioTable th:nth-child(4),
+.scenarioTable td:nth-child(4),
+.scenarioTable th:nth-child(5),
+.scenarioTable td:nth-child(5),
+.scenarioTable th:nth-child(6),
+.scenarioTable td:nth-child(6),
+.scenarioTable th:nth-child(7),
+.scenarioTable td:nth-child(7),
+.scenarioTable th:nth-child(8),
+.scenarioTable td:nth-child(8),
+.scenarioTable th:nth-child(9),
+.scenarioTable td:nth-child(9),
+.scenarioTable th:nth-child(10),
+.scenarioTable td:nth-child(10),
+.scenarioTable th:nth-child(13),
+.scenarioTable td:nth-child(13),
+.scenarioTable th:nth-child(14),
+.scenarioTable td:nth-child(14),
+.scenarioTable th:nth-child(15),
+.scenarioTable td:nth-child(15),
+.scenarioTable th:nth-child(16),
+.scenarioTable td:nth-child(16) {
+  width: 5.5%;
+}
+
+.scenarioTable th:nth-child(11),
+.scenarioTable td:nth-child(11),
+.scenarioTable th:nth-child(12),
+.scenarioTable td:nth-child(12) {
+  width: 9%;
+}
+
+.scenarioTable .tableCellTight {
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.scenarioTable .tableCellTight strong {
+  font-size: 0.8rem;
+}
+
+.scenarioTable .tableCellTight div {
+  font-size: 0.72rem;
 }
 
 .scenarioGrid {
@@ -982,6 +1078,7 @@
   }
 
   .hero,
+  .heroCompact,
   .twoColumn,
   .integrationHero,
   .orderLayout {
@@ -1015,6 +1112,10 @@
   .definitionGrid {
     grid-template-columns: 1fr;
   }
+
+  .metricGridCompact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -1029,6 +1130,10 @@
   }
 
   .metricGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .metricGridCompact {
     grid-template-columns: 1fr;
   }
 

@@ -75,6 +75,17 @@ export type BaseStockItem = {
   updatedAt: string | null;
 };
 
+export type StockSelectionOption = {
+  id: string;
+  sku: string;
+  color: string;
+  size: string;
+  total: number;
+  printedReal: number;
+  plain: number;
+  notes: string;
+};
+
 export type DtfArtType = "minimalista" | "full" | "outro";
 
 export type DtfCatalogProduct = {
@@ -157,6 +168,46 @@ export async function loadDebtModuleData() {
       debts: getFallbackDebts(),
       persistence: buildDisabledState(getErrorMessage(error)),
     };
+  }
+}
+
+export async function loadStockSelectionOptions() {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return [] as StockSelectionOption[];
+  }
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_TABLE)
+      .select("id, sku, color, size, total_qty, printed_qty, notes")
+      .order("sku", { ascending: true })
+      .order("color", { ascending: true })
+      .order("size", { ascending: true });
+
+    if (error) {
+      throw error;
+    }
+
+    return (data ?? []).map((row) => {
+      const total = getIntegerValue(row.total_qty);
+      const printedReal = Math.min(getIntegerValue(row.printed_qty), total);
+
+      return {
+        id: String(row.id ?? ""),
+        sku: String(row.sku ?? ""),
+        color: String(row.color ?? ""),
+        size: String(row.size ?? ""),
+        total,
+        printedReal,
+        plain: Math.max(total - printedReal, 0),
+        notes: String(row.notes ?? ""),
+      };
+    });
+  } catch {
+    return [] as StockSelectionOption[];
   }
 }
 

@@ -1,7 +1,9 @@
 import { AppShell } from "@/components/app-shell";
 import { PartnerCouponManager } from "@/components/partner-coupon-manager";
+import { PartnerRedemptionManager } from "@/components/partner-redemption-manager";
 import styles from "@/components/panel.module.css";
 import { loadFinanceConfig } from "@/lib/financeiro/repository";
+import { loadStockSelectionOptions } from "@/lib/operacoes/repository";
 import {
   loadCouponPartnerModuleData,
   type CouponPartnerProfile,
@@ -546,9 +548,10 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
     selectedCoupon: getSearchValue(resolvedSearchParams, "selectedCoupon"),
   };
   const credentials = getNuvemshopCredentials();
-  const [{ config: financeConfig }, moduleData] = await Promise.all([
+  const [{ config: financeConfig }, moduleData, stockOptions] = await Promise.all([
     loadFinanceConfig(),
     loadCouponPartnerModuleData(),
+    loadStockSelectionOptions(),
   ]);
   const initialDraft = {
     name: "",
@@ -927,6 +930,14 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
             </div>
           )}
         </section>
+
+        <PartnerRedemptionManager
+          initialProfiles={moduleData.profiles}
+          initialRedemptions={moduleData.redemptions}
+          initialPersistence={moduleData.redemptionState}
+          stockOptions={stockOptions}
+          selectedCouponCode={selectedCoupon?.code || ""}
+        />
 
         <section className={styles.section}>
           <div className={styles.sectionHeader}>

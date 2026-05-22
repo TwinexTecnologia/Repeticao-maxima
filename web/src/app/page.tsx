@@ -54,14 +54,23 @@ export default async function Home() {
       currentPath="/"
     >
       <section className={styles.section}>
-        <div className={styles.hero}>
+        <div className={styles.metricGrid}>
+          {snapshot.topMetrics.map((metric) => (
+            <article key={metric.label} className={styles.metricCard}>
+              <div className={styles.metricLabel}>{metric.label}</div>
+              <div className={styles.metricValue}>{metric.value}</div>
+              <div className={styles.metricHint}>{metric.detail}</div>
+            </article>
+          ))}
+        </div>
+
+        <div className={styles.heroCompact}>
           <div className={styles.heroCard}>
             <h2>O que esta acontecendo na loja neste mes.</h2>
             <p>
-              A Dash agora cruza pedidos do mes, dividas abertas, custos e
-              cobertura do estoque para te responder tres coisas: se o caixa
-              aguenta os proximos vencimentos, qual cenario comercial aperta a
-              margem e quais bases precisam de pedido ou remanejamento.
+              A Dash cruza pedidos do mes, dividas abertas, estoque e cenarios
+              comerciais para te responder se o caixa aguenta os vencimentos, se
+              o estoque paga o que esta aberto e onde sua margem aperta.
             </p>
             <div className={styles.heroBulletList}>
               {snapshot.heroBullets.map((bullet, index) => (
@@ -74,13 +83,20 @@ export default async function Home() {
           </div>
 
           <div className={styles.stack}>
-            {snapshot.topMetrics.map((metric) => (
-              <article key={metric.label} className={styles.metricCard}>
-                <div className={styles.metricLabel}>{metric.label}</div>
-                <div className={styles.metricValue}>{metric.value}</div>
-                <div className={styles.metricHint}>{metric.detail}</div>
-              </article>
-            ))}
+            <div className={styles.callout}>
+              <h3>Projecao do estoque</h3>
+              <p>{snapshot.stockProjectionSummary}</p>
+            </div>
+
+            <div className={styles.metricGridCompact}>
+              {snapshot.stockProjectionMetrics.map((metric) => (
+                <article key={metric.label} className={styles.metricCard}>
+                  <div className={styles.metricLabel}>{metric.label}</div>
+                  <div className={styles.metricValue}>{metric.value}</div>
+                  <div className={styles.metricHint}>{metric.detail}</div>
+                </article>
+              ))}
+            </div>
           </div>
         </div>
       </section>
@@ -194,26 +210,26 @@ export default async function Home() {
           ))}
         </div>
 
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
+        <div className={`${styles.tableWrap} ${styles.scenarioTableWrap}`}>
+          <table className={`${styles.table} ${styles.scenarioTable}`}>
             <thead>
               <tr>
                 <th>Cenario</th>
                 <th>Composicao</th>
                 <th>Qtd</th>
                 <th>Valor</th>
-                <th>Taxa paga</th>
+                <th>Taxa</th>
                 <th>% taxa</th>
                 <th>Liquido</th>
                 <th>Custo</th>
                 <th>Lucro</th>
                 <th>Margem</th>
-                <th>Influenciador</th>
+                <th>Influ.</th>
                 <th>Atleta</th>
-                <th>Lucro c/ influ</th>
-                <th>Margem c/ influ</th>
-                <th>Lucro c/ atleta</th>
-                <th>Margem c/ atleta</th>
+                <th>Lucro infl.</th>
+                <th>Margem infl.</th>
+                <th>Lucro atleta</th>
+                <th>Margem atleta</th>
               </tr>
             </thead>
             <tbody>
@@ -236,7 +252,7 @@ export default async function Home() {
                   <td className={styles.tableCellTight}>
                     <strong>{formatPercent(row.influencerPercent)}</strong>
                     <div>{formatMoney(row.influencerBenefitValue)}</div>
-                    <div>Custo est. {formatMoney(row.influencerBenefitCost)}</div>
+                    <div>custo {formatMoney(row.influencerBenefitCost)}</div>
                   </td>
                   <td className={styles.tableCellTight}>
                     <strong>{formatPercent(row.athleteTotalPercent)}</strong>
@@ -245,7 +261,7 @@ export default async function Home() {
                       {formatMoney(row.athleteProductBenefitValue)} roupa +{" "}
                       {formatMoney(row.athleteSupportBenefitValue)} apoio
                     </div>
-                    <div>Custo est. {formatMoney(row.athleteTotalBenefitCost)}</div>
+                    <div>custo {formatMoney(row.athleteTotalBenefitCost)}</div>
                   </td>
                   <td className={getProfitToneClass(row.influencerAdjustedMarginPercent)}>
                     {formatMoney(row.influencerAdjustedProfit)}
@@ -390,6 +406,46 @@ function buildHomeSnapshot(params: {
 
   const customerSummary = buildCustomerMetrics(orders);
   const comboDefinitions = buildRealComboDefinitions(comboRules, unitPrice);
+  const unitaryFullPixScenario = buildUnitMixScenarioRow({
+    config,
+    title: "Unitaria Full / Pix / Sem cupom",
+    basePrice: config.unitPrice,
+    fullCount: 1,
+    minimalCount: 0,
+    feePercent: config.nuvemPixPercent,
+    fixedFee: config.nuvemPixFixed,
+    discountPercent: 0,
+  });
+  const unitaryFullCardScenario = buildUnitMixScenarioRow({
+    config,
+    title: "Unitaria Full / Cartao 2x / Cupom 10%",
+    basePrice: config.unitPrice,
+    fullCount: 1,
+    minimalCount: 0,
+    feePercent: config.nuvemCard2Percent,
+    fixedFee: config.nuvemCard2Fixed,
+    discountPercent: config.couponPercent,
+  });
+  const unitaryMinimalPixScenario = buildUnitMixScenarioRow({
+    config,
+    title: "Unitaria Minimalista / Pix / Sem cupom",
+    basePrice: config.unitPrice,
+    fullCount: 0,
+    minimalCount: 1,
+    feePercent: config.nuvemPixPercent,
+    fixedFee: config.nuvemPixFixed,
+    discountPercent: 0,
+  });
+  const unitaryMinimalCardScenario = buildUnitMixScenarioRow({
+    config,
+    title: "Unitaria Minimalista / Cartao 2x / Cupom 10%",
+    basePrice: config.unitPrice,
+    fullCount: 0,
+    minimalCount: 1,
+    feePercent: config.nuvemCard2Percent,
+    fixedFee: config.nuvemCard2Fixed,
+    discountPercent: config.couponPercent,
+  });
   const comboScenarioRows = comboDefinitions.flatMap((definition) => [
     buildComboMixScenarioRow({
       config,
@@ -447,46 +503,10 @@ function buildHomeSnapshot(params: {
       mixLabel: `${config.comboQuantity} full`,
     });
   const strategicScenarioRows = [
-    buildUnitMixScenarioRow({
-      config,
-      title: "Unitaria Full / Pix / Sem cupom",
-      basePrice: config.unitPrice,
-      fullCount: 1,
-      minimalCount: 0,
-      feePercent: config.nuvemPixPercent,
-      fixedFee: config.nuvemPixFixed,
-      discountPercent: 0,
-    }),
-    buildUnitMixScenarioRow({
-      config,
-      title: "Unitaria Full / Cartao 2x / Cupom 10%",
-      basePrice: config.unitPrice,
-      fullCount: 1,
-      minimalCount: 0,
-      feePercent: config.nuvemCard2Percent,
-      fixedFee: config.nuvemCard2Fixed,
-      discountPercent: config.couponPercent,
-    }),
-    buildUnitMixScenarioRow({
-      config,
-      title: "Unitaria Minimalista / Pix / Sem cupom",
-      basePrice: config.unitPrice,
-      fullCount: 0,
-      minimalCount: 1,
-      feePercent: config.nuvemPixPercent,
-      fixedFee: config.nuvemPixFixed,
-      discountPercent: 0,
-    }),
-    buildUnitMixScenarioRow({
-      config,
-      title: "Unitaria Minimalista / Cartao 2x / Cupom 10%",
-      basePrice: config.unitPrice,
-      fullCount: 0,
-      minimalCount: 1,
-      feePercent: config.nuvemCard2Percent,
-      fixedFee: config.nuvemCard2Fixed,
-      discountPercent: config.couponPercent,
-    }),
+    unitaryFullPixScenario,
+    unitaryFullCardScenario,
+    unitaryMinimalPixScenario,
+    unitaryMinimalCardScenario,
     ...comboScenarioRows,
   ].sort((left, right) => {
     if (right.marginPercent !== left.marginPercent) {
@@ -498,6 +518,19 @@ function buildHomeSnapshot(params: {
   const debtWindowRows = buildDebtWindowRows(openDebts, dailyNetPaceValue);
   const stockActionRows = buildStockActionRows(stockItems);
   const highPriorityStock = stockActionRows.filter((row) => row.level === "alto").length;
+  const worstComboNetPerUnit =
+    worstRealisticCombo.quantity > 0
+      ? worstRealisticCombo.netReceived / worstRealisticCombo.quantity
+      : 0;
+  const worstComboProfitPerUnit =
+    worstRealisticCombo.quantity > 0
+      ? worstRealisticCombo.netProfit / worstRealisticCombo.quantity
+      : 0;
+  const stockUnitRevenuePotential = totalUnits * config.unitPrice;
+  const stockUnitProfitPotentialFull = totalUnits * unitaryFullPixScenario.netProfit;
+  const stockComboNetPotentialConservative = totalUnits * worstComboNetPerUnit;
+  const stockComboProfitPotentialConservative = totalUnits * worstComboProfitPerUnit;
+  const stockCoverageAgainstDebt = stockComboNetPotentialConservative - openDebtTotal;
 
   const financeMetrics = [
     {
@@ -674,6 +707,31 @@ function buildHomeSnapshot(params: {
         detail: `Leitura usando ${worstRealisticCombo.mixLabel.toLowerCase()} em 2x com cupom para cobrir ${formatMoney(openDebtTotal)} em aberto.`,
       },
     ],
+    stockProjectionMetrics: [
+      {
+        label: "Venda total na unit.",
+        value: formatMoney(stockUnitRevenuePotential),
+        detail: `${totalUnits} pecas a ${formatMoney(config.unitPrice)} se tudo sair na unit. hoje.`,
+      },
+      {
+        label: "Lucro no pior combo",
+        value: formatMoney(stockComboProfitPotentialConservative),
+        detail: `Lucro estimado se o estoque inteiro girar no combo mais apertado de hoje.`,
+      },
+      {
+        label: "Liquido no pior combo",
+        value: formatMoney(stockComboNetPotentialConservative),
+        detail: `Se o estoque girar no combo mais apertado atual, esse e o liquido potencial.`,
+      },
+      {
+        label: "Estoque x dividas",
+        value: formatMoney(stockCoverageAgainstDebt),
+        detail:
+          stockCoverageAgainstDebt >= 0
+            ? `Nesse cenario ainda sobrariam ${formatMoney(stockCoverageAgainstDebt)} depois de pagar o aberto.`
+            : `Nesse cenario ainda faltariam ${formatMoney(Math.abs(stockCoverageAgainstDebt))} para cobrir o aberto.`,
+      },
+    ],
     stockActionRows,
     alerts,
     customerMetrics: customerSummary.metrics,
@@ -688,6 +746,12 @@ function buildHomeSnapshot(params: {
           )} para o mes e precisa vigiar principalmente a janela de 15 dias, onde vencem ${formatMoney(
             dueSoonTotal,
           )}.`,
+    stockProjectionSummary:
+      openDebtTotal <= 0
+        ? `Hoje o estoque total poderia gerar ate ${formatMoney(stockUnitRevenuePotential)} na unit. e, no cenario mais apertado de combo, ainda projetaria ${formatMoney(stockComboNetPotentialConservative)} liquidos.`
+        : stockCoverageAgainstDebt >= 0
+          ? `O estoque atual teria potencial de cobrir as dividas abertas mesmo no combo mais apertado, com folga estimada de ${formatMoney(stockCoverageAgainstDebt)}.`
+          : `No pior combo atual, o estoque ainda nao paga tudo sozinho: faltariam ${formatMoney(Math.abs(stockCoverageAgainstDebt))} para cobrir as dividas abertas.`,
     marginDiagnosis: `O combo continua sendo a leitura mais sensivel do caixa. No melhor caso ele gera ${formatMoney(
       bestCombo.netReceived,
     )} liquidos com ${bestCombo.mixLabel.toLowerCase()}; no cenario mais apertado de 2x com cupom cai para ${formatMoney(
