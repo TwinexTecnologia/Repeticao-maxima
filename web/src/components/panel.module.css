@@ -25,56 +25,132 @@
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 18px 36px rgba(8, 2, 14, 0.34);
+  display: grid;
+  justify-items: center;
+  gap: 10px;
 }
 
 .brandLogoWrap {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
 }
 
 .brandLogo {
-  width: 100%;
+  width: min(132px, 100%);
   height: auto;
   display: block;
+}
+
+.brandName {
+  font-size: 0.98rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #f8efff;
+  text-align: center;
 }
 
 .nav {
   margin-top: 18px;
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .navLink {
-  display: flex;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 20px;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border-radius: 16px;
+  gap: 12px;
+  padding: 15px 14px;
+  border-radius: 18px;
   color: #f5ecff;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background:
+    linear-gradient(180deg, rgba(44, 10, 70, 0.96) 0%, rgba(34, 6, 58, 0.94) 100%);
+  border: 1px solid rgba(164, 122, 255, 0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 12px 24px rgba(5, 1, 14, 0.24);
   transition:
     border-color 0.2s ease,
     background 0.2s ease,
-    transform 0.2s ease;
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .navLink:hover {
   transform: translateX(2px);
-  border-color: rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 195, 84, 0.32);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 16px 32px rgba(5, 1, 14, 0.28);
 }
 
 .navLinkActive {
-  border-color: rgba(176, 90, 0, 0.32);
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.1), rgba(176, 90, 0, 0.14));
-  box-shadow: 0 10px 24px rgba(6, 1, 12, 0.32);
+  border-color: #f59e0b;
+  background:
+    linear-gradient(180deg, rgba(50, 9, 79, 0.98) 0%, rgba(35, 6, 58, 0.96) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(245, 158, 11, 0.28),
+    0 14px 30px rgba(6, 1, 12, 0.34);
+}
+
+.navIconWrap {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #caa8ff;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(202, 168, 255, 0.14);
+}
+
+.navIconWrap svg {
+  width: 22px;
+  height: 22px;
+}
+
+.navLinkActive .navIconWrap {
+  color: #ff9a1f;
+  border-color: rgba(245, 158, 11, 0.32);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.navCopy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.navLabel {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #fff7ff;
 }
 
 .navHint {
-  font-size: 0.8rem;
-  color: #d7c2f3;
+  font-size: 0.82rem;
+  color: #bda0e6;
+}
+
+.navLinkActive .navHint,
+.navLinkActive .navArrow {
+  color: #ffb347;
+}
+
+.navArrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #cdb7ee;
+}
+
+.navArrow svg {
+  width: 16px;
+  height: 16px;
 }
 
 .content {
