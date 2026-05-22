@@ -1,16 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { authorizeApiAccess } from "@/lib/auth/access";
-import { updateDtfItem } from "@/lib/operacoes/repository";
+import { createPartnerAccessUser } from "@/lib/usuarios/repository";
 
-type RouteContext = {
-  params: Promise<{
-    id: string;
-  }>;
-};
-
-export async function PUT(request: Request, context: RouteContext) {
-  const authorization = await authorizeApiAccess("estoque");
+export async function POST(request: Request) {
+  const authorization = await authorizeApiAccess("usuarios");
 
   if (!authorization.ok) {
     return authorization.response;
@@ -18,8 +12,7 @@ export async function PUT(request: Request, context: RouteContext) {
 
   try {
     const body = await request.json();
-    const { id } = await context.params;
-    const result = await updateDtfItem(id, body);
+    const result = await createPartnerAccessUser(body);
 
     if (!result.ok) {
       return NextResponse.json(
@@ -36,13 +29,11 @@ export async function PUT(request: Request, context: RouteContext) {
       ok: true,
       message: result.persistence.message,
       persistence: result.persistence,
-      item: result.item,
+      partner: result.partner,
     });
   } catch (error) {
     const message =
-      error instanceof Error
-        ? error.message
-        : "Nao foi possivel atualizar o DTF.";
+      error instanceof Error ? error.message : "Nao foi possivel criar o parceiro.";
 
     return NextResponse.json(
       {
