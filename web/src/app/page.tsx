@@ -21,6 +21,9 @@ import {
 
 const FULL_UNIT_COST = 52;
 const MINIMAL_UNIT_COST = 32;
+const INFLUENCER_CREDIT_PERCENT = 14;
+const ATHLETE_PRODUCT_PERCENT = 10;
+const ATHLETE_SUPPORT_PERCENT = 4;
 
 export default async function Home() {
   const [{ config }, flow, stockModule, debtModule, companyModule] = await Promise.all([
@@ -192,6 +195,12 @@ export default async function Home() {
                     <th>Custo</th>
                     <th>Lucro</th>
                     <th>Margem</th>
+                    <th>Influenciador</th>
+                    <th>Atleta</th>
+                    <th>Lucro c/ influ</th>
+                    <th>Margem c/ influ</th>
+                    <th>Lucro c/ atleta</th>
+                    <th>Margem c/ atleta</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -210,6 +219,32 @@ export default async function Home() {
                       </td>
                       <td className={getProfitToneClass(row.marginPercent)}>
                         {formatPercent(row.marginPercent)}
+                      </td>
+                      <td className={styles.tableCellTight}>
+                        <strong>{formatPercent(row.influencerPercent)}</strong>
+                        <div>{formatMoney(row.influencerBenefitValue)}</div>
+                        <div>Custo est. {formatMoney(row.influencerBenefitCost)}</div>
+                      </td>
+                      <td className={styles.tableCellTight}>
+                        <strong>{formatPercent(row.athleteTotalPercent)}</strong>
+                        <div>{formatMoney(row.athleteTotalBenefitValue)}</div>
+                        <div>
+                          {formatMoney(row.athleteProductBenefitValue)} roupa +{" "}
+                          {formatMoney(row.athleteSupportBenefitValue)} apoio
+                        </div>
+                        <div>Custo est. {formatMoney(row.athleteTotalBenefitCost)}</div>
+                      </td>
+                      <td className={getProfitToneClass(row.influencerAdjustedMarginPercent)}>
+                        {formatMoney(row.influencerAdjustedProfit)}
+                      </td>
+                      <td className={getProfitToneClass(row.influencerAdjustedMarginPercent)}>
+                        {formatPercent(row.influencerAdjustedMarginPercent)}
+                      </td>
+                      <td className={getProfitToneClass(row.athleteAdjustedMarginPercent)}>
+                        {formatMoney(row.athleteAdjustedProfit)}
+                      </td>
+                      <td className={getProfitToneClass(row.athleteAdjustedMarginPercent)}>
+                        {formatPercent(row.athleteAdjustedMarginPercent)}
                       </td>
                     </tr>
                   ))}
@@ -683,6 +718,20 @@ type DashboardScenarioRow = {
   netReceived: number;
   netProfit: number;
   marginPercent: number;
+  influencerPercent: number;
+  influencerBenefitValue: number;
+  influencerBenefitCost: number;
+  influencerAdjustedProfit: number;
+  influencerAdjustedMarginPercent: number;
+  athleteProductPercent: number;
+  athleteSupportPercent: number;
+  athleteTotalPercent: number;
+  athleteProductBenefitValue: number;
+  athleteSupportBenefitValue: number;
+  athleteTotalBenefitValue: number;
+  athleteTotalBenefitCost: number;
+  athleteAdjustedProfit: number;
+  athleteAdjustedMarginPercent: number;
 };
 
 type DashboardComboDefinition = {
@@ -756,6 +805,20 @@ function buildMixScenarioRow(params: {
   const netProfit = netReceived - costTotal;
   const marginPercent =
     discountedRevenue > 0 ? (netProfit / discountedRevenue) * 100 : 0;
+  const costRatioOnRevenue = discountedRevenue > 0 ? costTotal / discountedRevenue : 0;
+  const influencerBenefitValue = netReceived * (INFLUENCER_CREDIT_PERCENT / 100);
+  const influencerBenefitCost = influencerBenefitValue * costRatioOnRevenue;
+  const influencerAdjustedProfit = netProfit - influencerBenefitCost;
+  const influencerAdjustedMarginPercent =
+    discountedRevenue > 0 ? (influencerAdjustedProfit / discountedRevenue) * 100 : 0;
+  const athleteProductBenefitValue = netReceived * (ATHLETE_PRODUCT_PERCENT / 100);
+  const athleteSupportBenefitValue = netReceived * (ATHLETE_SUPPORT_PERCENT / 100);
+  const athleteTotalBenefitValue =
+    athleteProductBenefitValue + athleteSupportBenefitValue;
+  const athleteTotalBenefitCost = athleteTotalBenefitValue * costRatioOnRevenue;
+  const athleteAdjustedProfit = netProfit - athleteTotalBenefitCost;
+  const athleteAdjustedMarginPercent =
+    discountedRevenue > 0 ? (athleteAdjustedProfit / discountedRevenue) * 100 : 0;
 
   return {
     title: params.title,
@@ -768,6 +831,20 @@ function buildMixScenarioRow(params: {
     netReceived,
     netProfit,
     marginPercent,
+    influencerPercent: INFLUENCER_CREDIT_PERCENT,
+    influencerBenefitValue,
+    influencerBenefitCost,
+    influencerAdjustedProfit,
+    influencerAdjustedMarginPercent,
+    athleteProductPercent: ATHLETE_PRODUCT_PERCENT,
+    athleteSupportPercent: ATHLETE_SUPPORT_PERCENT,
+    athleteTotalPercent: ATHLETE_PRODUCT_PERCENT + ATHLETE_SUPPORT_PERCENT,
+    athleteProductBenefitValue,
+    athleteSupportBenefitValue,
+    athleteTotalBenefitValue,
+    athleteTotalBenefitCost,
+    athleteAdjustedProfit,
+    athleteAdjustedMarginPercent,
   };
 }
 
