@@ -169,104 +169,150 @@ export default async function Home() {
       </section>
 
       <section className={styles.section}>
-        <div className={styles.twoColumn}>
+        <div className={styles.sectionHeader}>
           <div>
-            <div className={styles.sectionHeader}>
-              <div>
-                <div className={styles.sectionTitle}>Cenarios que mais mexem na margem</div>
-                <p className={styles.sectionSubtitle}>
-                  A tabela abaixo foca nos cenarios mais provaveis hoje: Pix,
-                  cupom e cartao ate 2x, tanto no unitario quanto no combo.
-                </p>
+            <div className={styles.sectionTitle}>Cenarios que mais mexem na margem</div>
+            <p className={styles.sectionSubtitle}>
+              Aqui a leitura fica em uma pagina so, sem tabela larga. Cada card
+              resume o cenario, o impacto do parceiro e a margem ajustada.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.callout}>
+          <h3>Leitura comercial direta</h3>
+          <p>{snapshot.marginDiagnosis}</p>
+        </div>
+
+        <div className={styles.metricGrid}>
+          {snapshot.pricingFocusMetrics.map((metric) => (
+            <article key={metric.label} className={styles.metricCard}>
+              <div className={styles.metricLabel}>{metric.label}</div>
+              <div className={styles.metricValue}>{metric.value}</div>
+              <div className={styles.metricHint}>{metric.detail}</div>
+            </article>
+          ))}
+        </div>
+
+        <div className={styles.scenarioGrid}>
+          {snapshot.strategicScenarioRows.map((row) => (
+            <article key={row.title} className={styles.scenarioCard}>
+              <div className={styles.listTitleRow}>
+                <div>
+                  <div className={styles.listTitle}>{row.title}</div>
+                  <p className={styles.scenarioSubtitle}>
+                    {row.mixLabel} · {row.quantity} peca{row.quantity > 1 ? "s" : ""}
+                  </p>
+                </div>
+                <span
+                  className={`${styles.pill} ${getAlertPillClass(
+                    getMarginAlertLevel(row.athleteAdjustedMarginPercent),
+                  )}`}
+                >
+                  Margem final atleta {formatPercent(row.athleteAdjustedMarginPercent)}
+                </span>
               </div>
-            </div>
 
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Cenario</th>
-                    <th>Composicao</th>
-                    <th>Qtd</th>
-                    <th>Valor</th>
-                    <th>Taxa paga</th>
-                    <th>% taxa</th>
-                    <th>Liquido</th>
-                    <th>Custo</th>
-                    <th>Lucro</th>
-                    <th>Margem</th>
-                    <th>Influenciador</th>
-                    <th>Atleta</th>
-                    <th>Lucro c/ influ</th>
-                    <th>Margem c/ influ</th>
-                    <th>Lucro c/ atleta</th>
-                    <th>Margem c/ atleta</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {snapshot.strategicScenarioRows.map((row) => (
-                    <tr key={row.title}>
-                      <td>{row.title}</td>
-                      <td>{row.mixLabel}</td>
-                      <td>{row.quantity}</td>
-                      <td>{formatMoney(row.discountedRevenue)}</td>
-                      <td>{formatMoney(row.feeCost)}</td>
-                      <td>{formatPercent(row.feePercentOnRevenue)}</td>
-                      <td>{formatMoney(row.netReceived)}</td>
-                      <td>{formatMoney(row.costTotal)}</td>
-                      <td className={getProfitToneClass(row.marginPercent)}>
-                        {formatMoney(row.netProfit)}
-                      </td>
-                      <td className={getProfitToneClass(row.marginPercent)}>
-                        {formatPercent(row.marginPercent)}
-                      </td>
-                      <td className={styles.tableCellTight}>
-                        <strong>{formatPercent(row.influencerPercent)}</strong>
-                        <div>{formatMoney(row.influencerBenefitValue)}</div>
-                        <div>Custo est. {formatMoney(row.influencerBenefitCost)}</div>
-                      </td>
-                      <td className={styles.tableCellTight}>
-                        <strong>{formatPercent(row.athleteTotalPercent)}</strong>
-                        <div>{formatMoney(row.athleteTotalBenefitValue)}</div>
-                        <div>
-                          {formatMoney(row.athleteProductBenefitValue)} roupa +{" "}
-                          {formatMoney(row.athleteSupportBenefitValue)} apoio
-                        </div>
-                        <div>Custo est. {formatMoney(row.athleteTotalBenefitCost)}</div>
-                      </td>
-                      <td className={getProfitToneClass(row.influencerAdjustedMarginPercent)}>
-                        {formatMoney(row.influencerAdjustedProfit)}
-                      </td>
-                      <td className={getProfitToneClass(row.influencerAdjustedMarginPercent)}>
-                        {formatPercent(row.influencerAdjustedMarginPercent)}
-                      </td>
-                      <td className={getProfitToneClass(row.athleteAdjustedMarginPercent)}>
-                        {formatMoney(row.athleteAdjustedProfit)}
-                      </td>
-                      <td className={getProfitToneClass(row.athleteAdjustedMarginPercent)}>
-                        {formatPercent(row.athleteAdjustedMarginPercent)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+              <div className={styles.scenarioStatsGrid}>
+                <div className={styles.scenarioStat}>
+                  <span>Valor</span>
+                  <strong>{formatMoney(row.discountedRevenue)}</strong>
+                </div>
+                <div className={styles.scenarioStat}>
+                  <span>Taxa paga</span>
+                  <strong>{formatMoney(row.feeCost)}</strong>
+                </div>
+                <div className={styles.scenarioStat}>
+                  <span>% taxa</span>
+                  <strong>{formatPercent(row.feePercentOnRevenue)}</strong>
+                </div>
+                <div className={styles.scenarioStat}>
+                  <span>Liquido</span>
+                  <strong>{formatMoney(row.netReceived)}</strong>
+                </div>
+                <div className={styles.scenarioStat}>
+                  <span>Custo</span>
+                  <strong>{formatMoney(row.costTotal)}</strong>
+                </div>
+                <div className={styles.scenarioStat}>
+                  <span>Lucro base</span>
+                  <strong className={getProfitToneClass(row.marginPercent)}>
+                    {formatMoney(row.netProfit)}
+                  </strong>
+                </div>
+                <div className={styles.scenarioStat}>
+                  <span>Margem base</span>
+                  <strong className={getProfitToneClass(row.marginPercent)}>
+                    {formatPercent(row.marginPercent)}
+                  </strong>
+                </div>
+              </div>
 
-          <div className={styles.stack}>
-            <div className={styles.callout}>
-              <h3>Leitura comercial direta</h3>
-              <p>{snapshot.marginDiagnosis}</p>
-            </div>
+              <div className={styles.scenarioPartnerGrid}>
+                <div className={styles.scenarioPartnerCard}>
+                  <div className={styles.scenarioPartnerTitle}>Influenciador</div>
+                  <div className={styles.scenarioPartnerMeta}>
+                    <span>{formatPercent(row.influencerPercent)}</span>
+                    <strong>{formatMoney(row.influencerBenefitValue)}</strong>
+                  </div>
+                  <p className={styles.scenarioPartnerDetail}>
+                    Custo estimado interno {formatMoney(row.influencerBenefitCost)}
+                  </p>
+                  <div className={styles.scenarioPartnerMeta}>
+                    <span>Lucro final</span>
+                    <strong
+                      className={getProfitToneClass(
+                        row.influencerAdjustedMarginPercent,
+                      )}
+                    >
+                      {formatMoney(row.influencerAdjustedProfit)}
+                    </strong>
+                  </div>
+                  <div className={styles.scenarioPartnerMeta}>
+                    <span>Margem final</span>
+                    <strong
+                      className={getProfitToneClass(
+                        row.influencerAdjustedMarginPercent,
+                      )}
+                    >
+                      {formatPercent(row.influencerAdjustedMarginPercent)}
+                    </strong>
+                  </div>
+                </div>
 
-            {snapshot.pricingFocusMetrics.map((metric) => (
-              <article key={metric.label} className={styles.metricCard}>
-                <div className={styles.metricLabel}>{metric.label}</div>
-                <div className={styles.metricValue}>{metric.value}</div>
-                <div className={styles.metricHint}>{metric.detail}</div>
-              </article>
-            ))}
-          </div>
+                <div className={styles.scenarioPartnerCard}>
+                  <div className={styles.scenarioPartnerTitle}>Atleta</div>
+                  <div className={styles.scenarioPartnerMeta}>
+                    <span>{formatPercent(row.athleteTotalPercent)}</span>
+                    <strong>{formatMoney(row.athleteTotalBenefitValue)}</strong>
+                  </div>
+                  <p className={styles.scenarioPartnerDetail}>
+                    {formatMoney(row.athleteProductBenefitValue)} roupa +{" "}
+                    {formatMoney(row.athleteSupportBenefitValue)} apoio
+                  </p>
+                  <p className={styles.scenarioPartnerDetail}>
+                    Custo estimado interno {formatMoney(row.athleteTotalBenefitCost)}
+                  </p>
+                  <div className={styles.scenarioPartnerMeta}>
+                    <span>Lucro final</span>
+                    <strong
+                      className={getProfitToneClass(row.athleteAdjustedMarginPercent)}
+                    >
+                      {formatMoney(row.athleteAdjustedProfit)}
+                    </strong>
+                  </div>
+                  <div className={styles.scenarioPartnerMeta}>
+                    <span>Margem final</span>
+                    <strong
+                      className={getProfitToneClass(row.athleteAdjustedMarginPercent)}
+                    >
+                      {formatPercent(row.athleteAdjustedMarginPercent)}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+            </article>
+          ))}
         </div>
       </section>
 
