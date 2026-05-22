@@ -31,6 +31,7 @@ type RedemptionApiResponse = {
 type RedemptionFormState = {
   partnerId: string;
   stockItemId: string;
+  artName: string;
   quantity: string;
   unitCost: string;
   grantedAt: string;
@@ -62,6 +63,7 @@ export function PartnerRedemptionManager({
   const [form, setForm] = useState<RedemptionFormState>({
     partnerId: defaultPartnerId,
     stockItemId: stockOptions[0]?.id || "",
+    artName: "",
     quantity: "1",
     unitCost: String(FULL_COST),
     grantedAt: getTodayDate(),
@@ -130,7 +132,7 @@ export function PartnerRedemptionManager({
         grantedAt: form.grantedAt,
         dueDate: form.dueDate,
         createMarketingDebt: form.createMarketingDebt,
-        notes: form.notes,
+        notes: buildRedemptionNotes(form.artName, form.notes),
         status: "entregue",
       };
       const response = await fetch("/api/influenciadores/resgates", {
@@ -159,6 +161,7 @@ export function PartnerRedemptionManager({
       setFeedback(result.message || "Resgate salvo com sucesso.");
       setForm((current) => ({
         ...current,
+        artName: "",
         quantity: "1",
         dueDate: "",
         createMarketingDebt: false,
@@ -236,6 +239,21 @@ export function PartnerRedemptionManager({
                   </option>
                 ))}
               </select>
+            </label>
+
+            <label className={styles.filterField}>
+              <span>Arte</span>
+              <input
+                type="text"
+                placeholder="Ex.: Faz o basico / Minimalista White"
+                value={form.artName}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    artName: event.target.value,
+                  }))
+                }
+              />
             </label>
 
             <div className={styles.filterGrid}>
@@ -382,7 +400,7 @@ export function PartnerRedemptionManager({
               </div>
               <div className={styles.metricHint}>
                 {selectedStock
-                  ? `${selectedStock.sku} · ${selectedStock.printedReal} estampada(s) disponiveis`
+                  ? `${form.artName.trim() || "Arte nao informada"} · ${selectedStock.sku} · ${selectedStock.printedReal} estampada(s) disponiveis`
                   : "Escolha a linha do estoque que sera baixada."}
               </div>
             </article>
@@ -425,13 +443,13 @@ export function PartnerRedemptionManager({
                     <div>{item.couponCode}</div>
                   </td>
                   <td>
-                    {item.sku} · {item.color} · {item.size}
+                    {getArtName(item.notes)} · {item.sku} · {item.color} · {item.size}
                   </td>
                   <td>{item.quantity}</td>
                   <td>{formatMoney(item.totalCost)}</td>
                   <td>{item.dueDate ? formatDate(item.dueDate) : "-"}</td>
                   <td>{item.status}</td>
-                  <td>{item.notes || "-"}</td>
+                  <td>{getCleanNotes(item.notes) || "-"}</td>
                 </tr>
               ))
             ) : (
@@ -477,4 +495,30 @@ function formatDate(value: string | null) {
   return new Intl.DateTimeFormat("pt-BR", {
     dateStyle: "short",
   }).format(parsed);
+}
+
+function buildRedemptionNotes(artName: string, notes: string) {
+  const cleanArt = artName.trim();
+  const cleanNotes = notes.trim();
+
+  if (cleanArt && cleanNotes) {
+    return `[arte] ${cleanArt}\n${cleanNotes}`;
+  }
+
+  if (cleanArt) {
+    return `[arte] ${cleanArt}`;
+  }
+
+  return cleanNotes;
+}
+
+function getArtName(notes: string) {
+  const match = notes.match(/^\[arte\]\s*(.+)$/im);
+  return match?.[1]?.trim() || "Arte nao informada";
+}
+
+function getCleanNotes(notes: string) {
+  return notes
+    .replace(/^\[arte\]\s*.+$/im, "")
+    .replace(/^\s+|\s+$/g, "");
 }

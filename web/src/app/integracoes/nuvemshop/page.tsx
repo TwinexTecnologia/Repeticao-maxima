@@ -437,43 +437,6 @@ export default async function NuvemshopPage({ searchParams }: PageProps) {
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
             <div>
-              <div className={styles.sectionTitle}>Vendas por dia</div>
-              <p className={styles.sectionSubtitle}>
-                Leitura visual do faturamento diario dentro do periodo filtrado.
-              </p>
-            </div>
-          </div>
-
-          {salesByDay.length > 0 ? (
-            <div className={styles.chartGrid}>
-              {salesByDay.map((point) => {
-                const width = Math.max(
-                  (point.total / Math.max(maxDailyRevenue, 1)) * 100,
-                  point.total > 0 ? 8 : 2,
-                );
-
-                return (
-                  <article key={point.dia} className={styles.chartRow}>
-                    <div className={styles.chartLabel}>
-                      <strong>{point.dia}</strong>
-                      <span>{point.pedidos} pedidos</span>
-                    </div>
-                    <div className={styles.chartTrack}>
-                      <div className={styles.chartBar} style={{ width: `${width}%` }} />
-                    </div>
-                    <div className={styles.chartValue}>{formatMoney(point.total)}</div>
-                  </article>
-                );
-              })}
-            </div>
-          ) : (
-            <div className={styles.emptyState}>Sem vendas no periodo para montar o grafico.</div>
-          )}
-        </section>
-
-        <section className={styles.section}>
-          <div className={styles.sectionHeader}>
-            <div>
               <div className={styles.sectionTitle}>Visao geral</div>
               <p className={styles.sectionSubtitle}>
                 KPI principal da loja, ja considerando o periodo e o filtro de cupom selecionados.
@@ -523,6 +486,43 @@ export default async function NuvemshopPage({ searchParams }: PageProps) {
               <div className={styles.metricHint}>Estrutura atual do catalogo</div>
             </article>
           </div>
+        </section>
+
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <div className={styles.sectionTitle}>Vendas por dia</div>
+              <p className={styles.sectionSubtitle}>
+                Leitura visual do faturamento diario dentro do periodo filtrado.
+              </p>
+            </div>
+          </div>
+
+          {salesByDay.length > 0 ? (
+            <div className={styles.chartGrid}>
+              {salesByDay.map((point) => {
+                const width = Math.max(
+                  (point.total / Math.max(maxDailyRevenue, 1)) * 100,
+                  point.total > 0 ? 8 : 2,
+                );
+
+                return (
+                  <article key={point.dia} className={styles.chartRow}>
+                    <div className={styles.chartLabel}>
+                      <strong>{point.dia}</strong>
+                      <span>{point.pedidos} pedidos</span>
+                    </div>
+                    <div className={styles.chartTrack}>
+                      <div className={styles.chartBar} style={{ width: `${width}%` }} />
+                    </div>
+                    <div className={styles.chartValue}>{formatMoney(point.total)}</div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className={styles.emptyState}>Sem vendas no periodo para montar o grafico.</div>
+          )}
         </section>
 
         <section className={styles.section}>
