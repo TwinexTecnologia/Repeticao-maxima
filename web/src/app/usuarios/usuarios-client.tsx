@@ -3,10 +3,10 @@
 import { useMemo, useState } from "react";
 
 import styles from "@/components/panel.module.css";
+import type { PartnerRewardRequest } from "@/lib/parceiros/repository";
 import type {
   EmployeeAccessUser,
   PartnerAccessUser,
-  PartnerPayoutMethod,
   PartnerUserType,
   UserAccessPersistenceState,
   UserMenuPermissionKey,
@@ -19,6 +19,7 @@ type UsuariosClientProps = {
   initialPartners: PartnerAccessUser[];
   initialPartnerOptions: UserPartnerOption[];
   initialPersistence: UserAccessPersistenceState;
+  initialPendingRequests: PartnerRewardRequest[];
 };
 
 type EmployeeApiResponse = {
@@ -67,9 +68,11 @@ export function UsuariosClient({
   initialPartners,
   initialPartnerOptions,
   initialPersistence,
+  initialPendingRequests,
 }: UsuariosClientProps) {
   const [employees, setEmployees] = useState(initialEmployees);
   const [partners, setPartners] = useState(initialPartners);
+  const [pendingRequests] = useState(initialPendingRequests);
   const [persistence, setPersistence] =
     useState<UserAccessPersistenceState>(initialPersistence);
   const [employeeFeedback, setEmployeeFeedback] = useState("");
@@ -90,8 +93,7 @@ export function UsuariosClient({
     email: "",
     birthDate: "",
     shirtSize: "",
-    payoutMethod: "pix" as PartnerPayoutMethod,
-    pixKey: "",
+    payoutMethod: "bancario" as const,
     bankName: "",
     bankAgency: "",
     bankAccount: "",
@@ -161,8 +163,13 @@ export function UsuariosClient({
         value: String(withLogin),
         detail: "Parceiros que ja tiveram acesso criado no Supabase Auth.",
       },
+      {
+        label: "Resgates pendentes",
+        value: String(pendingRequests.length),
+        detail: "Solicitacoes de parceiros aguardando sua acao de admin.",
+      },
     ];
-  }, [partners]);
+  }, [partners, pendingRequests.length]);
 
   const selectedPartnerOption =
     initialPartnerOptions.find((item) => item.id === partnerForm.linkedPartnerId) || null;
@@ -246,8 +253,7 @@ export function UsuariosClient({
         email: "",
         birthDate: "",
         shirtSize: "",
-        payoutMethod: "pix",
-        pixKey: "",
+        payoutMethod: "bancario",
         bankName: "",
         bankAgency: "",
         bankAccount: "",
@@ -536,89 +542,61 @@ export function UsuariosClient({
 
               <label className={styles.filterField}>
                 <span>Forma de recebimento</span>
-                <select
-                  value={partnerForm.payoutMethod}
-                  onChange={(event) =>
-                    setPartnerForm((current) => ({
-                      ...current,
-                      payoutMethod: event.target.value as PartnerPayoutMethod,
-                    }))
-                  }
-                >
-                  <option value="pix">Chave Pix</option>
-                  <option value="bancario">Dados bancarios</option>
-                </select>
+                <input value="Dados bancarios" disabled />
               </label>
-
-              {partnerForm.payoutMethod === "pix" ? (
+              <div className={styles.formStack}>
                 <label className={styles.filterField}>
-                  <span>Chave Pix</span>
+                  <span>Banco</span>
                   <input
-                    value={partnerForm.pixKey}
+                    value={partnerForm.bankName}
                     onChange={(event) =>
                       setPartnerForm((current) => ({
                         ...current,
-                        pixKey: event.target.value,
+                        bankName: event.target.value,
                       }))
                     }
-                    placeholder="CPF, e-mail, telefone ou chave aleatoria"
                   />
                 </label>
-              ) : (
-                <div className={styles.formStack}>
+                <div className={styles.filterGrid}>
                   <label className={styles.filterField}>
-                    <span>Banco</span>
+                    <span>Agencia</span>
                     <input
-                      value={partnerForm.bankName}
+                      value={partnerForm.bankAgency}
                       onChange={(event) =>
                         setPartnerForm((current) => ({
                           ...current,
-                          bankName: event.target.value,
+                          bankAgency: event.target.value,
                         }))
                       }
                     />
                   </label>
-                  <div className={styles.filterGrid}>
-                    <label className={styles.filterField}>
-                      <span>Agencia</span>
-                      <input
-                        value={partnerForm.bankAgency}
-                        onChange={(event) =>
-                          setPartnerForm((current) => ({
-                            ...current,
-                            bankAgency: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                    <label className={styles.filterField}>
-                      <span>Conta</span>
-                      <input
-                        value={partnerForm.bankAccount}
-                        onChange={(event) =>
-                          setPartnerForm((current) => ({
-                            ...current,
-                            bankAccount: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                  </div>
                   <label className={styles.filterField}>
-                    <span>Tipo de conta</span>
+                    <span>Conta</span>
                     <input
-                      value={partnerForm.bankAccountType}
+                      value={partnerForm.bankAccount}
                       onChange={(event) =>
                         setPartnerForm((current) => ({
                           ...current,
-                          bankAccountType: event.target.value,
+                          bankAccount: event.target.value,
                         }))
                       }
-                      placeholder="Corrente, poupanca, pagamento..."
                     />
                   </label>
                 </div>
-              )}
+                <label className={styles.filterField}>
+                  <span>Tipo de conta</span>
+                  <input
+                    value={partnerForm.bankAccountType}
+                    onChange={(event) =>
+                      setPartnerForm((current) => ({
+                        ...current,
+                        bankAccountType: event.target.value,
+                      }))
+                    }
+                    placeholder="Corrente, poupanca, pagamento..."
+                  />
+                </label>
+              </div>
 
               <label className={styles.filterField}>
                 <span>Observacao</span>
@@ -688,6 +666,50 @@ export function UsuariosClient({
               </p>
             </div>
           </article>
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Solicitacoes para o admin</div>
+            <p className={styles.sectionSubtitle}>
+              Quando o parceiro clica em resgatar no painel dele, o pedido aparece aqui.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Parceiro</th>
+                <th>Cupom</th>
+                <th>Tipo</th>
+                <th>Destino</th>
+                <th>Valor</th>
+                <th>Solicitado em</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendingRequests.length > 0 ? (
+                pendingRequests.map((request) => (
+                  <tr key={request.id}>
+                    <td>{request.partnerName}</td>
+                    <td>{request.couponCode}</td>
+                    <td>{request.requestType === "apoio" ? "Apoio" : "Roupa"}</td>
+                    <td>{request.supportGoal || "Cupom / roupa"}</td>
+                    <td>{formatMoney(request.requestedAmount)}</td>
+                    <td>{formatDateTime(request.requestedAt)}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={6}>Nenhuma solicitacao pendente agora.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -835,4 +857,22 @@ function getAgeFromDate(value: string) {
   }
 
   return Math.max(age, 0);
+}
+
+function formatMoney(value: number) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(value);
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value));
 }

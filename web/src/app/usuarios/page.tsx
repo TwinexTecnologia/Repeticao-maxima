@@ -1,10 +1,14 @@
 import { AppShell } from "@/components/app-shell";
 import { UsuariosClient } from "./usuarios-client";
 import { loadUserAccessModuleData } from "@/lib/usuarios/repository";
+import { loadPartnerRewardRequests } from "@/lib/parceiros/repository";
 
 export default async function UsuariosPage() {
-  const { employees, partners, partnerOptions, persistence } =
-    await loadUserAccessModuleData();
+  const [{ employees, partners, partnerOptions, persistence }, pendingRequests] =
+    await Promise.all([
+      loadUserAccessModuleData(),
+      loadPartnerRewardRequests({ statuses: ["pendente"] }),
+    ]);
 
   return (
     <AppShell
@@ -17,6 +21,7 @@ export default async function UsuariosPage() {
         initialPartners={partners}
         initialPartnerOptions={partnerOptions}
         initialPersistence={persistence}
+        initialPendingRequests={pendingRequests}
       />
     </AppShell>
   );

@@ -16,7 +16,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     params?.next && params.next.startsWith("/") ? params.next : "/";
 
   if (user && user.active) {
-    redirect(getDefaultAuthorizedPath(user.permissions));
+    redirect(getDefaultAuthorizedPath(user.permissions, user.userType));
   }
 
   return <LoginClient nextPath={nextPath} />;
