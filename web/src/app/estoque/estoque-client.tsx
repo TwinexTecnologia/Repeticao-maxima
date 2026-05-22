@@ -36,6 +36,11 @@ type DtfApiResponse = {
   item?: DtfStockItem;
 };
 
+type PrintedAdjustmentState = {
+  mode: "add" | "remove";
+  quantity: string;
+};
+
 export function EstoqueClient({
   initialItems,
   initialPersistence,
@@ -72,6 +77,9 @@ export function EstoqueClient({
       return acc;
     }, {}),
   );
+  const [printedAdjustments, setPrintedAdjustments] = useState<
+    Record<string, PrintedAdjustmentState>
+  >({});
   const [selectedSku, setSelectedSku] = useState(initialItems[0]?.sku ?? "");
   const [selectedColor, setSelectedColor] = useState(initialItems[0]?.color ?? "");
   const [selectedSize, setSelectedSize] = useState(initialItems[0]?.size ?? "");
@@ -491,12 +499,11 @@ export function EstoqueClient({
     }
   }
 
-  async function handleSaveItem(id: string) {
-    const currentDraft = drafts[id];
-    if (!currentDraft) {
-      return;
-    }
-
+  async function saveStockItem(
+    id: string,
+    itemToSave: BaseStockItem,
+    successMessage?: string,
+  ) {
     setSavingItemId(id);
     setFeedback("");
 
@@ -506,7 +513,7 @@ export function EstoqueClient({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(currentDraft),
+        body: JSON.stringify(itemToSave),
       });
 
       const result = (await response.json()) as StockApiResponse;
@@ -529,15 +536,85 @@ export function EstoqueClient({
       if (result.persistence) {
         setPersistence(result.persistence);
       }
-      setFeedback(result.message || "Saldos atualizados.");
+      setFeedback(result.message || successMessage || "Saldos atualizados.");
+      return true;
     } catch (error) {
       setFeedback(
         error instanceof Error
           ? error.message
           : "Nao foi possivel atualizar os saldos.",
       );
+      return false;
     } finally {
       setSavingItemId(null);
+    }
+  }
+
+  async function handleSaveItem(id: string) {
+    const currentDraft = drafts[id];
+    if (!currentDraft) {
+      return;
+    }
+
+    await saveStockItem(id, currentDraft);
+  }
+
+  function getPrintedAdjustment(id: string): PrintedAdjustmentState {
+    return printedAdjustments[id] ?? {
+      mode: "add",
+      quantity: "1",
+    };
+  }
+
+  async function handleApplyPrintedAdjustment(id: string) {
+    const currentDraft = drafts[id];
+    const adjustment = getPrintedAdjustment(id);
+    const quantity = Math.max(parsePositiveInteger(adjustment.quantity), 0);
+
+    if (!currentDraft) {
+      return;
+    }
+
+    if (quantity <= 0) {
+      setFeedback("Informe quantas estampas voce quer adicionar ou retirar.");
+      return;
+    }
+
+    const delta = adjustment.mode === "add" ? quantity : -quantity;
+    const nextPrintedReal = Math.min(
+      Math.max(currentDraft.printedReal + delta, 0),
+      currentDraft.total,
+    );
+
+    if (nextPrintedReal === currentDraft.printedReal) {
+      setFeedback(
+        adjustment.mode === "add"
+          ? "Esse ajuste nao mudou o saldo de estampadas."
+          : "Nao ha estampadas suficientes para retirar nessa linha.",
+      );
+      return;
+    }
+
+    const nextDraft = recalculateDraftStockState({
+      ...currentDraft,
+      printedReal: nextPrintedReal,
+    });
+    const ok = await saveStockItem(
+      id,
+      nextDraft,
+      adjustment.mode === "add"
+        ? "Estampas adicionadas com sucesso."
+        : "Estampas retiradas com sucesso.",
+    );
+
+    if (ok) {
+      setPrintedAdjustments((current) => ({
+        ...current,
+        [id]: {
+          mode: adjustment.mode,
+          quantity: "1",
+        },
+      }));
     }
   }
 
@@ -1016,18 +1093,76 @@ export function EstoqueClient({
                         </label>
                         <label className={styles.filterField}>
                           <span>Estampadas reais</span>
-                          <input
-                            type="number"
-                            value={draft.printedReal}
-                            onChange={(event) =>
-                              updateDraft(
-                                selectedItem.id,
-                                "printedReal",
-                                Number.parseInt(event.target.value || "0", 10),
-                              )
-                            }
-                          />
+                          <input type="number" value={draft.printedReal} disabled />
                         </label>
+                        <div className={styles.filterField}>
+                          <span>Ajustar estampadas</span>
+                          <div className={styles.filterActions}>
+                            <button
+                              type="button"
+                              className={
+                                getPrintedAdjustment(selectedItem.id).mode === "add"
+                                  ? styles.primaryButton
+                                  : styles.secondaryButton
+                              }
+                              onClick={() =>
+                                setPrintedAdjustments((current) => ({
+                                  ...current,
+                                  [selectedItem.id]: {
+                                    ...getPrintedAdjustment(selectedItem.id),
+                                    mode: "add",
+                                  },
+                                }))
+                              }
+                            >
+                              Adicionar
+                            </button>
+                            <button
+                              type="button"
+                              className={
+                                getPrintedAdjustment(selectedItem.id).mode === "remove"
+                                  ? styles.primaryButton
+                                  : styles.secondaryButton
+                              }
+                              onClick={() =>
+                                setPrintedAdjustments((current) => ({
+                                  ...current,
+                                  [selectedItem.id]: {
+                                    ...getPrintedAdjustment(selectedItem.id),
+                                    mode: "remove",
+                                  },
+                                }))
+                              }
+                            >
+                              Retirar
+                            </button>
+                            <input
+                              type="number"
+                              min="1"
+                              value={getPrintedAdjustment(selectedItem.id).quantity}
+                              onChange={(event) =>
+                                setPrintedAdjustments((current) => ({
+                                  ...current,
+                                  [selectedItem.id]: {
+                                    ...getPrintedAdjustment(selectedItem.id),
+                                    quantity: event.target.value,
+                                  },
+                                }))
+                              }
+                              style={{ maxWidth: 100 }}
+                            />
+                            <button
+                              type="button"
+                              className={styles.secondaryButton}
+                              onClick={() => handleApplyPrintedAdjustment(selectedItem.id)}
+                              disabled={
+                                !persistence.enabled || savingItemId === selectedItem.id
+                              }
+                            >
+                              {savingItemId === selectedItem.id ? "Salvando..." : "OK"}
+                            </button>
+                          </div>
+                        </div>
                         <label className={styles.filterField}>
                           <span>Publicado na loja</span>
                           <input type="number" value={draft.published} disabled />
