@@ -11,6 +11,7 @@ import type { NuvemshopCoupon, NuvemshopOrder } from "@/lib/nuvemshop/types";
 const OPERATIONS_SCHEMA = "repeticao_maxima";
 const COUPON_PARTNER_TABLE = "parceiros_cupons";
 const PARTNER_REDEMPTION_TABLE = "parceiros_resgates";
+const PARTNER_REWARD_REQUEST_TABLE = "parceiros_solicitacoes_resgate";
 const DEBTS_TABLE = "dividas_internas";
 const STOCK_TABLE = "estoque_base";
 const PAGE_SIZE = 100;
@@ -65,6 +66,30 @@ export type PartnerRedemption = {
   debtId: string | null;
   notes: string;
   createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type PartnerRewardRequestType = "roupa" | "apoio";
+export type PartnerRewardRequestStatus = "pendente" | "aprovado" | "recusado";
+
+export type PartnerRewardRequest = {
+  id: string;
+  userProfileId: string;
+  couponPartnerId: string | null;
+  partnerName: string;
+  couponCode: string;
+  partnerRole: PartnerRole;
+  requestType: PartnerRewardRequestType;
+  supportGoal: string;
+  requestedAmount: number;
+  availableAmount: number;
+  minimumAmount: number;
+  windowStartDate: string | null;
+  windowEndDate: string | null;
+  status: PartnerRewardRequestStatus;
+  notes: string;
+  requestedAt: string | null;
+  reviewedAt: string | null;
   updatedAt: string | null;
 };
 
@@ -172,6 +197,103 @@ export async function loadPartnerRedemptions() {
   } catch (error) {
     return {
       redemptions: [] as PartnerRedemption[],
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function loadPartnerRewardRequests(filters?: {
+  userProfileId?: string | null;
+  statuses?: PartnerRewardRequestStatus[];
+}) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return [] as PartnerRewardRequest[];
+  }
+
+  try {
+    let query = supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_REWARD_REQUEST_TABLE)
+      .select("*")
+      .order("requested_at", { ascending: false });
+
+    if (filters?.userProfileId) {
+      query = query.eq("user_profile_id", filters.userProfileId);
+    }
+
+    if (filters?.statuses && filters.statuses.length > 0) {
+      query = query.in("status", filters.statuses);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw error;
+    }
+
+    return (data ?? []).map(rowToPartnerRewardRequest);
+  } catch {
+    return [] as PartnerRewardRequest[];
+  }
+}
+
+export async function createPartnerRewardRequest(input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizePartnerRewardRequestInput(input);
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_REWARD_REQUEST_TABLE)
+      .insert({
+        user_profile_id: row.userProfileId,
+        coupon_partner_id: row.couponPartnerId,
+        partner_name: row.partnerName,
+        coupon_code: row.couponCode,
+        partner_role: row.partnerRole,
+        request_type: row.requestType,
+        support_goal: row.supportGoal,
+        requested_amount: row.requestedAmount,
+        available_amount: row.availableAmount,
+        minimum_amount: row.minimumAmount,
+        window_start_date: row.windowStartDate,
+        window_end_date: row.windowEndDate,
+        status: "pendente",
+        notes: row.notes,
+        updated_at: new Date().toISOString(),
+      })
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel salvar a solicitacao de resgate.");
+    }
+
+    return {
+      ok: true as const,
+      request: rowToPartnerRewardRequest(data),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message: "Solicitacao enviada para o admin com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
       persistence: buildDisabledState(getErrorMessage(error)),
     };
   }
@@ -655,6 +777,31 @@ function rowToPartnerRedemption(row: Record<string, unknown>): PartnerRedemption
   };
 }
 
+function rowToPartnerRewardRequest(
+  row: Record<string, unknown>,
+): PartnerRewardRequest {
+  return {
+    id: String(row.id ?? ""),
+    userProfileId: String(row.user_profile_id ?? ""),
+    couponPartnerId: row.coupon_partner_id ? String(row.coupon_partner_id) : null,
+    partnerName: String(row.partner_name ?? "").trim(),
+    couponCode: String(row.coupon_code ?? "").trim().toUpperCase(),
+    partnerRole: normalizePartnerRole(row.partner_role),
+    requestType: normalizePartnerRewardRequestType(row.request_type),
+    supportGoal: String(row.support_goal ?? "").trim(),
+    requestedAmount: Math.max(getNumberValue(row.requested_amount), 0),
+    availableAmount: Math.max(getNumberValue(row.available_amount), 0),
+    minimumAmount: Math.max(getNumberValue(row.minimum_amount), 0),
+    windowStartDate: normalizeDate(row.window_start_date) || null,
+    windowEndDate: normalizeDate(row.window_end_date) || null,
+    status: normalizePartnerRewardRequestStatus(row.status),
+    notes: String(row.notes ?? "").trim(),
+    requestedAt: typeof row.requested_at === "string" ? row.requested_at : null,
+    reviewedAt: typeof row.reviewed_at === "string" ? row.reviewed_at : null,
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+  };
+}
+
 function normalizeCouponPartnerInput(input: unknown) {
   const source = isRecord(input) ? input : {};
   const couponCode = String(source.couponCode ?? "")
@@ -730,6 +877,42 @@ function normalizePartnerRedemptionInput(input: unknown) {
   };
 }
 
+function normalizePartnerRewardRequestInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+  const userProfileId = String(source.userProfileId ?? "").trim();
+  const partnerName = String(source.partnerName ?? "").trim();
+  const couponCode = String(source.couponCode ?? "").trim().toUpperCase();
+  const requestedAmount = Math.max(getNumberValue(source.requestedAmount), 0);
+
+  if (!userProfileId) {
+    throw new Error("Nao foi possivel identificar o parceiro logado.");
+  }
+
+  if (!partnerName || !couponCode) {
+    throw new Error("Nao foi possivel identificar o parceiro e o cupom.");
+  }
+
+  if (requestedAmount <= 0) {
+    throw new Error("O valor solicitado precisa ser maior que zero.");
+  }
+
+  return {
+    userProfileId,
+    couponPartnerId: String(source.couponPartnerId ?? "").trim() || null,
+    partnerName,
+    couponCode,
+    partnerRole: normalizePartnerRole(source.partnerRole),
+    requestType: normalizePartnerRewardRequestType(source.requestType),
+    supportGoal: String(source.supportGoal ?? "").trim(),
+    requestedAmount,
+    availableAmount: Math.max(getNumberValue(source.availableAmount), 0),
+    minimumAmount: Math.max(getNumberValue(source.minimumAmount), 0),
+    windowStartDate: normalizeDate(source.windowStartDate) || null,
+    windowEndDate: normalizeDate(source.windowEndDate) || null,
+    notes: String(source.notes ?? "").trim(),
+  };
+}
+
 function getCouponCode(order: NuvemshopOrder) {
   const code =
     order.coupon
@@ -791,6 +974,26 @@ function normalizePartnerRedemptionStatus(value: unknown): PartnerRedemptionStat
   }
 
   return "entregue";
+}
+
+function normalizePartnerRewardRequestType(
+  value: unknown,
+): PartnerRewardRequestType {
+  return String(value ?? "").trim().toLowerCase() === "apoio"
+    ? "apoio"
+    : "roupa";
+}
+
+function normalizePartnerRewardRequestStatus(
+  value: unknown,
+): PartnerRewardRequestStatus {
+  const normalized = String(value ?? "").trim().toLowerCase();
+
+  if (normalized === "aprovado" || normalized === "recusado") {
+    return normalized;
+  }
+
+  return "pendente";
 }
 
 function normalizeDate(value: unknown) {

@@ -301,49 +301,93 @@ export async function createPartnerAccessUser(input: unknown) {
 
   const row = normalizePartnerInput(input);
   let authUserId: string | null = null;
+  let createdAuthUserId: string | null = null;
 
   try {
+    const existingProfile = await findExistingPartnerProfile(
+      supabase.client,
+      row.linkedPartnerId,
+      row.email,
+    );
+
     if (row.createAccess) {
-      const authResult = await supabase.client.auth.admin.createUser({
-        email: row.email,
-        password: row.password,
-        email_confirm: true,
-        user_metadata: {
-          app_scope: OPERATIONS_SCHEMA,
-          user_type: "parceiro",
-          partner_type: row.partnerType,
-          full_name: row.fullName,
-        },
-      });
+      if (existingProfile?.auth_user_id) {
+        const updatedAuth = await supabase.client.auth.admin.updateUserById(
+          String(existingProfile.auth_user_id),
+          {
+            email: row.email,
+            password: row.password,
+            email_confirm: true,
+            user_metadata: {
+              app_scope: OPERATIONS_SCHEMA,
+              user_type: "parceiro",
+              partner_type: row.partnerType,
+              full_name: row.fullName,
+            },
+          },
+        );
 
-      if (authResult.error || !authResult.data.user) {
-        throw authResult.error || new Error("Nao foi possivel criar o login do parceiro no Supabase Auth.");
+        if (updatedAuth.error || !updatedAuth.data.user) {
+          throw (
+            updatedAuth.error ||
+            new Error("Nao foi possivel atualizar o login do parceiro no Supabase Auth.")
+          );
+        }
+
+        authUserId = updatedAuth.data.user.id;
+      } else {
+        const authResult = await supabase.client.auth.admin.createUser({
+          email: row.email,
+          password: row.password,
+          email_confirm: true,
+          user_metadata: {
+            app_scope: OPERATIONS_SCHEMA,
+            user_type: "parceiro",
+            partner_type: row.partnerType,
+            full_name: row.fullName,
+          },
+        });
+
+        if (authResult.error || !authResult.data.user) {
+          throw authResult.error || new Error("Nao foi possivel criar o login do parceiro no Supabase Auth.");
+        }
+
+        authUserId = authResult.data.user.id;
+        createdAuthUserId = authUserId;
       }
-
-      authUserId = authResult.data.user.id;
     }
 
-    const { data: profileData, error: profileError } = await supabase.client
-      .schema(OPERATIONS_SCHEMA)
-      .from(USERS_TABLE)
-      .insert({
-        auth_user_id: authUserId,
-        coupon_partner_id: row.linkedPartnerId,
-        user_type: "parceiro",
-        partner_type: row.partnerType,
-        full_name: row.fullName,
-        email: row.email,
-        birth_date: row.birthDate,
-        shirt_size: row.shirtSize,
-        payout_method: row.payoutMethod,
-        pix_key: row.pixKey,
-        bank_name: row.bankName,
-        bank_agency: row.bankAgency,
-        bank_account: row.bankAccount,
-        bank_account_type: row.bankAccountType,
-        active: row.active,
-        notes: row.notes,
-      })
+    const nextAuthUserId =
+      authUserId || (existingProfile?.auth_user_id ? String(existingProfile.auth_user_id) : null);
+    const savePayload = {
+      auth_user_id: nextAuthUserId,
+      coupon_partner_id: row.linkedPartnerId,
+      user_type: "parceiro",
+      partner_type: row.partnerType,
+      full_name: row.fullName,
+      email: row.email,
+      birth_date: row.birthDate,
+      shirt_size: row.shirtSize,
+      payout_method: row.payoutMethod,
+      pix_key: row.pixKey,
+      bank_name: row.bankName,
+      bank_agency: row.bankAgency,
+      bank_account: row.bankAccount,
+      bank_account_type: row.bankAccountType,
+      active: row.active,
+      notes: row.notes,
+      updated_at: new Date().toISOString(),
+    };
+
+    const profileQuery = existingProfile?.id
+      ? supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(USERS_TABLE)
+          .update(savePayload)
+          .eq("id", existingProfile.id)
+      : supabase.client.schema(OPERATIONS_SCHEMA).from(USERS_TABLE).insert(savePayload);
+
+    const { data: profileData, error: profileError } = await profileQuery
       .select("*")
       .single();
 
@@ -369,8 +413,8 @@ export async function createPartnerAccessUser(input: unknown) {
       },
     };
   } catch (error) {
-    if (authUserId) {
-      await supabase.client.auth.admin.deleteUser(authUserId);
+    if (createdAuthUserId) {
+      await supabase.client.auth.admin.deleteUser(createdAuthUserId);
     }
 
     return {
@@ -401,6 +445,39 @@ async function loadSinglePartnerOption(
     couponCode: String(data.coupon_code ?? "").trim().toUpperCase(),
     role: normalizeExistingPartnerRole(data.role),
   } satisfies UserPartnerOption;
+}
+
+async function findExistingPartnerProfile(
+  client: SupabaseClient,
+  linkedPartnerId: string | null,
+  email: string,
+) {
+  if (linkedPartnerId) {
+    const { data, error } = await client
+      .schema(OPERATIONS_SCHEMA)
+      .from(USERS_TABLE)
+      .select("*")
+      .eq("coupon_partner_id", linkedPartnerId)
+      .maybeSingle();
+
+    if (!error && data) {
+      return data;
+    }
+  }
+
+  const { data, error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(USERS_TABLE)
+    .select("*")
+    .eq("email", email)
+    .eq("user_type", "parceiro")
+    .maybeSingle();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return data;
 }
 
 function rowToEmployeeAccessUser(
@@ -499,7 +576,7 @@ function normalizePartnerInput(input: unknown) {
   const email = String(source.email ?? "").trim().toLowerCase();
   const createAccess = source.createAccess === true;
   const password = String(source.password ?? "").trim();
-  const payoutMethod = normalizePayoutMethod(source.payoutMethod);
+  const payoutMethod: PartnerPayoutMethod = "bancario";
   const linkedPartnerId = String(source.linkedPartnerId ?? "").trim() || null;
   const partnerType = normalizePartnerUserType(source.partnerType);
   const birthDate = normalizeDate(source.birthDate) || null;
@@ -514,10 +591,6 @@ function normalizePartnerInput(input: unknown) {
 
   if (createAccess && password.length < 6) {
     throw new Error("A senha do parceiro precisa ter pelo menos 6 caracteres.");
-  }
-
-  if (payoutMethod === "pix" && !String(source.pixKey ?? "").trim()) {
-    throw new Error("Informe a chave Pix quando o recebimento for por Pix.");
   }
 
   if (

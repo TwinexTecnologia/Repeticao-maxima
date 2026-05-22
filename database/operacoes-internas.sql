@@ -255,6 +255,35 @@ CREATE TABLE IF NOT EXISTS repeticao_maxima.permissoes_usuario (
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.permissoes_usuario TO anon, authenticated, service_role;
 
+CREATE TABLE IF NOT EXISTS repeticao_maxima.parceiros_solicitacoes_resgate (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_profile_id UUID NOT NULL REFERENCES repeticao_maxima.profiles_usuarios(id) ON DELETE CASCADE,
+  coupon_partner_id UUID REFERENCES repeticao_maxima.parceiros_cupons(id) ON DELETE SET NULL,
+  partner_name TEXT NOT NULL DEFAULT '',
+  coupon_code TEXT NOT NULL DEFAULT '',
+  partner_role TEXT NOT NULL DEFAULT 'influenciador',
+  request_type TEXT NOT NULL DEFAULT 'roupa',
+  support_goal TEXT NOT NULL DEFAULT '',
+  requested_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  available_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  minimum_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  window_start_date DATE,
+  window_end_date DATE,
+  status TEXT NOT NULL DEFAULT 'pendente',
+  notes TEXT NOT NULL DEFAULT '',
+  requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  reviewed_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (partner_role IN ('influenciador', 'atleta')),
+  CHECK (request_type IN ('roupa', 'apoio')),
+  CHECK (status IN ('pendente', 'aprovado', 'recusado')),
+  CHECK (requested_amount >= 0),
+  CHECK (available_amount >= 0),
+  CHECK (minimum_amount >= 0)
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.parceiros_solicitacoes_resgate TO anon, authenticated, service_role;
+
 ALTER TABLE repeticao_maxima.profiles_usuarios
   ADD COLUMN IF NOT EXISTS auth_user_id UUID,
   ADD COLUMN IF NOT EXISTS coupon_partner_id UUID REFERENCES repeticao_maxima.parceiros_cupons(id) ON DELETE SET NULL,
@@ -284,6 +313,25 @@ ALTER TABLE repeticao_maxima.permissoes_usuario
   ADD COLUMN IF NOT EXISTS can_influenciadores BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS can_empresa BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS can_usuarios BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE repeticao_maxima.parceiros_solicitacoes_resgate
+  ADD COLUMN IF NOT EXISTS user_profile_id UUID REFERENCES repeticao_maxima.profiles_usuarios(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS coupon_partner_id UUID REFERENCES repeticao_maxima.parceiros_cupons(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS partner_name TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS coupon_code TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS partner_role TEXT NOT NULL DEFAULT 'influenciador',
+  ADD COLUMN IF NOT EXISTS request_type TEXT NOT NULL DEFAULT 'roupa',
+  ADD COLUMN IF NOT EXISTS support_goal TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS requested_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS available_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS minimum_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS window_start_date DATE,
+  ADD COLUMN IF NOT EXISTS window_end_date DATE,
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pendente',
+  ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 INSERT INTO repeticao_maxima.dividas_internas (
   title,

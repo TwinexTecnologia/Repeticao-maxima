@@ -33,6 +33,8 @@ export type AppNavigationItem = {
 export type AuthenticatedAppUser = {
   authUserId: string;
   profileId: string | null;
+  linkedPartnerId: string | null;
+  linkedCouponCode: string;
   fullName: string;
   email: string;
   active: boolean;
@@ -152,6 +154,8 @@ export async function loadAuthenticatedAppUser(): Promise<AuthenticatedAppUser |
     return {
       authUserId: user.id,
       profileId: null,
+      linkedPartnerId: null,
+      linkedCouponCode: "",
       fullName:
         String(user.user_metadata?.full_name ?? "").trim() ||
         user.email ||
@@ -165,6 +169,7 @@ export async function loadAuthenticatedAppUser(): Promise<AuthenticatedAppUser |
   }
 
   let permissions = { ...EMPTY_PERMISSIONS };
+  let linkedCouponCode = "";
 
   if (String(profile.user_type ?? "") === "funcionario") {
     const { data: permissionRow } = await adminResult.client
@@ -189,9 +194,24 @@ export async function loadAuthenticatedAppUser(): Promise<AuthenticatedAppUser |
     }
   }
 
+  if (String(profile.user_type ?? "") === "parceiro" && profile.coupon_partner_id) {
+    const { data: linkedPartner } = await adminResult.client
+      .schema(OPERATIONS_SCHEMA)
+      .from("parceiros_cupons")
+      .select("coupon_code")
+      .eq("id", profile.coupon_partner_id)
+      .maybeSingle();
+
+    linkedCouponCode = String(linkedPartner?.coupon_code ?? "")
+      .trim()
+      .toUpperCase();
+  }
+
   return {
     authUserId: user.id,
     profileId: String(profile.id ?? ""),
+    linkedPartnerId: profile.coupon_partner_id ? String(profile.coupon_partner_id) : null,
+    linkedCouponCode,
     fullName:
       String(profile.full_name ?? "").trim() ||
       String(user.user_metadata?.full_name ?? "").trim() ||
@@ -215,14 +235,19 @@ export async function requirePageAccess(currentPath: string) {
   if (currentPath.startsWith("/acesso-negado")) {
     return {
       user,
-      navigationItems: APP_NAVIGATION_ITEMS.filter(
-        (item) => user.permissions[item.permission],
-      ),
+      navigationItems:
+        user.userType === "parceiro"
+          ? []
+          : APP_NAVIGATION_ITEMS.filter((item) => user.permissions[item.permission]),
     };
   }
 
   if (!user.active) {
     redirect("/acesso-negado");
+  }
+
+  if (user.userType === "parceiro" && !currentPath.startsWith("/meu-desempenho")) {
+    redirect("/meu-desempenho");
   }
 
   const requiredPermission = resolveRequiredPermission(currentPath);
@@ -233,9 +258,10 @@ export async function requirePageAccess(currentPath: string) {
 
   return {
     user,
-    navigationItems: APP_NAVIGATION_ITEMS.filter(
-      (item) => user.permissions[item.permission],
-    ),
+    navigationItems:
+      user.userType === "parceiro"
+        ? []
+        : APP_NAVIGATION_ITEMS.filter((item) => user.permissions[item.permission]),
   };
 }
 
@@ -320,7 +346,12 @@ export function isNavigationItemActive(currentPath: string, href: string) {
 
 export function getDefaultAuthorizedPath(
   permissions: UserMenuPermissions,
+  userType: AuthenticatedAppUser["userType"] = "funcionario",
 ): string {
+  if (userType === "parceiro") {
+    return "/meu-desempenho";
+  }
+
   return (
     APP_NAVIGATION_ITEMS.find((item) => permissions[item.permission])?.href ||
     "/acesso-negado"
