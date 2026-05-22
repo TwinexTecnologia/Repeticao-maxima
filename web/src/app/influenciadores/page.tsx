@@ -161,6 +161,48 @@ function formatDateTime(value?: string | null) {
   }).format(new Date(value));
 }
 
+function getGoalProgressPercent(value: number, goal: number) {
+  if (goal <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min((value / goal) * 100, 100));
+}
+
+function getSupportCyclePercent(value: number) {
+  if (value <= 0) {
+    return 0;
+  }
+
+  const cycleValue = value % ATHLETE_SUPPORT_REFERENCE_COST;
+  return cycleValue === 0 ? 100 : (cycleValue / ATHLETE_SUPPORT_REFERENCE_COST) * 100;
+}
+
+function getGoalStatusLabel(row: PartnerDashboardRow) {
+  return row.monthlyGoalReached
+    ? `Meta batida com ${formatMoney(row.monthlyUnlockedCredit)} liberados`
+    : `${formatMoney(row.monthlyAmountToGoal)} para liberar`;
+}
+
+function getSelectedPartnerSummary(
+  row: PartnerDashboardRow | null,
+  rollingWindowLabel: string,
+) {
+  if (!row) {
+    return "Nenhum parceiro ativo encontrado com os filtros atuais.";
+  }
+
+  if (row.role === "atleta") {
+    return row.monthlyGoalReached
+      ? `Na janela de ${rollingWindowLabel}, ${row.name} ja bateu a meta de roupa e hoje acumula ${formatMoney(row.cumulativeSupport)} para apoio esportivo.`
+      : `Na janela de ${rollingWindowLabel}, ${row.name} ainda precisa de ${formatMoney(row.monthlyAmountToGoal)} para liberar roupa e hoje soma ${formatMoney(row.cumulativeSupport)} de apoio esportivo.`;
+  }
+
+  return row.monthlyGoalReached
+    ? `Na janela de ${rollingWindowLabel}, ${row.name} bateu a meta e liberou ${formatMoney(row.monthlyUnlockedCredit)} em roupa.`
+    : `Na janela de ${rollingWindowLabel}, ${row.name} gerou ${formatMoney(row.netRevenue)} liquidos e ainda falta ${formatMoney(row.monthlyAmountToGoal)} para liberar o beneficio.`;
+}
+
 function getNuvemFeeRule(order: NuvemshopOrder, financeConfig: Awaited<ReturnType<typeof loadFinanceConfig>>["config"]) {
   const method = normalizeText(
     `${order.payment_details?.method || ""} ${order.gateway_name || ""} ${order.gateway || ""} ${order.payment_status || ""}`,
@@ -423,8 +465,13 @@ async function loadInfluencerDashboard(
       (row) => row.role === "influenciador",
     );
     const athleteRows = partnerRows.filter((row) => row.role === "atleta");
+    const topInfluencer = influencerRows[0] || null;
+    const topAthlete = athleteRows[0] || null;
     const selectedCoupon =
-      partnerRows.find((row) => row.code === filters.selectedCoupon) || null;
+      partnerRows.find((row) => row.code === filters.selectedCoupon) ||
+      topInfluencer ||
+      topAthlete ||
+      null;
     const selectedCouponOrders = selectedCoupon
       ? filteredCouponOrders
           .filter((item) => item.couponCode === selectedCoupon.code)
@@ -464,6 +511,8 @@ async function loadInfluencerDashboard(
         selectedCoupon,
         selectedCouponOrders,
         topPartner,
+        topInfluencer,
+        topAthlete,
         totalNetRevenue,
         totalMonthlyUnlocked,
         totalAthleteSupport,
@@ -488,7 +537,6 @@ async function loadInfluencerDashboard(
 export default async function InfluenciadoresPage({ searchParams }: PageProps) {
   const resolvedSearchParams = (await searchParams) || {};
   const selectedMonth = getSearchValue(resolvedSearchParams, "month") || getCurrentMonthInput();
-  const monthRange = getMonthRange(selectedMonth);
   const rollingWindow = getRollingWindowRange(selectedMonth);
   const filters = {
     month: selectedMonth,
@@ -562,6 +610,8 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
     selectedCoupon,
     selectedCouponOrders,
     topPartner,
+    topInfluencer,
+    topAthlete,
     totalNetRevenue,
     totalMonthlyUnlocked,
     totalAthleteSupport,
@@ -577,44 +627,44 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
         currentPath="/influenciadores"
       >
         <section className={styles.section}>
-          <div className={styles.twoColumn}>
-            <div className={styles.callout}>
-              <h3>Influenciador</h3>
-              <p>
-                Bateu {formatMoney(INFLUENCER_WINDOW_GOAL)} de receita liquida em
-                ate 3 meses, libera {INFLUENCER_CREDIT_PERCENT}% em roupa. Se nao
+          <div className={styles.definitionGrid}>
+            <article className={styles.definitionCard}>
+              <div className={styles.listTitleRow}>
+                <div className={styles.listTitle}>Influenciador</div>
+                <span className={`${styles.pill} ${styles.pillMedium}`}>
+                  14% em roupa
+                </span>
+              </div>
+              <p className={styles.listDetail}>
+                Bateu {formatMoney(INFLUENCER_WINDOW_GOAL)} liquidos em ate 3
+                meses, libera {INFLUENCER_CREDIT_PERCENT}% em roupa. Se nao
                 fechar a janela, zera e recomeca.
               </p>
-            </div>
-            <div className={styles.list}>
-              <article className={styles.listItem}>
-                <div className={styles.listTitleRow}>
-                  <div className={styles.listTitle}>Atleta</div>
-                  <span className={`${styles.pill} ${styles.pillLow}`}>
-                    10% + 4%
-                  </span>
-                </div>
-                <p className={styles.listDetail}>
-                  Bateu {formatMoney(ATHLETE_WINDOW_GOAL)} em ate 3 meses,
-                  libera {ATHLETE_WINDOW_CREDIT_PERCENT}% em roupa. Alem disso,
-                  acumula {ATHLETE_SUPPORT_PERCENT}% da receita liquida total para
-                  apoio esportivo.
-                </p>
-              </article>
-              <article className={styles.listItem}>
-                <div className={styles.listTitleRow}>
-                  <div className={styles.listTitle}>Apoio esportivo</div>
-                  <span className={`${styles.pill} ${styles.pillLow}`}>
-                    Base R$ 400
-                  </span>
-                </div>
-                <p className={styles.listDetail}>
-                  O acumulado do atleta pode ser lido contra uma referencia de{" "}
-                  {formatMoney(ATHLETE_SUPPORT_REFERENCE_COST)} para kit, pintura
-                  ou ajuda de campeonato.
-                </p>
-              </article>
-            </div>
+            </article>
+            <article className={styles.definitionCard}>
+              <div className={styles.listTitleRow}>
+                <div className={styles.listTitle}>Atleta</div>
+                <span className={`${styles.pill} ${styles.pillLow}`}>
+                  10% + 4%
+                </span>
+              </div>
+              <p className={styles.listDetail}>
+                Bateu {formatMoney(ATHLETE_WINDOW_GOAL)} em ate 3 meses, libera{" "}
+                {ATHLETE_WINDOW_CREDIT_PERCENT}% em roupa.
+              </p>
+            </article>
+            <article className={styles.definitionCard}>
+              <div className={styles.listTitleRow}>
+                <div className={styles.listTitle}>Saldo de apoio</div>
+                <span className={`${styles.pill} ${styles.pillLow}`}>
+                  Base R$ 400
+                </span>
+              </div>
+              <p className={styles.listDetail}>
+                O atleta acumula {ATHLETE_SUPPORT_PERCENT}% da receita liquida
+                total para pintura, kit ou ajuda em campeonato.
+              </p>
+            </article>
           </div>
         </section>
 
@@ -654,14 +704,6 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
             </div>
           </form>
         </section>
-
-        <PartnerCouponManager
-          initialProfiles={moduleData.profiles}
-          initialKnownCoupons={moduleData.knownCoupons}
-          initialPersistence={moduleData.persistence}
-          initialDiscoveryState={moduleData.discoveryState}
-          initialDraft={initialDraft}
-        />
 
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
@@ -723,15 +765,330 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
             <div>
-              <div className={styles.sectionTitle}>Painel de influenciadores</div>
+              <div className={styles.sectionTitle}>Corrida da meta</div>
               <p className={styles.sectionSubtitle}>
-                Aqui entram so os cupons ativos classificados como influenciador
-                dentro da janela de 3 meses.
+                Aqui voce enxerga rapidamente o quanto cada parceiro avancou na
+                janela atual e quem ja liberou roupa ou apoio.
               </p>
             </div>
             <div className={styles.chipRow}>
               <span className={styles.chip}>{rollingWindow.label}</span>
-              <span className={styles.chip}>Meta: R$ 2.000 liquidos</span>
+              <span className={styles.chip}>Meta influencia: R$ 2.000</span>
+              <span className={styles.chip}>Meta atleta: R$ 1.500</span>
+            </div>
+          </div>
+
+          <div className={styles.orderLayout}>
+            <article className={styles.catalogCard}>
+              <div className={styles.sectionHeader}>
+                <div>
+                  <div className={styles.sectionTitle}>Grafico dos influenciadores</div>
+                  <p className={styles.sectionSubtitle}>
+                    Linha por linha, o quanto cada influenciador ja percorreu da meta.
+                  </p>
+                </div>
+                <span className={styles.chip}>
+                  Lider: {topInfluencer ? topInfluencer.code : "-"}
+                </span>
+              </div>
+              {influencerRows.length > 0 ? (
+                <div className={styles.chartGrid}>
+                  {influencerRows.map((row) => (
+                    <a
+                      key={row.code}
+                      href={buildPartnerLink(filters, row.code)}
+                      className={styles.chartRowLink}
+                    >
+                      <div className={styles.chartRow}>
+                        <div className={styles.chartLabel}>
+                          <strong>{row.name}</strong>
+                          <span>{row.code}</span>
+                        </div>
+                        <div className={styles.chartTrack}>
+                          <div
+                            className={styles.chartBar}
+                            style={{
+                              width: `${getGoalProgressPercent(row.netRevenue, row.monthlyGoal)}%`,
+                            }}
+                          />
+                        </div>
+                        <div className={styles.chartValue}>
+                          {formatMoney(row.netRevenue)} / {formatMoney(row.monthlyGoal)}
+                        </div>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <div className={styles.emptyState}>
+                  Nenhum influenciador ativo apareceu com os filtros atuais.
+                </div>
+              )}
+            </article>
+
+            <article className={styles.catalogCard}>
+              <div className={styles.sectionHeader}>
+                <div>
+                  <div className={styles.sectionTitle}>Grafico dos atletas</div>
+                  <p className={styles.sectionSubtitle}>
+                    Aqui voce acompanha a corrida da meta de roupa dos atletas.
+                  </p>
+                </div>
+                <span className={styles.chip}>
+                  Lider: {topAthlete ? topAthlete.code : "-"}
+                </span>
+              </div>
+              {athleteRows.length > 0 ? (
+                <div className={styles.chartGrid}>
+                  {athleteRows.map((row) => (
+                    <a
+                      key={row.code}
+                      href={buildPartnerLink(filters, row.code)}
+                      className={styles.chartRowLink}
+                    >
+                      <div className={styles.chartRow}>
+                        <div className={styles.chartLabel}>
+                          <strong>{row.name}</strong>
+                          <span>{row.code}</span>
+                        </div>
+                        <div className={styles.chartTrack}>
+                          <div
+                            className={styles.chartBar}
+                            style={{
+                              width: `${getGoalProgressPercent(row.netRevenue, row.monthlyGoal)}%`,
+                              background:
+                                "linear-gradient(90deg, #2f7a48 0%, #7b2cbf 100%)",
+                            }}
+                          />
+                        </div>
+                        <div className={styles.chartValue}>
+                          {formatMoney(row.netRevenue)} / {formatMoney(row.monthlyGoal)}
+                        </div>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <div className={styles.emptyState}>
+                  Nenhum atleta ativo apareceu com os filtros atuais.
+                </div>
+              )}
+            </article>
+          </div>
+        </section>
+
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <div className={styles.sectionTitle}>Saldo de apoio dos atletas</div>
+              <p className={styles.sectionSubtitle}>
+                Esse grafico mostra o saldo acumulado para pintura, kit ou ajuda de campeonato.
+              </p>
+            </div>
+          </div>
+          {athleteRows.length > 0 ? (
+            <div className={styles.chartGrid}>
+              {athleteRows.map((row) => (
+                <a
+                  key={row.code}
+                  href={buildPartnerLink(filters, row.code)}
+                  className={styles.chartRowLink}
+                >
+                  <div className={styles.chartRow}>
+                    <div className={styles.chartLabel}>
+                      <strong>{row.name}</strong>
+                      <span>
+                        Proximo apoio em{" "}
+                        {row.nextSupportMilestone !== null
+                          ? formatMoney(row.nextSupportMilestone)
+                          : "-"}
+                      </span>
+                    </div>
+                    <div className={styles.chartTrack}>
+                      <div
+                        className={styles.chartBar}
+                        style={{
+                          width: `${getSupportCyclePercent(row.cumulativeSupport)}%`,
+                          background:
+                            "linear-gradient(90deg, #8e4700 0%, #d17b00 100%)",
+                        }}
+                      />
+                    </div>
+                    <div className={styles.chartValue}>
+                      {formatMoney(row.cumulativeSupport)}
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          ) : (
+            <div className={styles.emptyState}>
+              Nenhum atleta ativo apareceu com os filtros atuais.
+            </div>
+          )}
+        </section>
+
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <div className={styles.sectionTitle}>Detalhe do parceiro</div>
+              <p className={styles.sectionSubtitle}>
+                Aqui fica a leitura detalhada de um parceiro por vez, com foco no que falta, no que ja liberou e no historico.
+              </p>
+            </div>
+            <div className={styles.chipRow}>
+              {selectedCoupon ? (
+                <>
+                  <span className={styles.chip}>
+                    {selectedCoupon.role === "atleta" ? "Atleta" : "Influenciador"}
+                  </span>
+                  <span className={styles.chip}>{selectedCoupon.code}</span>
+                </>
+              ) : null}
+            </div>
+          </div>
+          {partnerRows.length > 0 ? (
+            <div className={styles.orderLayout}>
+              <div className={styles.stack}>
+                <div className={styles.callout}>
+                  <h3>Leitura pratica</h3>
+                  <p>{getSelectedPartnerSummary(selectedCoupon, rollingWindow.label)}</p>
+                </div>
+                <div className={styles.metricGrid}>
+                  <article className={styles.metricCard}>
+                    <div className={styles.metricLabel}>Receita liquida 3m</div>
+                    <div className={styles.metricValue}>
+                      {formatMoney(selectedCoupon?.netRevenue ?? 0)}
+                    </div>
+                    <div className={styles.metricHint}>
+                      Base usada para correr a meta da janela
+                    </div>
+                  </article>
+                  <article className={styles.metricCard}>
+                    <div className={styles.metricLabel}>Progresso da meta</div>
+                    <div className={styles.metricValue}>
+                      {selectedCoupon
+                        ? `${Math.round(
+                            getGoalProgressPercent(
+                              selectedCoupon.netRevenue,
+                              selectedCoupon.monthlyGoal,
+                            ),
+                          )}%`
+                        : "-"}
+                    </div>
+                    <div className={styles.metricHint}>
+                      {selectedCoupon ? getGoalStatusLabel(selectedCoupon) : "-"}
+                    </div>
+                  </article>
+                  <article className={styles.metricCard}>
+                    <div className={styles.metricLabel}>Roupa liberada</div>
+                    <div className={styles.metricValue}>
+                      {formatMoney(selectedCoupon?.monthlyUnlockedCredit ?? 0)}
+                    </div>
+                    <div className={styles.metricHint}>
+                      {selectedCoupon?.monthlyGoalReached
+                        ? "Beneficio ja aberto na janela"
+                        : "Ainda travado pela meta"}
+                    </div>
+                  </article>
+                  <article className={styles.metricCard}>
+                    <div className={styles.metricLabel}>Saldo de apoio</div>
+                    <div className={styles.metricValue}>
+                      {selectedCoupon?.role === "atleta"
+                        ? formatMoney(selectedCoupon.cumulativeSupport)
+                        : "-"}
+                    </div>
+                    <div className={styles.metricHint}>
+                      {selectedCoupon?.role === "atleta"
+                        ? selectedCoupon.nextSupportMilestone !== null
+                          ? `${formatMoney(selectedCoupon.nextSupportMilestone)} para o proximo marco`
+                          : "Sem leitura de apoio"
+                        : "Disponivel so para atleta"}
+                    </div>
+                  </article>
+                </div>
+                <div className={styles.tableWrap}>
+                  <table className={styles.table}>
+                    <thead>
+                      <tr>
+                        <th>Pedido</th>
+                        <th>Data</th>
+                        <th>Cliente</th>
+                        <th>Total</th>
+                        <th>Pagamento</th>
+                        <th>Status</th>
+                        <th>Envio</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedCouponOrders.length > 0 ? (
+                        selectedCouponOrders.map(({ order }) => (
+                          <tr key={String(order.id)}>
+                            <td>#{order.number}</td>
+                            <td>{formatDateTime(order.created_at)}</td>
+                            <td>{order.customer?.name || order.contact_name || "-"}</td>
+                            <td>{formatMoney(order.total)}</td>
+                            <td>{order.payment_details?.method || order.gateway_name || "-"}</td>
+                            <td>{order.status || "-"}</td>
+                            <td>{order.shipping_status || "-"}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={7}>Esse parceiro ainda nao tem pedidos na janela filtrada.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div className={styles.stack}>
+                <div className={styles.catalogCard}>
+                  <div className={styles.sectionTitle}>Trocar parceiro</div>
+                  <p className={styles.sectionSubtitle}>
+                    Clique em qualquer parceiro para abrir o detalhe dele.
+                  </p>
+                  <div className={styles.metaList}>
+                    {partnerRows.map((row) => (
+                      <a
+                        key={row.code}
+                        href={buildPartnerLink(filters, row.code)}
+                        className={styles.partnerSelectCard}
+                      >
+                        <div className={styles.listTitleRow}>
+                          <strong>{row.name}</strong>
+                          <span
+                            className={`${styles.pill} ${
+                              row.role === "atleta" ? styles.pillLow : styles.pillMedium
+                            }`}
+                          >
+                            {row.role === "atleta" ? "Atleta" : "Influenciador"}
+                          </span>
+                        </div>
+                        <div className={styles.partnerSelectMeta}>
+                          <span>{row.code}</span>
+                          <strong>{formatMoney(row.netRevenue)}</strong>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className={styles.emptyState}>
+              Nenhum parceiro ativo apareceu com os filtros atuais.
+            </div>
+          )}
+        </section>
+
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <div className={styles.sectionTitle}>Tabela de influenciadores</div>
+              <p className={styles.sectionSubtitle}>
+                Lista completa dos influenciadores ativos com a leitura numerica da janela.
+              </p>
             </div>
           </div>
 
@@ -744,41 +1101,30 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
                     <th>Cupom</th>
                     <th>Pedidos</th>
                     <th>Receita liquida 3m</th>
-                    <th>Ticket medio</th>
                     <th>Roupa liberada</th>
-                    <th>Falta para liberar</th>
-                    <th>Canais</th>
+                    <th>Status da meta</th>
                     <th>Ultimo pedido</th>
+                    <th>Atalho</th>
                   </tr>
                 </thead>
                 <tbody>
                   {influencerRows.map((row) => (
                     <tr key={row.code}>
-                      <td>
-                        <strong>{row.name}</strong>
-                        <div style={{ color: "#6f5b82", marginTop: 6 }}>
-                          {row.notes || "Sem observacao interna."}
-                        </div>
-                      </td>
+                      <td>{row.name}</td>
+                      <td>{row.code}</td>
+                      <td>{row.orders}</td>
+                      <td>{formatMoney(row.netRevenue)}</td>
+                      <td>{formatMoney(row.monthlyUnlockedCredit)}</td>
+                      <td>{getGoalStatusLabel(row)}</td>
+                      <td>{formatDateTime(row.lastOrderAt)}</td>
                       <td>
                         <a
                           href={buildPartnerLink(filters, row.code)}
-                          className={styles.tableLink}
+                          className={styles.secondaryButton}
                         >
-                          {row.code}
+                          Ver detalhe
                         </a>
                       </td>
-                      <td>{row.orders}</td>
-                      <td>{formatMoney(row.netRevenue)}</td>
-                      <td>{formatMoney(row.averageTicket)}</td>
-                      <td>{formatMoney(row.monthlyUnlockedCredit)}</td>
-                      <td>
-                        {row.monthlyGoalReached
-                          ? "Meta batida na janela"
-                          : formatMoney(row.monthlyAmountToGoal)}
-                      </td>
-                      <td>{row.channels.join(" / ")}</td>
-                      <td>{formatDateTime(row.lastOrderAt)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -794,18 +1140,12 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
             <div>
-              <div className={styles.sectionTitle}>Painel de atletas</div>
+              <div className={styles.sectionTitle}>Tabela de atletas</div>
               <p className={styles.sectionSubtitle}>
-                O atleta le em duas frentes: roupa liberada na janela de 3 meses
-                e apoio acumulado no historico.
+                Lista completa dos atletas com a corrida da meta e o saldo acumulado de apoio.
               </p>
             </div>
-            <div className={styles.chipRow}>
-              <span className={styles.chip}>Meta 3 meses: R$ 1.500</span>
-              <span className={styles.chip}>Acumulado: 4%</span>
-            </div>
           </div>
-
           {athleteRows.length > 0 ? (
             <div className={styles.tableWrap}>
               <table className={styles.table}>
@@ -813,32 +1153,19 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
                   <tr>
                     <th>Parceiro</th>
                     <th>Cupom</th>
-                    <th>Pedidos 3m</th>
                     <th>Receita liquida 3m</th>
                     <th>Roupa liberada</th>
-                    <th>Apoio acumulado</th>
-                    <th>Falta para proximo apoio</th>
+                    <th>Saldo de apoio</th>
+                    <th>Falta para apoio</th>
                     <th>Ultimo pedido</th>
+                    <th>Atalho</th>
                   </tr>
                 </thead>
                 <tbody>
                   {athleteRows.map((row) => (
                     <tr key={row.code}>
-                      <td>
-                        <strong>{row.name}</strong>
-                        <div style={{ color: "#6f5b82", marginTop: 6 }}>
-                          {row.notes || "Sem observacao interna."}
-                        </div>
-                      </td>
-                      <td>
-                        <a
-                          href={buildPartnerLink(filters, row.code)}
-                          className={styles.tableLink}
-                        >
-                          {row.code}
-                        </a>
-                      </td>
-                      <td>{row.orders}</td>
+                      <td>{row.name}</td>
+                      <td>{row.code}</td>
                       <td>{formatMoney(row.netRevenue)}</td>
                       <td>{formatMoney(row.monthlyUnlockedCredit)}</td>
                       <td>{formatMoney(row.cumulativeSupport)}</td>
@@ -848,6 +1175,14 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
                           : "-"}
                       </td>
                       <td>{formatDateTime(row.lastOrderAt)}</td>
+                      <td>
+                        <a
+                          href={buildPartnerLink(filters, row.code)}
+                          className={styles.secondaryButton}
+                        >
+                          Ver detalhe
+                        </a>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -865,8 +1200,8 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
             <div>
               <div className={styles.sectionTitle}>Cupons sem classificacao</div>
               <p className={styles.sectionSubtitle}>
-                Se um cupom vendeu no periodo e nao aparece acima, ele ainda nao
-                foi marcado como influenciador ou atleta.
+                Se um cupom ja vendeu e nao aparece nos paineis acima, ele ainda
+                precisa ser marcado como influenciador ou atleta.
               </p>
             </div>
           </div>
@@ -910,148 +1245,13 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
           )}
         </section>
 
-        {filters.selectedCoupon ? (
-          <section className={styles.section}>
-            <div className={styles.sectionHeader}>
-              <div>
-                <div className={styles.sectionTitle}>Detalhe do cupom</div>
-                <p className={styles.sectionSubtitle}>
-                  Pedidos recentes vinculados ao cupom selecionado.
-                </p>
-              </div>
-              <a href="/influenciadores" className={styles.secondaryButton}>
-                Fechar detalhe
-              </a>
-            </div>
-
-            {selectedCoupon ? (
-              <>
-                <div className={styles.metricGrid}>
-                  <article className={styles.metricCard}>
-                    <div className={styles.metricLabel}>Parceiro</div>
-                    <div className={styles.metricValue}>{selectedCoupon.name}</div>
-                    <div className={styles.metricHint}>
-                      {selectedCoupon.role === "atleta" ? "Atleta" : "Influenciador"}
-                    </div>
-                  </article>
-                  <article className={styles.metricCard}>
-                    <div className={styles.metricLabel}>Cupom</div>
-                    <div className={styles.metricValue}>{selectedCoupon.code}</div>
-                    <div className={styles.metricHint}>Codigo usado na Nuvemshop</div>
-                  </article>
-                  <article className={styles.metricCard}>
-                    <div className={styles.metricLabel}>Pedidos</div>
-                    <div className={styles.metricValue}>{selectedCoupon.orders}</div>
-                    <div className={styles.metricHint}>Pedidos no periodo atual</div>
-                  </article>
-                  <article className={styles.metricCard}>
-                    <div className={styles.metricLabel}>Receita bruta</div>
-                    <div className={styles.metricValue}>{formatMoney(selectedCoupon.revenue)}</div>
-                    <div className={styles.metricHint}>Faturamento gerado pelo cupom</div>
-                  </article>
-                  <article className={styles.metricCard}>
-                    <div className={styles.metricLabel}>Receita liquida</div>
-                    <div className={styles.metricValue}>{formatMoney(selectedCoupon.netRevenue)}</div>
-                    <div className={styles.metricHint}>Base usada na janela de 3 meses</div>
-                  </article>
-                  <article className={styles.metricCard}>
-                    <div className={styles.metricLabel}>Roupa liberada</div>
-                    <div className={styles.metricValue}>
-                      {formatMoney(selectedCoupon.monthlyUnlockedCredit)}
-                    </div>
-                    <div className={styles.metricHint}>
-                      {selectedCoupon.monthlyGoalReached
-                        ? `${selectedCoupon.monthlyCreditPercent}% liberado na janela`
-                        : "Meta da janela ainda nao batida"}
-                    </div>
-                  </article>
-                  <article className={styles.metricCard}>
-                    <div className={styles.metricLabel}>Falta para meta da janela</div>
-                    <div className={styles.metricValue}>
-                      {selectedCoupon.monthlyGoalReached
-                        ? "-"
-                        : formatMoney(selectedCoupon.monthlyAmountToGoal)}
-                    </div>
-                    <div className={styles.metricHint}>
-                      {selectedCoupon.monthlyGoalReached
-                        ? "Meta da janela batida"
-                        : `Faltam ${formatMoney(selectedCoupon.monthlyAmountToGoal)} para liberar`}
-                    </div>
-                  </article>
-                  <article className={styles.metricCard}>
-                    <div className={styles.metricLabel}>Historico liquido</div>
-                    <div className={styles.metricValue}>{formatMoney(selectedCoupon.lifetimeNetRevenue)}</div>
-                    <div className={styles.metricHint}>Receita liquida total do cupom</div>
-                  </article>
-                  {selectedCoupon.role === "atleta" ? (
-                    <article className={styles.metricCard}>
-                      <div className={styles.metricLabel}>Apoio acumulado</div>
-                      <div className={styles.metricValue}>
-                        {formatMoney(selectedCoupon.cumulativeSupport)}
-                      </div>
-                      <div className={styles.metricHint}>
-                        {selectedCoupon.nextSupportMilestone !== null
-                          ? `${formatMoney(selectedCoupon.nextSupportMilestone)} para a proxima base de R$ 400`
-                          : "Sem leitura acumulativa"}
-                      </div>
-                    </article>
-                  ) : null}
-                  <article className={styles.metricCard}>
-                    <div className={styles.metricLabel}>Historico de pedidos</div>
-                    <div className={styles.metricValue}>{selectedCoupon.lifetimeOrders}</div>
-                    <div className={styles.metricHint}>Pedidos totais do cupom</div>
-                  </article>
-                </div>
-
-                <div className={styles.tableWrap}>
-                  <table className={styles.table}>
-                    <thead>
-                      <tr>
-                        <th>Pedido</th>
-                        <th>Data</th>
-                        <th>Cliente</th>
-                        <th>Total</th>
-                        <th>Pagamento</th>
-                        <th>Status</th>
-                        <th>Envio</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedCouponOrders.map(({ order }) => (
-                        <tr key={String(order.id)}>
-                          <td>#{order.number}</td>
-                          <td>{formatDateTime(order.created_at)}</td>
-                          <td>{order.customer?.name || order.contact_name || "-"}</td>
-                          <td>{formatMoney(order.total)}</td>
-                          <td>{order.payment_details?.method || order.gateway_name || "-"}</td>
-                          <td>{order.status || "-"}</td>
-                          <td>{order.shipping_status || "-"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className={styles.callout}>
-                  <h3>Leitura pratica do parceiro</h3>
-                  <p>
-                    {selectedCoupon.role === "atleta"
-                      ? selectedCoupon.monthlyGoalReached
-                        ? `Na janela de ${rollingWindow.label}, o atleta ${selectedCoupon.name} ja liberou ${formatMoney(selectedCoupon.monthlyUnlockedCredit)} em roupa. No historico total, o cupom ${selectedCoupon.code} acumulou ${formatMoney(selectedCoupon.cumulativeSupport)} para apoio esportivo.`
-                        : `Na janela de ${rollingWindow.label}, o atleta ${selectedCoupon.name} ainda precisa gerar ${formatMoney(selectedCoupon.monthlyAmountToGoal)} liquidos para liberar roupa. No historico total, ele acumula ${formatMoney(selectedCoupon.cumulativeSupport)} para apoio esportivo.`
-                      : selectedCoupon.monthlyGoalReached
-                        ? `Na janela de ${rollingWindow.label}, o influenciador ${selectedCoupon.name} bateu a meta e liberou ${formatMoney(selectedCoupon.monthlyUnlockedCredit)} em roupa para usar agora.`
-                        : `Na janela de ${rollingWindow.label}, o influenciador ${selectedCoupon.name} gerou ${formatMoney(selectedCoupon.netRevenue)} liquidos e ainda faltam ${formatMoney(selectedCoupon.monthlyAmountToGoal)} para liberar o beneficio em roupa.`}
-                  </p>
-                </div>
-              </>
-            ) : (
-              <div className={styles.emptyState}>
-                O cupom selecionado nao aparece nos pedidos filtrados.
-              </div>
-            )}
-          </section>
-        ) : null}
+        <PartnerCouponManager
+          initialProfiles={moduleData.profiles}
+          initialKnownCoupons={moduleData.knownCoupons}
+          initialPersistence={moduleData.persistence}
+          initialDiscoveryState={moduleData.discoveryState}
+          initialDraft={initialDraft}
+        />
       </AppShell>
     );
 }
