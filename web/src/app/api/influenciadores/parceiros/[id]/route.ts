@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { authorizeApiAccess } from "@/lib/auth/access";
 import { updateCouponPartnerProfile } from "@/lib/parceiros/repository";
 
 type RouteProps = {
@@ -7,6 +8,12 @@ type RouteProps = {
 };
 
 export async function PUT(request: Request, context: RouteProps) {
+  const authorization = await authorizeApiAccess("influenciadores");
+
+  if (!authorization.ok) {
+    return authorization.response;
+  }
+
   try {
     const body = await request.json();
     const { id } = await context.params;

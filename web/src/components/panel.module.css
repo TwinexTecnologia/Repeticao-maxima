@@ -180,6 +180,31 @@
   line-height: 1.6;
 }
 
+.accountCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(123, 44, 191, 0.12);
+}
+
+.accountMeta {
+  display: grid;
+  gap: 2px;
+}
+
+.accountMeta strong {
+  font-size: 0.94rem;
+  color: #37184d;
+}
+
+.accountMeta span {
+  font-size: 0.8rem;
+  color: #755b8d;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -861,6 +886,27 @@
 .primaryButton:hover,
 .secondaryButton:hover {
   transform: translateY(-1px);
+}
+
+.authPage {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 32px 18px;
+  background:
+    radial-gradient(circle at top, rgba(123, 44, 191, 0.18), transparent 38%),
+    linear-gradient(180deg, #f9f3ff 0%, #fff7ef 100%);
+}
+
+.authCard {
+  width: min(100%, 520px);
+  padding: 28px;
+  border-radius: 30px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(123, 44, 191, 0.12);
+  box-shadow: 0 24px 56px rgba(88, 28, 135, 0.18);
+  display: grid;
+  gap: 18px;
 }
 
 .catalogStack {

@@ -2,7 +2,14 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { AuthUserMenu } from "./auth-user-menu";
 import styles from "./panel.module.css";
+import {
+  APP_NAVIGATION_ITEMS,
+  isNavigationItemActive,
+  requirePageAccess,
+  type AppNavigationItem,
+} from "@/lib/auth/access";
 
 type AppShellProps = {
   title: string;
@@ -11,41 +18,14 @@ type AppShellProps = {
   children: ReactNode;
 };
 
-type NavigationItem = {
-  href: string;
-  label: string;
-  hint: string;
-  icon: "dashboard" | "compras" | "estoque" | "pedidos" | "financeiro" | "nuvemshop" | "influenciadores" | "empresa" | "usuarios";
-};
-
-const navigationItems = [
-  { href: "/", label: "Dashboard", hint: "Visao geral", icon: "dashboard" },
-  { href: "/compras", label: "Compras", hint: "Lotes e dividas", icon: "compras" },
-  { href: "/estoque", label: "Estoque", hint: "Base por cor", icon: "estoque" },
-  { href: "/pedidos", label: "Pedidos", hint: "Venda e producao", icon: "pedidos" },
-  { href: "/financeiro", label: "Financeiro", hint: "Margem liquida", icon: "financeiro" },
-  {
-    href: "/integracoes/nuvemshop",
-    label: "Nuvemshop",
-    hint: "Pedidos reais",
-    icon: "nuvemshop",
-  },
-  {
-    href: "/influenciadores",
-    label: "Influenciadores",
-    hint: "Cupons e brindes",
-    icon: "influenciadores",
-  },
-  { href: "/empresa", label: "Empresa", hint: "Dados e regras", icon: "empresa" },
-  { href: "/usuarios", label: "Usuarios", hint: "Permissoes", icon: "usuarios" },
-] satisfies NavigationItem[];
-
-export function AppShell({
+export async function AppShell({
   title,
   subtitle,
   currentPath,
   children,
 }: AppShellProps) {
+  const { user, navigationItems } = await requirePageAccess(currentPath);
+
   return (
     <div className={styles.appShell}>
       <aside className={styles.sidebar}>
@@ -65,7 +45,7 @@ export function AppShell({
 
         <nav className={styles.nav} aria-label="Principal">
           {navigationItems.map((item) => {
-            const isActive = currentPath === item.href;
+            const isActive = isNavigationItemActive(currentPath, item.href);
 
             return (
               <Link
@@ -105,6 +85,7 @@ export function AppShell({
             <h1>{title}</h1>
             <p>{subtitle}</p>
           </div>
+          <AuthUserMenu fullName={user.fullName} email={user.email} />
         </header>
 
         {children}
@@ -113,7 +94,7 @@ export function AppShell({
   );
 }
 
-function NavigationIcon({ icon }: { icon: NavigationItem["icon"] }) {
+function NavigationIcon({ icon }: { icon: AppNavigationItem["icon"] }) {
   switch (icon) {
     case "dashboard":
       return (

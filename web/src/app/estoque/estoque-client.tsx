@@ -118,7 +118,8 @@ export function EstoqueClient({
     const plain = items.reduce((sum, item) => sum + item.plain, 0);
     const printedReal = items.reduce((sum, item) => sum + item.printedReal, 0);
     const published = items.reduce((sum, item) => sum + item.published, 0);
-    const remanejavel = items.reduce((sum, item) => sum + item.free, 0);
+    const recentSales30d = items.reduce((sum, item) => sum + item.recentSales30d, 0);
+    const overpublished = items.filter((item) => item.overcommitted > 0).length;
     const atRisk = items.filter((item) => needsAttention(item)).length;
 
     return [
@@ -130,27 +131,32 @@ export function EstoqueClient({
       {
         label: "Lisas em maos",
         value: String(plain),
-        detail: "Saldo que ainda pode virar qualquer arte conforme a demanda.",
+        detail: "Esse e o saldo operacional real para remanejar quando uma venda sair.",
+      },
+      {
+        label: "Saidas 30d",
+        value: String(recentSales30d),
+        detail: "Consumo real recente dessa base para voce sentir o ritmo de giro.",
       },
       {
         label: "Estampadas reais",
         value: String(printedReal),
-        detail: "Pecas ja prontas de verdade, controladas no banco interno.",
+        detail: "Pecas ja prontas de verdade, separadas das lisas em casa.",
       },
       {
         label: "Publicado na loja",
         value: String(published),
-        detail: "Soma do estoque disponivel hoje na Nuvemshop para essas bases.",
-      },
-      {
-        label: "Folga para remanejar",
-        value: String(remanejavel),
-        detail: "Quanto ainda da para distribuir entre artes sem estourar o fisico.",
+        detail: "Vitrine comercial na Nuvemshop. Nao significa estoque pronto fisico.",
       },
       {
         label: "Bases em alerta",
         value: String(atRisk),
-        detail: "Linhas que ja pedem reposicao, ajuste de remanejamento ou correcao.",
+        detail: "Linhas em que as lisas e a cobertura ja pedem mais atencao agora.",
+      },
+      {
+        label: "Vitrine agressiva",
+        value: String(overpublished),
+        detail: "Linhas em que o publicado passou do fisico e exigem remanejamento rapido se vender.",
       },
     ];
   }, [items]);
@@ -834,10 +840,10 @@ export function EstoqueClient({
           <div>
             <div className={styles.sectionTitle}>Central do estoque base</div>
             <p className={styles.sectionSubtitle}>
-              Aqui o controle parte do fisico total por cor e tamanho. A
-              Nuvemshop mostra o que esta publicado na loja, enquanto o banco
-              interno registra o que ja esta estampado de verdade e o quanto
-              ainda sobra para remanejar entre artes.
+              Aqui o controle parte do fisico total por cor e tamanho, com foco
+              no que esta liso em casa e no consumo real por venda. O publicado
+              na Nuvemshop vira vitrine comercial e nao significa, sozinho, que
+              a peca ja esta estampada de verdade.
             </p>
           </div>
         </div>
@@ -1012,9 +1018,9 @@ export function EstoqueClient({
           <article className={styles.stockPanel}>
             <div className={styles.listTitle}>Revisar uma linha especifica</div>
             <p className={styles.sectionSubtitle}>
-              Aqui voce ajusta o fisico total, informa quantas ja estao
-              estampadas de verdade e confere quanto esta publicado hoje na
-              loja para remanejar sem se perder.
+              Aqui voce revisa o fisico real da base, corrige o que esta liso e
+              o que ja virou estampada pronta, e usa o publicado so como apoio
+              comercial para nao se perder no remanejamento.
             </p>
             <div className={styles.formStack}>
               <label className={styles.filterField}>
@@ -1067,9 +1073,12 @@ export function EstoqueClient({
                       <div className={styles.callout} style={{ marginTop: 16 }}>
                         <h3>{`${selectedItem.sku} · ${selectedItem.color} · ${selectedItem.size}`}</h3>
                         <p>
-                          Fisico {draft.total}, lisas {draft.plain},
-                          estampadas reais {draft.printedReal}, publicado na
-                          loja {draft.published} e folga para remanejar {draft.free}.
+                          Fisico {draft.total}, lisas {draft.plain}, sairam{" "}
+                          {draft.recentSales30d} nos ultimos 30 dias, estampadas
+                          reais {draft.printedReal} e publicado na loja{" "}
+                          {draft.published}. Se vender, a baixa operacional sai
+                          primeiro das lisas ou das estampadas reais, nao do
+                          publicado.
                         </p>
                       </div>
                       <div className={styles.formStack}>
@@ -1168,7 +1177,7 @@ export function EstoqueClient({
                           <input type="number" value={draft.published} disabled />
                         </label>
                         <label className={styles.filterField}>
-                          <span>Folga para remanejar</span>
+                          <span>Diferenca para o publicado</span>
                           <input type="number" value={draft.free} disabled />
                         </label>
                         <label className={styles.filterField}>
@@ -1247,12 +1256,16 @@ export function EstoqueClient({
                 <strong>Lisas + estampadas reais no mesmo cor e tamanho</strong>
               </div>
               <div className={styles.stockRow}>
-                <span>Publicado na loja</span>
-                <strong>Vem da Nuvemshop e mostra so o que esta disponivel para vender</strong>
+                <span>Lisas em maos</span>
+                <strong>E daqui que voce remaneja quando a venda realmente sai</strong>
               </div>
               <div className={styles.stockRow}>
-                <span>Folga para remanejar</span>
-                <strong>Fisico total menos o que ja esta publicado na loja</strong>
+                <span>Publicado na loja</span>
+                <strong>Vitrine comercial para nao deixar arte esgotada visualmente</strong>
+              </div>
+              <div className={styles.stockRow}>
+                <span>Saidas 30d</span>
+                <strong>Consumo real recente para saber que base esta apertando</strong>
               </div>
             </div>
           </article>
@@ -1265,12 +1278,12 @@ export function EstoqueClient({
                 <strong>Use "Adicionar ao estoque"</strong>
               </div>
               <div className={styles.stockRow}>
-                <span>Quer corrigir uma linha</span>
-                <strong>Use "Revisar uma linha especifica"</strong>
+                <span>Vendeu uma arte</span>
+                <strong>Baixe da lisa ou da estampada real dessa base no banco interno</strong>
               </div>
               <div className={styles.stockRow}>
-                <span>Quer ver pressao de compra</span>
-                <strong>Olhe cobertura, vendas 30d e prazo de reposicao</strong>
+                <span>Quer corrigir uma linha</span>
+                <strong>Use "Revisar uma linha especifica"</strong>
               </div>
             </div>
           </article>
@@ -1282,9 +1295,9 @@ export function EstoqueClient({
           <div>
             <div className={styles.sectionTitle}>Cobertura por cor e tamanho</div>
             <p className={styles.sectionSubtitle}>
-              Essa grade junta o fisico, o publicado, o giro recente e a folga
-              operacional por combinacao para voce pedir camiseta a tempo e
-              remanejar melhor entre as artes.
+              Essa grade junta o fisico, as lisas disponiveis e o giro recente
+              por combinacao para voce decidir compra e remanejamento sem ficar
+              refem do publicado.
             </p>
           </div>
         </div>
@@ -1300,7 +1313,7 @@ export function EstoqueClient({
                 <th>Lisas</th>
                 <th>Estampadas reais</th>
                 <th>Publicado</th>
-                <th>Folga</th>
+                <th>Diferenca</th>
                 <th>Excesso</th>
                 <th>Vendas 30d</th>
                 <th>Cobertura</th>
@@ -1543,8 +1556,9 @@ export function EstoqueClient({
           <div>
             <div className={styles.sectionTitle}>Alertas inteligentes</div>
             <p className={styles.sectionSubtitle}>
-              Essas linhas pedem acao agora, seja para comprar a tempo, reduzir
-              publicacao ou remanejar estoque entre artes.
+              Essas linhas pedem acao agora com foco no que esta acabando de
+              verdade no fisico ou no que esta girando mais rapido do que sua
+              reposicao suporta.
             </p>
           </div>
         </div>
@@ -1585,7 +1599,7 @@ export function EstoqueClient({
             })
           ) : (
             <div className={styles.emptyState}>
-              Nenhuma base em alerta agora. O fisico, a publicacao e a cobertura
+              Nenhuma base em alerta agora. O fisico liso e a cobertura recente
               estao equilibrados.
             </div>
           )}
@@ -2019,22 +2033,22 @@ function recalculateDraftStockState(item: BaseStockItem): BaseStockItem {
 
 function needsAttention(item: BaseStockItem) {
   return (
-    item.overcommitted > 0 ||
     item.plain <= item.reorderPoint ||
-    (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays)
+    (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays) ||
+    (item.overcommitted > 0 && item.plain <= 0)
   );
 }
 
 function getStockAttentionScore(item: BaseStockItem) {
-  if (item.overcommitted > 0) {
+  if (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays) {
     return 3;
   }
 
-  if (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays) {
+  if (item.plain <= item.reorderPoint) {
     return 2;
   }
 
-  if (item.plain <= item.reorderPoint) {
+  if (item.overcommitted > 0 && item.plain <= 0) {
     return 1;
   }
 
@@ -2042,15 +2056,15 @@ function getStockAttentionScore(item: BaseStockItem) {
 }
 
 function buildStockAlertDetail(item: BaseStockItem) {
-  if (item.overcommitted > 0) {
-    return `A loja esta com ${item.published} publicados, mas o fisico total dessa base e ${item.total}. Reduza algumas artes ou reforce o lote dessa cor e tamanho.`;
-  }
-
   if (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays) {
     return `No ritmo dos ultimos 30 dias, as lisas em maos dessa base cobrem ${item.coverageDays} dias e o prazo de reposicao configurado e ${item.leadTimeDays} dias. Vale pedir camiseta agora para nao apertar.`;
   }
 
-  return `As lisas em maos cairam para ${item.plain} e o ponto de reposicao configurado e ${item.reorderPoint}. Melhor acompanhar essa base mais de perto.`;
+  if (item.plain <= item.reorderPoint) {
+    return `As lisas em maos cairam para ${item.plain} e o ponto de reposicao configurado e ${item.reorderPoint}. Melhor acompanhar essa base mais de perto.`;
+  }
+
+  return `Voce deixou ${item.published} publicados nessa base, mas hoje nao ha lisa sobrando para remanejar. Se essa arte vender, a reposicao vai depender de estampada pronta ou de ajuste manual rapido.`;
 }
 
 function sortStockItems(items: BaseStockItem[]) {

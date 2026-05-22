@@ -210,6 +210,81 @@ ALTER TABLE repeticao_maxima.parceiros_resgates
 ALTER DEFAULT PRIVILEGES IN SCHEMA repeticao_maxima
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated, service_role;
 
+CREATE TABLE IF NOT EXISTS repeticao_maxima.profiles_usuarios (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  auth_user_id UUID UNIQUE,
+  coupon_partner_id UUID UNIQUE REFERENCES repeticao_maxima.parceiros_cupons(id) ON DELETE SET NULL,
+  user_type TEXT NOT NULL DEFAULT 'parceiro',
+  partner_type TEXT,
+  full_name TEXT NOT NULL DEFAULT '',
+  email TEXT NOT NULL DEFAULT '',
+  birth_date DATE,
+  shirt_size TEXT NOT NULL DEFAULT '',
+  payout_method TEXT NOT NULL DEFAULT 'pix',
+  pix_key TEXT NOT NULL DEFAULT '',
+  bank_name TEXT NOT NULL DEFAULT '',
+  bank_agency TEXT NOT NULL DEFAULT '',
+  bank_account TEXT NOT NULL DEFAULT '',
+  bank_account_type TEXT NOT NULL DEFAULT '',
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (user_type IN ('funcionario', 'parceiro')),
+  CHECK (partner_type IS NULL OR partner_type IN ('influenciador', 'atleta', 'afiliado')),
+  CHECK (payout_method IN ('pix', 'bancario'))
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.profiles_usuarios TO anon, authenticated, service_role;
+
+CREATE TABLE IF NOT EXISTS repeticao_maxima.permissoes_usuario (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_id UUID NOT NULL UNIQUE REFERENCES repeticao_maxima.profiles_usuarios(id) ON DELETE CASCADE,
+  can_dashboard BOOLEAN NOT NULL DEFAULT TRUE,
+  can_compras BOOLEAN NOT NULL DEFAULT FALSE,
+  can_estoque BOOLEAN NOT NULL DEFAULT FALSE,
+  can_pedidos BOOLEAN NOT NULL DEFAULT FALSE,
+  can_financeiro BOOLEAN NOT NULL DEFAULT FALSE,
+  can_nuvemshop BOOLEAN NOT NULL DEFAULT FALSE,
+  can_influenciadores BOOLEAN NOT NULL DEFAULT FALSE,
+  can_empresa BOOLEAN NOT NULL DEFAULT FALSE,
+  can_usuarios BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.permissoes_usuario TO anon, authenticated, service_role;
+
+ALTER TABLE repeticao_maxima.profiles_usuarios
+  ADD COLUMN IF NOT EXISTS auth_user_id UUID,
+  ADD COLUMN IF NOT EXISTS coupon_partner_id UUID REFERENCES repeticao_maxima.parceiros_cupons(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS user_type TEXT NOT NULL DEFAULT 'parceiro',
+  ADD COLUMN IF NOT EXISTS partner_type TEXT,
+  ADD COLUMN IF NOT EXISTS full_name TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS email TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS birth_date DATE,
+  ADD COLUMN IF NOT EXISTS shirt_size TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS payout_method TEXT NOT NULL DEFAULT 'pix',
+  ADD COLUMN IF NOT EXISTS pix_key TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS bank_name TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS bank_agency TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS bank_account TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS bank_account_type TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE repeticao_maxima.permissoes_usuario
+  ADD COLUMN IF NOT EXISTS profile_id UUID REFERENCES repeticao_maxima.profiles_usuarios(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS can_dashboard BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS can_compras BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS can_estoque BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS can_pedidos BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS can_financeiro BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS can_nuvemshop BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS can_influenciadores BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS can_empresa BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS can_usuarios BOOLEAN NOT NULL DEFAULT FALSE;
+
 INSERT INTO repeticao_maxima.dividas_internas (
   title,
   category,
