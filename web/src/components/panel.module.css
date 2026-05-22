@@ -691,6 +691,25 @@
   color: #4f2f6d;
 }
 
+.chartRowLink {
+  display: block;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(123, 44, 191, 0.08);
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(88, 28, 135, 0.04);
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.chartRowLink:hover {
+  transform: translateY(-1px);
+  border-color: rgba(123, 44, 191, 0.18);
+  box-shadow: 0 12px 24px rgba(88, 28, 135, 0.08);
+}
+
 .stockSplitGrid {
   display: grid;
   gap: 16px;
@@ -775,6 +794,37 @@
 .metaRow strong {
   color: #2d1941;
   text-align: right;
+}
+
+.partnerSelectCard {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(123, 44, 191, 0.08);
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(88, 28, 135, 0.04);
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.partnerSelectCard:hover {
+  transform: translateY(-1px);
+  border-color: rgba(123, 44, 191, 0.18);
+  box-shadow: 0 12px 24px rgba(88, 28, 135, 0.08);
+}
+
+.partnerSelectMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #6f5b82;
+}
+
+.partnerSelectMeta strong {
+  color: #2d1941;
 }
 
 .orderLayout {
