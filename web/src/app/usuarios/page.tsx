@@ -13,7 +13,7 @@ export default async function UsuariosPage() {
   return (
     <AppShell
       title="Usuarios"
-      subtitle="Cadastre funcionarios com login e menus liberados, e organize os parceiros com dados pessoais e recebimento."
+      subtitle="Cadastre funcionarios com login e menus liberados, e organize os parceiros com os dados pessoais que fazem sentido para a operacao."
       currentPath="/usuarios"
     >
       <UsuariosClient

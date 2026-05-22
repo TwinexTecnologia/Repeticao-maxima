@@ -93,11 +93,6 @@ export function UsuariosClient({
     email: "",
     birthDate: "",
     shirtSize: "",
-    payoutMethod: "bancario" as const,
-    bankName: "",
-    bankAgency: "",
-    bankAccount: "",
-    bankAccountType: "",
     active: true,
     createAccess: false,
     password: "",
@@ -221,6 +216,21 @@ export function UsuariosClient({
   }
 
   async function handleCreatePartner() {
+    if (!partnerForm.fullName.trim()) {
+      setPartnerFeedback("Informe o nome do parceiro.");
+      return;
+    }
+
+    if (!partnerForm.email.trim()) {
+      setPartnerFeedback("Informe o e-mail do parceiro.");
+      return;
+    }
+
+    if (partnerForm.createAccess && partnerForm.password.trim().length < 6) {
+      setPartnerFeedback("A senha do parceiro precisa ter pelo menos 6 caracteres.");
+      return;
+    }
+
     setIsSavingPartner(true);
     setPartnerFeedback("");
 
@@ -239,7 +249,7 @@ export function UsuariosClient({
       }
 
       setPartners((current) =>
-        [...current, result.partner!].sort((left, right) =>
+        [...current.filter((item) => item.id !== result.partner!.id), result.partner!].sort((left, right) =>
           left.fullName.localeCompare(right.fullName),
         ),
       );
@@ -253,11 +263,6 @@ export function UsuariosClient({
         email: "",
         birthDate: "",
         shirtSize: "",
-        payoutMethod: "bancario",
-        bankName: "",
-        bankAgency: "",
-        bankAccount: "",
-        bankAccountType: "",
         active: true,
         createAccess: false,
         password: "",
@@ -443,8 +448,8 @@ export function UsuariosClient({
               <div>
                 <div className={styles.sectionTitle}>Parceiro e dados pessoais</div>
                 <p className={styles.sectionSubtitle}>
-                  Cadastro de atleta, influenciador ou afiliado com dados
-                  pessoais e forma de recebimento.
+                  Cadastro simples de atleta, influenciador ou afiliado com os
+                  dados pessoais que voce realmente quer controlar.
                 </p>
               </div>
             </div>
@@ -520,6 +525,9 @@ export function UsuariosClient({
                   }
                 />
               </label>
+              <div className={styles.metricHint}>
+                Esse e-mail identifica o parceiro e vira login quando voce liberar acesso.
+              </div>
               <div className={styles.filterGrid}>
                 <label className={styles.filterField}>
                   <span>Data de nascimento</span>
@@ -537,64 +545,6 @@ export function UsuariosClient({
                 <label className={styles.filterField}>
                   <span>Idade</span>
                   <input value={partnerAge !== null ? String(partnerAge) : ""} disabled />
-                </label>
-              </div>
-
-              <label className={styles.filterField}>
-                <span>Forma de recebimento</span>
-                <input value="Dados bancarios" disabled />
-              </label>
-              <div className={styles.formStack}>
-                <label className={styles.filterField}>
-                  <span>Banco</span>
-                  <input
-                    value={partnerForm.bankName}
-                    onChange={(event) =>
-                      setPartnerForm((current) => ({
-                        ...current,
-                        bankName: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <div className={styles.filterGrid}>
-                  <label className={styles.filterField}>
-                    <span>Agencia</span>
-                    <input
-                      value={partnerForm.bankAgency}
-                      onChange={(event) =>
-                        setPartnerForm((current) => ({
-                          ...current,
-                          bankAgency: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className={styles.filterField}>
-                    <span>Conta</span>
-                    <input
-                      value={partnerForm.bankAccount}
-                      onChange={(event) =>
-                        setPartnerForm((current) => ({
-                          ...current,
-                          bankAccount: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                </div>
-                <label className={styles.filterField}>
-                  <span>Tipo de conta</span>
-                  <input
-                    value={partnerForm.bankAccountType}
-                    onChange={(event) =>
-                      setPartnerForm((current) => ({
-                        ...current,
-                        bankAccountType: event.target.value,
-                      }))
-                    }
-                    placeholder="Corrente, poupanca, pagamento..."
-                  />
                 </label>
               </div>
 
@@ -645,6 +595,13 @@ export function UsuariosClient({
                 </label>
               ) : null}
             </div>
+
+            {partnerFeedback ? (
+              <div className={styles.callout} style={{ marginTop: 16 }}>
+                <h3>Status do cadastro</h3>
+                <p>{partnerFeedback}</p>
+              </div>
+            ) : null}
 
             <div className={styles.filterActions} style={{ marginTop: 16 }}>
               <button
@@ -775,7 +732,6 @@ export function UsuariosClient({
                 <th>E-mail</th>
                 <th>Idade</th>
                 <th>Camiseta</th>
-                <th>Recebimento</th>
                 <th>Cupom</th>
                 <th>Login</th>
               </tr>
@@ -797,18 +753,13 @@ export function UsuariosClient({
                     <td>{partner.email}</td>
                     <td>{partner.age !== null ? `${partner.age} anos` : "-"}</td>
                     <td>{partner.shirtSize || "-"}</td>
-                    <td>
-                      {partner.payoutMethod === "pix"
-                        ? partner.pixKey || "Pix nao informado"
-                        : partner.bankName || "Banco nao informado"}
-                    </td>
                     <td>{partner.linkedCouponCode || "-"}</td>
                     <td>{partner.hasLogin ? "Criado" : "Ainda nao"}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={8}>Nenhum parceiro cadastrado ainda.</td>
+                  <td colSpan={7}>Nenhum parceiro cadastrado ainda.</td>
                 </tr>
               )}
             </tbody>

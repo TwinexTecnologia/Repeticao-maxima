@@ -446,17 +446,15 @@ export async function createPartnerRedemption(input: unknown) {
 
     const currentTotal = getIntegerValue(stockRow.total_qty);
     const currentPrinted = Math.min(getIntegerValue(stockRow.printed_qty), currentTotal);
+    const currentPlain = Math.max(currentTotal - currentPrinted, 0);
 
-    if (row.quantity > currentTotal) {
-      throw new Error(`O estoque dessa base tem ${currentTotal} unidade(s) e nao suporta esse resgate.`);
-    }
-
-    if (row.quantity > currentPrinted) {
-      throw new Error(`Essa base tem ${currentPrinted} unidade(s) estampadas reais. Ajuste o saldo antes de resgatar.`);
+    if (row.quantity > currentPlain) {
+      throw new Error(
+        `Essa base tem ${currentPlain} lisa(s) disponiveis e nao suporta esse resgate.`,
+      );
     }
 
     const nextTotal = currentTotal - row.quantity;
-    const nextPrinted = currentPrinted - row.quantity;
     const now = new Date().toISOString();
     let debtId: string | null = null;
 
@@ -465,7 +463,7 @@ export async function createPartnerRedemption(input: unknown) {
       .from(STOCK_TABLE)
       .update({
         total_qty: nextTotal,
-        printed_qty: nextPrinted,
+        printed_qty: currentPrinted,
         updated_at: now,
       })
       .eq("id", row.stockItemId);
@@ -547,8 +545,8 @@ export async function createPartnerRedemption(input: unknown) {
         enabled: true,
         source: "supabase" as const,
         message: row.createMarketingDebt
-          ? "Resgate salvo, estoque baixado e compromisso de marketing criado."
-          : "Resgate salvo e estoque baixado com sucesso.",
+          ? "Resgate salvo, lisa baixada do estoque e compromisso de marketing criado."
+          : "Resgate salvo e lisa baixada do estoque com sucesso.",
         updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
       },
     };
