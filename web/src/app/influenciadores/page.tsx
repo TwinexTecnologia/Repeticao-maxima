@@ -3,7 +3,10 @@ import { PartnerCouponManager } from "@/components/partner-coupon-manager";
 import { PartnerRedemptionManager } from "@/components/partner-redemption-manager";
 import styles from "@/components/panel.module.css";
 import { loadFinanceConfig } from "@/lib/financeiro/repository";
-import { loadStockSelectionOptions } from "@/lib/operacoes/repository";
+import {
+  loadSiteArtSelectionOptions,
+  loadStockSelectionOptions,
+} from "@/lib/operacoes/repository";
 import {
   loadCouponPartnerModuleData,
   type CouponPartnerProfile,
@@ -548,10 +551,11 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
     selectedCoupon: getSearchValue(resolvedSearchParams, "selectedCoupon"),
   };
   const credentials = getNuvemshopCredentials();
-  const [{ config: financeConfig }, moduleData, stockOptions] = await Promise.all([
+  const [{ config: financeConfig }, moduleData, stockOptions, artOptions] = await Promise.all([
     loadFinanceConfig(),
     loadCouponPartnerModuleData(),
     loadStockSelectionOptions(),
+    loadSiteArtSelectionOptions(),
   ]);
   const initialDraft = {
     name: "",
@@ -936,6 +940,7 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
           initialRedemptions={moduleData.redemptions}
           initialPersistence={moduleData.redemptionState}
           stockOptions={stockOptions}
+          artOptions={artOptions}
           selectedCouponCode={selectedCoupon?.code || ""}
         />
 

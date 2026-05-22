@@ -8,7 +8,10 @@ import type {
   PartnerPersistenceState,
   PartnerRedemption,
 } from "@/lib/parceiros/repository";
-import type { StockSelectionOption } from "@/lib/operacoes/repository";
+import type {
+  SiteArtSelectionOption,
+  StockSelectionOption,
+} from "@/lib/operacoes/repository";
 
 const FULL_COST = 52;
 const MINIMAL_COST = 32;
@@ -18,6 +21,7 @@ type PartnerRedemptionManagerProps = {
   initialRedemptions: PartnerRedemption[];
   initialPersistence: PartnerPersistenceState;
   stockOptions: StockSelectionOption[];
+  artOptions: SiteArtSelectionOption[];
   selectedCouponCode: string;
 };
 
@@ -45,6 +49,7 @@ export function PartnerRedemptionManager({
   initialRedemptions,
   initialPersistence,
   stockOptions,
+  artOptions,
   selectedCouponCode,
 }: PartnerRedemptionManagerProps) {
   const activeProfiles = useMemo(
@@ -56,13 +61,18 @@ export function PartnerRedemptionManager({
     activeProfiles[0]?.id ||
     "";
   const [redemptions, setRedemptions] = useState(initialRedemptions);
+  const [liveStockOptions, setLiveStockOptions] = useState(stockOptions);
   const [persistence, setPersistence] =
     useState<PartnerPersistenceState>(initialPersistence);
   const [feedback, setFeedback] = useState(initialPersistence.message);
   const [isSaving, setIsSaving] = useState(false);
+  const availableStockOptions = useMemo(
+    () => liveStockOptions.filter((item) => item.plain > 0),
+    [liveStockOptions],
+  );
   const [form, setForm] = useState<RedemptionFormState>({
     partnerId: defaultPartnerId,
-    stockItemId: stockOptions[0]?.id || "",
+    stockItemId: stockOptions.find((item) => item.plain > 0)?.id || "",
     artName: "",
     quantity: "1",
     unitCost: String(FULL_COST),
@@ -81,7 +91,19 @@ export function PartnerRedemptionManager({
   const selectedProfile =
     activeProfiles.find((profile) => profile.id === form.partnerId) || null;
   const selectedStock =
-    stockOptions.find((item) => item.id === form.stockItemId) || null;
+    availableStockOptions.find((item) => item.id === form.stockItemId) || null;
+  const availableArtOptions = useMemo(() => {
+    if (!selectedStock) {
+      return [] as SiteArtSelectionOption[];
+    }
+
+    return artOptions.filter(
+      (item) =>
+        item.sku === selectedStock.sku &&
+        item.color === selectedStock.color &&
+        item.size === selectedStock.size,
+    );
+  }, [artOptions, selectedStock]);
   const selectedCouponHistory = useMemo(() => {
     const couponCode = selectedProfile?.couponCode || selectedCouponCode;
 
@@ -95,6 +117,42 @@ export function PartnerRedemptionManager({
     (sum, item) => sum + item.totalCost,
     0,
   );
+
+  useEffect(() => {
+    const hasSelectedStock = availableStockOptions.some(
+      (item) => item.id === form.stockItemId,
+    );
+
+    if ((!form.stockItemId || !hasSelectedStock) && availableStockOptions[0]?.id) {
+      setForm((current) => ({
+        ...current,
+        stockItemId: availableStockOptions[0]?.id || "",
+      }));
+    }
+  }, [availableStockOptions, form.stockItemId]);
+
+  useEffect(() => {
+    if (availableArtOptions.length === 0) {
+      if (form.artName) {
+        setForm((current) => ({
+          ...current,
+          artName: "",
+        }));
+      }
+      return;
+    }
+
+    const hasSelectedArt = availableArtOptions.some(
+      (item) => item.artName === form.artName,
+    );
+
+    if (!hasSelectedArt) {
+      setForm((current) => ({
+        ...current,
+        artName: availableArtOptions[0]?.artName || "",
+      }));
+    }
+  }, [availableArtOptions, form.artName]);
 
   function applyCostPreset(value: "full" | "minimalista") {
     setForm((current) => ({
@@ -110,7 +168,12 @@ export function PartnerRedemptionManager({
     }
 
     if (!selectedStock) {
-      setFeedback("Selecione uma base do estoque para baixar.");
+      setFeedback("Selecione uma base de lisa em estoque para baixar.");
+      return;
+    }
+
+    if (!form.artName.trim()) {
+      setFeedback("Selecione uma arte disponivel no site para registrar esse resgate.");
       return;
     }
 
@@ -155,6 +218,17 @@ export function PartnerRedemptionManager({
           ),
         ),
       );
+      setLiveStockOptions((current) =>
+        current.map((item) =>
+          item.id === selectedStock.id
+            ? {
+                ...item,
+                total: Math.max(item.total - Number(form.quantity || 1), 0),
+                plain: Math.max(item.plain - Number(form.quantity || 1), 0),
+              }
+            : item,
+        ),
+      );
       if (result.persistence) {
         setPersistence(result.persistence);
       }
@@ -184,8 +258,8 @@ export function PartnerRedemptionManager({
         <div>
           <div className={styles.sectionTitle}>Resgates de parceiros</div>
           <p className={styles.sectionSubtitle}>
-            Aqui voce registra a roupa entregue, baixa o estoque e decide se isso
-            vira tambem um compromisso de marketing com vencimento.
+            Aqui voce registra a roupa entregue, baixa da lisa em estoque e decide
+            se isso vira tambem um compromisso de marketing com vencimento.
           </p>
         </div>
         <div className={styles.chipRow}>
@@ -222,7 +296,7 @@ export function PartnerRedemptionManager({
             </label>
 
             <label className={styles.filterField}>
-              <span>Base do estoque</span>
+              <span>Base da lisa em estoque</span>
               <select
                 value={form.stockItemId}
                 onChange={(event) =>
@@ -233,9 +307,9 @@ export function PartnerRedemptionManager({
                 }
               >
                 <option value="">Selecione</option>
-                {stockOptions.map((item) => (
+                {availableStockOptions.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.sku} · {item.color} · {item.size} · {item.printedReal} estampada(s)
+                    {item.sku} · {item.color} · {item.size} · {item.plain} lisa(s)
                   </option>
                 ))}
               </select>
@@ -243,9 +317,7 @@ export function PartnerRedemptionManager({
 
             <label className={styles.filterField}>
               <span>Arte</span>
-              <input
-                type="text"
-                placeholder="Ex.: Faz o basico / Minimalista White"
+              <select
                 value={form.artName}
                 onChange={(event) =>
                   setForm((current) => ({
@@ -253,7 +325,18 @@ export function PartnerRedemptionManager({
                     artName: event.target.value,
                   }))
                 }
-              />
+              >
+                <option value="">
+                  {availableArtOptions.length > 0
+                    ? "Selecione a arte"
+                    : "Nenhuma arte disponivel no site para essa base"}
+                </option>
+                {availableArtOptions.map((item) => (
+                  <option key={item.id} value={item.artName}>
+                    {item.artName} · {item.publishedStock} no site
+                  </option>
+                ))}
+              </select>
             </label>
 
             <div className={styles.filterGrid}>
@@ -400,8 +483,8 @@ export function PartnerRedemptionManager({
               </div>
               <div className={styles.metricHint}>
                 {selectedStock
-                  ? `${form.artName.trim() || "Arte nao informada"} · ${selectedStock.sku} · ${selectedStock.printedReal} estampada(s) disponiveis`
-                  : "Escolha a linha do estoque que sera baixada."}
+                  ? `${form.artName.trim() || "Arte nao selecionada"} · ${selectedStock.sku} · ${selectedStock.plain} lisa(s) disponiveis`
+                  : "Escolha a linha da lisa em estoque que sera baixada."}
               </div>
             </article>
             <article className={styles.metricCard}>

@@ -86,6 +86,15 @@ export type StockSelectionOption = {
   notes: string;
 };
 
+export type SiteArtSelectionOption = {
+  id: string;
+  artName: string;
+  sku: string;
+  color: string;
+  size: string;
+  publishedStock: number;
+};
+
 export type DtfArtType = "minimalista" | "full" | "outro";
 
 export type DtfCatalogProduct = {
@@ -208,6 +217,25 @@ export async function loadStockSelectionOptions() {
     });
   } catch {
     return [] as StockSelectionOption[];
+  }
+}
+
+export async function loadSiteArtSelectionOptions() {
+  const credentials = getNuvemshopCredentials();
+
+  if (!credentials.ok) {
+    return [] as SiteArtSelectionOption[];
+  }
+
+  try {
+    const client = new NuvemshopClient(credentials.credentials);
+    const products = await fetchAllNuvemshopPages((params) =>
+      client.listProducts(params),
+    );
+
+    return buildSiteArtSelectionOptions(products);
+  } catch {
+    return [] as SiteArtSelectionOption[];
   }
 }
 
@@ -1347,6 +1375,55 @@ function buildNuvemshopStockVariant(
     size,
     stock: getVariantStockValue(variant),
   };
+}
+
+function buildSiteArtSelectionOptions(products: NuvemshopProduct[]) {
+  const items: SiteArtSelectionOption[] = [];
+
+  for (const product of products) {
+    const attributeNames = (product.attributes || []).map((value) =>
+      getLocalizedText(value),
+    );
+    const baseCategories = getStockBaseCategories(
+      (product.categories || [])
+        .map((category) => getLocalizedText(category.name))
+        .filter((value) => value && value !== "-"),
+    );
+    const artName = getLocalizedText(product.name).trim();
+
+    if (!artName || baseCategories.length === 0) {
+      continue;
+    }
+
+    for (const variant of product.variants || []) {
+      const { color, size } = getVariantColorAndSize(
+        attributeNames,
+        variant.values || [],
+      );
+      const publishedStock = getVariantStockValue(variant);
+
+      if (!color || !size || publishedStock <= 0) {
+        continue;
+      }
+
+      for (const baseCategory of baseCategories) {
+        items.push({
+          id: `${String(product.id)}:${String(variant.id ?? "")}:${baseCategory}`,
+          artName,
+          sku: baseCategory,
+          color,
+          size,
+          publishedStock,
+        });
+      }
+    }
+  }
+
+  return items.sort((left, right) => {
+    const leftKey = `${left.artName}-${left.sku}-${normalizeColor(left.color)}-${normalizeSize(left.size)}`;
+    const rightKey = `${right.artName}-${right.sku}-${normalizeColor(right.color)}-${normalizeSize(right.size)}`;
+    return leftKey.localeCompare(rightKey);
+  });
 }
 
 function getVariantColorAndSize(
