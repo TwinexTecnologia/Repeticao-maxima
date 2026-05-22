@@ -1,8 +1,9 @@
 import { AppShell } from "@/components/app-shell";
+import { PartnerCouponManager } from "@/components/partner-coupon-manager";
 import styles from "@/components/panel.module.css";
 import { loadFinanceConfig } from "@/lib/financeiro/repository";
 import {
-  loadCouponPartnerProfiles,
+  loadCouponPartnerModuleData,
   type CouponPartnerProfile,
   type PartnerRole,
 } from "@/lib/parceiros/repository";
@@ -68,6 +69,10 @@ function normalizeText(value: string) {
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase();
+}
+
+function normalizeRole(value: string): PartnerRole {
+  return value.trim().toLowerCase() === "atleta" ? "atleta" : "influenciador";
 }
 
 function getCurrentMonthInput() {
@@ -493,10 +498,17 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
     selectedCoupon: getSearchValue(resolvedSearchParams, "selectedCoupon"),
   };
   const credentials = getNuvemshopCredentials();
-  const [{ config: financeConfig }, profilesData] = await Promise.all([
+  const [{ config: financeConfig }, moduleData] = await Promise.all([
     loadFinanceConfig(),
-    loadCouponPartnerProfiles(),
+    loadCouponPartnerModuleData(),
   ]);
+  const initialDraft = {
+    name: "",
+    couponCode: getSearchValue(resolvedSearchParams, "couponCode").trim().toUpperCase(),
+    role: normalizeRole(getSearchValue(resolvedSearchParams, "role")),
+    active: true,
+    notes: "",
+  };
 
   if (!credentials.ok) {
     return (
@@ -522,7 +534,7 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
     client,
     filters,
     financeConfig,
-    profilesData.profiles,
+    moduleData.profiles,
   );
 
   if (!dashboard.ok) {
@@ -579,7 +591,7 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
                 <div className={styles.listTitleRow}>
                   <div className={styles.listTitle}>Atleta</div>
                   <span className={`${styles.pill} ${styles.pillLow}`}>
-                    10% + 5%
+                    10% + 4%
                   </span>
                 </div>
                 <p className={styles.listDetail}>
@@ -612,7 +624,7 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
               <div className={styles.sectionTitle}>Filtros</div>
               <p className={styles.sectionSubtitle}>
                 Escolha o mes final da janela de 3 meses e filtre os parceiros
-                classificados em `Usuarios`.
+                classificados nesta propria aba.
               </p>
             </div>
           </div>
@@ -642,6 +654,14 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
             </div>
           </form>
         </section>
+
+        <PartnerCouponManager
+          initialProfiles={moduleData.profiles}
+          initialKnownCoupons={moduleData.knownCoupons}
+          initialPersistence={moduleData.persistence}
+          initialDiscoveryState={moduleData.discoveryState}
+          initialDraft={initialDraft}
+        />
 
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
@@ -846,12 +866,9 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
               <div className={styles.sectionTitle}>Cupons sem classificacao</div>
               <p className={styles.sectionSubtitle}>
                 Se um cupom vendeu no periodo e nao aparece acima, ele ainda nao
-                foi marcado em `Usuarios`.
+                foi marcado como influenciador ou atleta.
               </p>
             </div>
-            <a href="/usuarios" className={styles.secondaryButton}>
-              Abrir usuarios
-            </a>
           </div>
 
           {unclassifiedRows.length > 0 ? (
@@ -875,7 +892,7 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
                       <td>{formatDateTime(row.lastOrderAt)}</td>
                       <td>
                         <a
-                          href={`/usuarios?couponCode=${encodeURIComponent(row.code)}`}
+                          href={`/influenciadores?couponCode=${encodeURIComponent(row.code)}&role=influenciador`}
                           className={styles.secondaryButton}
                         >
                           Classificar cupom

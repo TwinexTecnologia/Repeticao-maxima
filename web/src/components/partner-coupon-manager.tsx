@@ -10,7 +10,7 @@ import type {
   PartnerRole,
 } from "@/lib/parceiros/repository";
 
-type UsuariosClientProps = {
+type PartnerCouponManagerProps = {
   initialProfiles: CouponPartnerProfile[];
   initialKnownCoupons: CouponDiscoveryRow[];
   initialPersistence: PartnerPersistenceState;
@@ -48,13 +48,13 @@ type CouponListRow = {
   status: "Ja classificado" | "Pendente";
 };
 
-export function UsuariosClient({
+export function PartnerCouponManager({
   initialProfiles,
   initialKnownCoupons,
   initialPersistence,
   initialDiscoveryState,
   initialDraft,
-}: UsuariosClientProps) {
+}: PartnerCouponManagerProps) {
   const [profiles, setProfiles] = useState(sortProfiles(initialProfiles));
   const [persistence, setPersistence] =
     useState<PartnerPersistenceState>(initialPersistence);
@@ -162,8 +162,8 @@ export function UsuariosClient({
       };
       const response = await fetch(
         form.id
-          ? `/api/usuarios/parceiros/${form.id}`
-          : "/api/usuarios/parceiros",
+          ? `/api/influenciadores/parceiros/${form.id}`
+          : "/api/influenciadores/parceiros",
         {
           method: form.id ? "PUT" : "POST",
           headers: {
@@ -249,10 +249,10 @@ export function UsuariosClient({
       <section className={styles.section}>
         <div className={styles.sectionHeader}>
           <div>
-            <div className={styles.sectionTitle}>Classificacao por cupom</div>
+            <div className={styles.sectionTitle}>Gestao dos cupons</div>
             <p className={styles.sectionSubtitle}>
-              Aqui voce define quais cupons entram no programa de influenciador e
-              quais entram como atleta.
+              Aqui voce cadastra os parceiros e define quem entra como
+              influenciador ou atleta, inclusive sem nenhuma venda ainda.
             </p>
           </div>
           <div className={styles.chipRow}>
@@ -411,10 +411,10 @@ export function UsuariosClient({
       <section className={styles.section}>
         <div className={styles.sectionHeader}>
           <div>
-            <div className={styles.sectionTitle}>Cupons encontrados na loja</div>
+            <div className={styles.sectionTitle}>Todos os cupons</div>
             <p className={styles.sectionSubtitle}>
-              Aqui entram os cupons vistos nos pedidos e tambem os cupons ja
-              cadastrados no sistema, mesmo quando ainda nao venderam.
+              A lista junta o que veio dos pedidos e o que voce ja cadastrou
+              manualmente, mesmo sem nenhuma venda.
             </p>
           </div>
           <div className={styles.chipRow}>
@@ -481,8 +481,8 @@ export function UsuariosClient({
           <div>
             <div className={styles.sectionTitle}>Parceiros salvos</div>
             <p className={styles.sectionSubtitle}>
-              Tudo que estiver ativo aqui entra na leitura operacional da aba de
-              influenciadores.
+              Tudo que estiver ativo aqui entra na leitura operacional do painel
+              logo abaixo.
             </p>
           </div>
         </div>
