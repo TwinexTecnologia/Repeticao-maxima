@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 
 import styles from "@/components/panel.module.css";
@@ -48,9 +49,21 @@ export function LoginClient({ nextPath }: LoginClientProps) {
 
   return (
     <div className={styles.authPage}>
+      <div className={styles.authBackdrop} aria-hidden="true" />
       <form className={styles.authCard} onSubmit={handleSubmit}>
-        <div className={styles.brandCard}>
-          <div className={styles.brandName}>Repeticao Maxima</div>
+        <div className={styles.authBrand}>
+          <Image
+            src="/login-logo-repeticao-maxima.png"
+            alt="Logo Repeticao Maxima"
+            width={88}
+            height={88}
+            className={styles.authLogo}
+            priority
+          />
+          <div className={styles.authBrandCopy}>
+            <div className={styles.authBrandEyebrow}>Repeticao Maxima</div>
+            <div className={styles.authBrandTitle}>Painel Interno</div>
+          </div>
         </div>
 
         <div className={styles.titleBlock}>
