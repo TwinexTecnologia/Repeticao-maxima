@@ -36,10 +36,12 @@ type DtfApiResponse = {
   item?: DtfStockItem;
 };
 
-type PrintedAdjustmentState = {
+type StockAdjustmentState = {
   mode: "add" | "remove";
   quantity: string;
 };
+
+const TRACKED_BASE_COLORS = ["Preta", "Branca", "Roxa"] as const;
 
 export function EstoqueClient({
   initialItems,
@@ -51,11 +53,15 @@ export function EstoqueClient({
   initialNuvemshopStock,
   initialNuvemshopStockState,
 }: EstoqueClientProps) {
+  const initialVisibleBaseItems = initialItems.filter((item) =>
+    TRACKED_BASE_COLORS.includes(item.color as (typeof TRACKED_BASE_COLORS)[number]),
+  );
+  const firstVisibleBaseItem = initialVisibleBaseItems[0] ?? initialItems[0] ?? null;
   const baseCategoryOptions = useMemo(
     () => getStockBaseCategoryOptions(initialNuvemshopStock),
     [initialNuvemshopStock],
   );
-  const defaultBaseCategory = baseCategoryOptions[0] ?? "";
+  const defaultBaseCategory = getDefaultStockCategory(initialNuvemshopStock);
   const [items, setItems] = useState(initialItems);
   const [persistence, setPersistence] =
     useState<OperationalPersistenceState>(initialPersistence);
@@ -77,12 +83,12 @@ export function EstoqueClient({
       return acc;
     }, {}),
   );
-  const [printedAdjustments, setPrintedAdjustments] = useState<
-    Record<string, PrintedAdjustmentState>
+  const [stockAdjustments, setStockAdjustments] = useState<
+    Record<string, StockAdjustmentState>
   >({});
-  const [selectedSku, setSelectedSku] = useState(initialItems[0]?.sku ?? "");
-  const [selectedColor, setSelectedColor] = useState(initialItems[0]?.color ?? "");
-  const [selectedSize, setSelectedSize] = useState(initialItems[0]?.size ?? "");
+  const [selectedSku, setSelectedSku] = useState(firstVisibleBaseItem?.sku ?? "");
+  const [selectedColor, setSelectedColor] = useState(firstVisibleBaseItem?.color ?? "");
+  const [selectedSize, setSelectedSize] = useState(firstVisibleBaseItem?.size ?? "");
 
   const [dtfItems, setDtfItems] = useState(initialDtfItems);
   const [dtfPersistence, setDtfPersistence] =
@@ -113,73 +119,55 @@ export function EstoqueClient({
   const [selectedNuvemshopSize, setSelectedNuvemshopSize] = useState("");
   const [visibleNuvemshopItems, setVisibleNuvemshopItems] = useState(2);
 
+  const visibleBaseItems = useMemo(
+    () =>
+      items.filter((item) =>
+        TRACKED_BASE_COLORS.includes(item.color as (typeof TRACKED_BASE_COLORS)[number]),
+      ),
+    [items],
+  );
+
   const metrics = useMemo(() => {
-    const physical = items.reduce((sum, item) => sum + item.total, 0);
-    const plain = items.reduce((sum, item) => sum + item.plain, 0);
-    const printedReal = items.reduce((sum, item) => sum + item.printedReal, 0);
-    const published = items.reduce((sum, item) => sum + item.published, 0);
-    const recentSales30d = items.reduce((sum, item) => sum + item.recentSales30d, 0);
-    const overpublished = items.filter((item) => item.overcommitted > 0).length;
-    const atRisk = items.filter((item) => needsAttention(item)).length;
+    const totalLisas = visibleBaseItems.reduce((sum, item) => sum + item.plain, 0);
+    const totalPublished = visibleBaseItems.reduce((sum, item) => sum + item.published, 0);
+    const totalDifference = visibleBaseItems.reduce(
+      (sum, item) => sum + Math.max(item.plain - item.published, 0),
+      0,
+    );
 
     return [
       {
-        label: "Fisico total",
-        value: String(physical),
-        detail: "Tudo o que existe fisicamente nessa base, somando lisas e estampadas reais.",
+        label: "Lisas em casa",
+        value: String(totalLisas),
+        detail: "Esse e o total fisico que voce controla internamente hoje.",
       },
       {
-        label: "Lisas em maos",
-        value: String(plain),
-        detail: "Esse e o saldo operacional real para remanejar quando uma venda sair.",
+        label: "Preta",
+        value: String(sumPlainStockByColor(visibleBaseItems, "Preta")),
+        detail: "Saldo liso total da cor preta.",
       },
       {
-        label: "Saidas 30d",
-        value: String(recentSales30d),
-        detail: "Consumo real recente dessa base para voce sentir o ritmo de giro.",
+        label: "Branca",
+        value: String(sumPlainStockByColor(visibleBaseItems, "Branca")),
+        detail: "Saldo liso total da cor branca.",
       },
       {
-        label: "Estampadas reais",
-        value: String(printedReal),
-        detail: "Pecas ja prontas de verdade, separadas das lisas em casa.",
+        label: "Roxa",
+        value: String(sumPlainStockByColor(visibleBaseItems, "Roxa")),
+        detail: "Saldo liso total da cor roxa.",
       },
       {
-        label: "Publicado na loja",
-        value: String(published),
-        detail: "Vitrine comercial na Nuvemshop. Nao significa estoque pronto fisico.",
+        label: "Alocado no site",
+        value: String(totalPublished),
+        detail: "Quantidade publicada na loja como referencia comercial.",
       },
       {
-        label: "Bases em alerta",
-        value: String(atRisk),
-        detail: "Linhas em que as lisas e a cobertura ja pedem mais atencao agora.",
-      },
-      {
-        label: "Vitrine agressiva",
-        value: String(overpublished),
-        detail: "Linhas em que o publicado passou do fisico e exigem remanejamento rapido se vender.",
+        label: "Folga interna",
+        value: String(totalDifference),
+        detail: "Quanto sobra nas lisas depois do que ja esta alocado no site.",
       },
     ];
-  }, [items]);
-
-  const stockAlerts = useMemo(
-    () =>
-      items
-        .filter((item) => needsAttention(item))
-        .sort((left, right) => {
-          const severity =
-            getStockAttentionScore(right) - getStockAttentionScore(left);
-
-          if (severity !== 0) {
-            return severity;
-          }
-
-          return `${left.sku}-${left.color}-${left.size}`.localeCompare(
-            `${right.sku}-${right.color}-${right.size}`,
-          );
-        })
-        .slice(0, 8),
-    [items],
-  );
+  }, [visibleBaseItems]);
 
   const dtfMetrics = useMemo(() => {
     const totalAvailable = dtfItems.reduce(
@@ -228,64 +216,61 @@ export function EstoqueClient({
   }, [dtfItems]);
 
   const skuOptions = useMemo(
-    () => Array.from(new Set(items.map((item) => item.sku))),
-    [items],
+    () => Array.from(new Set(visibleBaseItems.map((item) => item.sku))),
+    [visibleBaseItems],
   );
 
   const colorOptions = useMemo(
     () =>
       Array.from(
         new Set(
-          items
+          visibleBaseItems
             .filter((item) => item.sku === selectedSku)
             .map((item) => item.color),
         ),
       ),
-    [items, selectedSku],
+    [selectedSku, visibleBaseItems],
   );
 
   const sizeOptions = useMemo(
     () =>
       Array.from(
         new Set(
-          items
+          visibleBaseItems
             .filter(
               (item) => item.sku === selectedSku && item.color === selectedColor,
             )
             .map((item) => item.size),
         ),
       ),
-    [items, selectedColor, selectedSku],
+    [selectedColor, selectedSku, visibleBaseItems],
   );
 
   const selectedItem = useMemo(
     () =>
-      items.find(
+      visibleBaseItems.find(
         (item) =>
           item.sku === selectedSku &&
           item.color === selectedColor &&
           item.size === selectedSize,
       ) ?? null,
-    [items, selectedColor, selectedSize, selectedSku],
+    [visibleBaseItems, selectedColor, selectedSize, selectedSku],
   );
 
   const matchingFormItem = useMemo(
     () =>
-      items.find(
+      visibleBaseItems.find(
         (item) =>
           item.sku === form.sku &&
           item.color === form.color &&
           item.size === form.size,
       ) ?? null,
-    [form.color, form.size, form.sku, items],
+    [form.color, form.size, form.sku, visibleBaseItems],
   );
 
   const addQuantityPreview = Math.max(parsePositiveInteger(form.total), 0);
   const projectedTotal = matchingFormItem
-    ? matchingFormItem.total + addQuantityPreview
-    : addQuantityPreview;
-  const projectedPlain = matchingFormItem
-    ? Math.max(projectedTotal - matchingFormItem.printedReal, 0)
+    ? matchingFormItem.plain + addQuantityPreview
     : addQuantityPreview;
 
   const selectedDtfItem = useMemo(
@@ -556,25 +541,16 @@ export function EstoqueClient({
     }
   }
 
-  async function handleSaveItem(id: string) {
-    const currentDraft = drafts[id];
-    if (!currentDraft) {
-      return;
-    }
-
-    await saveStockItem(id, currentDraft);
-  }
-
-  function getPrintedAdjustment(id: string): PrintedAdjustmentState {
-    return printedAdjustments[id] ?? {
+  function getStockAdjustment(id: string): StockAdjustmentState {
+    return stockAdjustments[id] ?? {
       mode: "add",
       quantity: "1",
     };
   }
 
-  async function handleApplyPrintedAdjustment(id: string) {
+  async function handleApplyStockAdjustment(id: string) {
     const currentDraft = drafts[id];
-    const adjustment = getPrintedAdjustment(id);
+    const adjustment = getStockAdjustment(id);
     const quantity = Math.max(parsePositiveInteger(adjustment.quantity), 0);
 
     if (!currentDraft) {
@@ -582,39 +558,41 @@ export function EstoqueClient({
     }
 
     if (quantity <= 0) {
-      setFeedback("Informe quantas estampas voce quer adicionar ou retirar.");
+      setFeedback("Informe quantas lisas voce quer adicionar ou retirar.");
       return;
     }
 
     const delta = adjustment.mode === "add" ? quantity : -quantity;
-    const nextPrintedReal = Math.min(
-      Math.max(currentDraft.printedReal + delta, 0),
-      currentDraft.total,
-    );
+    if (adjustment.mode === "remove" && quantity > currentDraft.plain) {
+      setFeedback("Nao ha lisas suficientes nessa linha para retirar essa quantidade.");
+      return;
+    }
 
-    if (nextPrintedReal === currentDraft.printedReal) {
+    const nextTotal = Math.max(currentDraft.total + delta, currentDraft.printedReal);
+
+    if (nextTotal === currentDraft.total) {
       setFeedback(
         adjustment.mode === "add"
-          ? "Esse ajuste nao mudou o saldo de estampadas."
-          : "Nao ha estampadas suficientes para retirar nessa linha.",
+          ? "Esse ajuste nao mudou o saldo de lisas."
+          : "Nao ha lisas suficientes para retirar nessa linha.",
       );
       return;
     }
 
     const nextDraft = recalculateDraftStockState({
       ...currentDraft,
-      printedReal: nextPrintedReal,
+      total: nextTotal,
     });
     const ok = await saveStockItem(
       id,
       nextDraft,
       adjustment.mode === "add"
-        ? "Estampas adicionadas com sucesso."
-        : "Estampas retiradas com sucesso.",
+        ? "Lisas adicionadas com sucesso."
+        : "Lisas retiradas com sucesso.",
     );
 
     if (ok) {
-      setPrintedAdjustments((current) => ({
+      setStockAdjustments((current) => ({
         ...current,
         [id]: {
           mode: adjustment.mode,
@@ -722,7 +700,9 @@ export function EstoqueClient({
     setSelectedSku(value);
     const nextColorOptions = Array.from(
       new Set(
-        items.filter((item) => item.sku === value).map((item) => item.color),
+        visibleBaseItems
+          .filter((item) => item.sku === value)
+          .map((item) => item.color),
       ),
     );
     const nextColor = nextColorOptions[0] ?? "";
@@ -730,7 +710,7 @@ export function EstoqueClient({
 
     const nextSizeOptions = Array.from(
       new Set(
-        items
+        visibleBaseItems
           .filter((item) => item.sku === value && item.color === nextColor)
           .map((item) => item.size),
       ),
@@ -742,7 +722,7 @@ export function EstoqueClient({
     setSelectedColor(value);
     const nextSizeOptions = Array.from(
       new Set(
-        items
+        visibleBaseItems
           .filter((item) => item.sku === selectedSku && item.color === value)
           .map((item) => item.size),
       ),
@@ -783,32 +763,6 @@ export function EstoqueClient({
     }));
   }
 
-  function updateDraft(
-    id: string,
-    field: keyof BaseStockItem,
-    value: string | number,
-  ) {
-    setDrafts((current) => {
-      const currentItem = current[id];
-      if (!currentItem) {
-        return current;
-      }
-
-      const nextItem = {
-        ...currentItem,
-        [field]:
-          typeof value === "number"
-            ? Math.max(value, 0)
-            : value,
-      } as BaseStockItem;
-
-      return {
-        ...current,
-        [id]: recalculateDraftStockState(nextItem),
-      };
-    });
-  }
-
   function updateDtfDraft(
     id: string,
     field: keyof DtfStockItem,
@@ -840,10 +794,9 @@ export function EstoqueClient({
           <div>
             <div className={styles.sectionTitle}>Central do estoque base</div>
             <p className={styles.sectionSubtitle}>
-              Aqui o controle parte do fisico total por cor e tamanho, com foco
-              no que esta liso em casa e no consumo real por venda. O publicado
-              na Nuvemshop vira vitrine comercial e nao significa, sozinho, que
-              a peca ja esta estampada de verdade.
+              Agora essa tela olha so para o que voce tem liso em casa. O
+              alocado no site continua aparecendo apenas como referencia para
+              voce comparar e remanejar melhor.
             </p>
           </div>
         </div>
@@ -876,8 +829,8 @@ export function EstoqueClient({
           <article className={styles.stockPanel}>
             <div className={styles.listTitle}>Adicionar ao estoque</div>
             <p className={styles.sectionSubtitle}>
-              Use esse bloco quando chegar lote novo de camisetas. O valor
-              informado entra como acrescimo no fisico total da linha.
+              Use esse bloco quando chegar mais camiseta lisa. Se a linha ja
+              existir, o sistema soma no saldo liso que voce controla aqui.
             </p>
             <div className={styles.formStack}>
               <label className={styles.filterField}>
@@ -916,7 +869,6 @@ export function EstoqueClient({
                   <option>Preta</option>
                   <option>Branca</option>
                   <option>Roxa</option>
-                  <option>Avela</option>
                 </select>
               </label>
               <label className={styles.filterField}>
@@ -998,8 +950,8 @@ export function EstoqueClient({
               </h3>
               <p>
                 {matchingFormItem
-                  ? `Hoje essa combinacao esta com ${matchingFormItem.total} no fisico total e ${matchingFormItem.plain} lisas em maos. Ao adicionar ${addQuantityPreview}, ela passa para ${projectedTotal} no total fisico e ${projectedPlain} lisas.`
-                  : `Ao salvar ${addQuantityPreview}, essa combinacao entra como nova base fisica para distribuir entre as artes.`}
+                  ? `Hoje essa combinacao esta com ${matchingFormItem.plain} lisas em casa. Ao adicionar ${addQuantityPreview}, ela passa para ${projectedTotal} lisas.`
+                  : `Ao salvar ${addQuantityPreview}, essa combinacao entra como nova linha de lisa em casa.`}
               </p>
             </div>
 
@@ -1018,9 +970,8 @@ export function EstoqueClient({
           <article className={styles.stockPanel}>
             <div className={styles.listTitle}>Revisar uma linha especifica</div>
             <p className={styles.sectionSubtitle}>
-              Aqui voce revisa o fisico real da base, corrige o que esta liso e
-              o que ja virou estampada pronta, e usa o publicado so como apoio
-              comercial para nao se perder no remanejamento.
+              Se vendeu ou se voce quer corrigir a contagem, escolha a linha e
+              use apenas adicionar ou retirar do saldo liso.
             </p>
             <div className={styles.formStack}>
               <label className={styles.filterField}>
@@ -1073,52 +1024,39 @@ export function EstoqueClient({
                       <div className={styles.callout} style={{ marginTop: 16 }}>
                         <h3>{`${selectedItem.sku} · ${selectedItem.color} · ${selectedItem.size}`}</h3>
                         <p>
-                          Fisico {draft.total}, lisas {draft.plain}, sairam{" "}
-                          {draft.recentSales30d} nos ultimos 30 dias, estampadas
-                          reais {draft.printedReal} e publicado na loja{" "}
-                          {draft.published}. Se vender, a baixa operacional sai
-                          primeiro das lisas ou das estampadas reais, nao do
-                          publicado.
+                          Hoje voce tem {draft.plain} lisas em casa e {draft.published} alocadas no
+                          site nessa combinacao. Quando vender, a baixa deve ser feita aqui no
+                          saldo liso.
                         </p>
                       </div>
                       <div className={styles.formStack}>
                         <label className={styles.filterField}>
-                          <span>Fisico total</span>
-                          <input
-                            type="number"
-                            value={draft.total}
-                            onChange={(event) =>
-                              updateDraft(
-                                selectedItem.id,
-                                "total",
-                                Number.parseInt(event.target.value || "0", 10),
-                              )
-                            }
-                          />
-                        </label>
-                        <label className={styles.filterField}>
-                          <span>Lisas em maos</span>
+                          <span>Lisas em casa</span>
                           <input type="number" value={draft.plain} disabled />
                         </label>
                         <label className={styles.filterField}>
-                          <span>Estampadas reais</span>
-                          <input type="number" value={draft.printedReal} disabled />
+                          <span>Alocado no site</span>
+                          <input type="number" value={draft.published} disabled />
+                        </label>
+                        <label className={styles.filterField}>
+                          <span>Diferenca</span>
+                          <input type="number" value={draft.plain - draft.published} disabled />
                         </label>
                         <div className={styles.filterField}>
-                          <span>Ajustar estampadas</span>
+                          <span>Ajustar lisas</span>
                           <div className={styles.filterActions}>
                             <button
                               type="button"
                               className={
-                                getPrintedAdjustment(selectedItem.id).mode === "add"
+                                getStockAdjustment(selectedItem.id).mode === "add"
                                   ? styles.primaryButton
                                   : styles.secondaryButton
                               }
                               onClick={() =>
-                                setPrintedAdjustments((current) => ({
+                                setStockAdjustments((current) => ({
                                   ...current,
                                   [selectedItem.id]: {
-                                    ...getPrintedAdjustment(selectedItem.id),
+                                    ...getStockAdjustment(selectedItem.id),
                                     mode: "add",
                                   },
                                 }))
@@ -1129,15 +1067,15 @@ export function EstoqueClient({
                             <button
                               type="button"
                               className={
-                                getPrintedAdjustment(selectedItem.id).mode === "remove"
+                                getStockAdjustment(selectedItem.id).mode === "remove"
                                   ? styles.primaryButton
                                   : styles.secondaryButton
                               }
                               onClick={() =>
-                                setPrintedAdjustments((current) => ({
+                                setStockAdjustments((current) => ({
                                   ...current,
                                   [selectedItem.id]: {
-                                    ...getPrintedAdjustment(selectedItem.id),
+                                    ...getStockAdjustment(selectedItem.id),
                                     mode: "remove",
                                   },
                                 }))
@@ -1148,12 +1086,12 @@ export function EstoqueClient({
                             <input
                               type="number"
                               min="1"
-                              value={getPrintedAdjustment(selectedItem.id).quantity}
+                              value={getStockAdjustment(selectedItem.id).quantity}
                               onChange={(event) =>
-                                setPrintedAdjustments((current) => ({
+                                setStockAdjustments((current) => ({
                                   ...current,
                                   [selectedItem.id]: {
-                                    ...getPrintedAdjustment(selectedItem.id),
+                                    ...getStockAdjustment(selectedItem.id),
                                     quantity: event.target.value,
                                   },
                                 }))
@@ -1163,7 +1101,7 @@ export function EstoqueClient({
                             <button
                               type="button"
                               className={styles.secondaryButton}
-                              onClick={() => handleApplyPrintedAdjustment(selectedItem.id)}
+                              onClick={() => handleApplyStockAdjustment(selectedItem.id)}
                               disabled={
                                 !persistence.enabled || savingItemId === selectedItem.id
                               }
@@ -1172,65 +1110,6 @@ export function EstoqueClient({
                             </button>
                           </div>
                         </div>
-                        <label className={styles.filterField}>
-                          <span>Publicado na loja</span>
-                          <input type="number" value={draft.published} disabled />
-                        </label>
-                        <label className={styles.filterField}>
-                          <span>Diferenca para o publicado</span>
-                          <input type="number" value={draft.free} disabled />
-                        </label>
-                        <label className={styles.filterField}>
-                          <span>Prazo de reposicao</span>
-                          <input
-                            type="number"
-                            value={draft.leadTimeDays}
-                            onChange={(event) =>
-                              updateDraft(
-                                selectedItem.id,
-                                "leadTimeDays",
-                                Number.parseInt(event.target.value || "0", 10),
-                              )
-                            }
-                          />
-                        </label>
-                        <label className={styles.filterField}>
-                          <span>Ponto de reposicao</span>
-                          <input
-                            type="number"
-                            value={draft.reorderPoint}
-                            onChange={(event) =>
-                              updateDraft(
-                                selectedItem.id,
-                                "reorderPoint",
-                                Number.parseInt(event.target.value || "0", 10),
-                              )
-                            }
-                          />
-                        </label>
-                        <label className={styles.filterField}>
-                          <span>Observacao</span>
-                          <input
-                            value={draft.notes}
-                            onChange={(event) =>
-                              updateDraft(selectedItem.id, "notes", event.target.value)
-                            }
-                          />
-                        </label>
-                      </div>
-                      <div className={styles.filterActions}>
-                        <button
-                          type="button"
-                          className={styles.secondaryButton}
-                          onClick={() => handleSaveItem(selectedItem.id)}
-                          disabled={
-                            !persistence.enabled || savingItemId === selectedItem.id
-                          }
-                        >
-                          {savingItemId === selectedItem.id
-                            ? "Salvando..."
-                            : "Salvar saldos"}
-                        </button>
                       </div>
                     </>
                   );
@@ -1249,23 +1128,19 @@ export function EstoqueClient({
 
         <div className={styles.stockSplitGrid} style={{ marginTop: 16 }}>
           <article className={styles.stockPanel}>
-            <div className={styles.listTitle}>Como a leitura funciona</div>
+            <div className={styles.listTitle}>Como usar agora</div>
             <div className={styles.stockList}>
               <div className={styles.stockRow}>
-                <span>Fisico total</span>
-                <strong>Lisas + estampadas reais no mesmo cor e tamanho</strong>
+                <span>Lisas em casa</span>
+                <strong>Esse e o numero principal que voce controla aqui</strong>
               </div>
               <div className={styles.stockRow}>
-                <span>Lisas em maos</span>
-                <strong>E daqui que voce remaneja quando a venda realmente sai</strong>
+                <span>Quando vender</span>
+                <strong>Retire da lisa correspondente nessa tela</strong>
               </div>
               <div className={styles.stockRow}>
                 <span>Publicado na loja</span>
-                <strong>Vitrine comercial para nao deixar arte esgotada visualmente</strong>
-              </div>
-              <div className={styles.stockRow}>
-                <span>Saidas 30d</span>
-                <strong>Consumo real recente para saber que base esta apertando</strong>
+                <strong>Serve so como referencia para comparar com o que voce tem em casa</strong>
               </div>
             </div>
           </article>
@@ -1279,7 +1154,7 @@ export function EstoqueClient({
               </div>
               <div className={styles.stockRow}>
                 <span>Vendeu uma arte</span>
-                <strong>Baixe da lisa ou da estampada real dessa base no banco interno</strong>
+                <strong>Baixe direto da lisa daquela cor e tamanho</strong>
               </div>
               <div className={styles.stockRow}>
                 <span>Quer corrigir uma linha</span>
@@ -1293,11 +1168,10 @@ export function EstoqueClient({
       <section className={styles.section}>
         <div className={styles.sectionHeader}>
           <div>
-            <div className={styles.sectionTitle}>Cobertura por cor e tamanho</div>
+            <div className={styles.sectionTitle}>Saldo das lisas</div>
             <p className={styles.sectionSubtitle}>
-              Essa grade junta o fisico, as lisas disponiveis e o giro recente
-              por combinacao para voce decidir compra e remanejamento sem ficar
-              refem do publicado.
+              Aqui fica a visao simples por produto base, cor e tamanho, com o
+              saldo liso em casa e o que esta alocado no site.
             </p>
           </div>
         </div>
@@ -1309,33 +1183,21 @@ export function EstoqueClient({
                 <th>Produto base</th>
                 <th>Cor</th>
                 <th>Tamanho</th>
-                <th>Fisico</th>
-                <th>Lisas</th>
-                <th>Estampadas reais</th>
-                <th>Publicado</th>
+                <th>Lisas em casa</th>
+                <th>Alocado no site</th>
                 <th>Diferenca</th>
-                <th>Excesso</th>
-                <th>Vendas 30d</th>
-                <th>Cobertura</th>
-                <th>Prazo</th>
                 <th>Observacao</th>
               </tr>
             </thead>
             <tbody>
-              {items.map((row) => (
+              {visibleBaseItems.map((row) => (
                 <tr key={row.id}>
                   <td>{row.sku}</td>
                   <td>{row.color}</td>
                   <td>{row.size}</td>
-                  <td>{row.total}</td>
                   <td>{row.plain}</td>
-                  <td>{row.printedReal}</td>
                   <td>{row.published}</td>
-                  <td>{row.free}</td>
-                  <td>{row.overcommitted > 0 ? row.overcommitted : "-"}</td>
-                  <td>{row.recentSales30d}</td>
-                  <td>{row.coverageDays !== null ? `${row.coverageDays} dias` : "-"}</td>
-                  <td>{row.leadTimeDays} dias</td>
+                  <td>{row.plain - row.published}</td>
                   <td>{row.notes || "-"}</td>
                 </tr>
               ))}
@@ -1549,61 +1411,6 @@ export function EstoqueClient({
             Nenhum modelo da Nuvemshop encontrado com esse filtro.
           </div>
         )}
-      </section>
-
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <div className={styles.sectionTitle}>Alertas inteligentes</div>
-            <p className={styles.sectionSubtitle}>
-              Essas linhas pedem acao agora com foco no que esta acabando de
-              verdade no fisico ou no que esta girando mais rapido do que sua
-              reposicao suporta.
-            </p>
-          </div>
-        </div>
-        <div className={styles.list}>
-          {stockAlerts.length > 0 ? (
-            stockAlerts.map((item) => {
-              const pillClass =
-                item.overcommitted > 0
-                  ? styles.pillHigh
-                  : item.coverageDays !== null &&
-                      item.coverageDays <= item.leadTimeDays
-                    ? styles.pillMedium
-                    : styles.pillLow;
-
-              return (
-                <article
-                  key={`${item.id}-alert`}
-                  className={styles.listItem}
-                >
-                  <div className={styles.listTitleRow}>
-                    <div className={styles.listTitle}>
-                      {`${item.sku} · ${item.color} · ${item.size}`}
-                    </div>
-                    <span className={`${styles.pill} ${pillClass}`}>
-                      {item.overcommitted > 0
-                        ? "alto"
-                        : item.coverageDays !== null &&
-                            item.coverageDays <= item.leadTimeDays
-                          ? "medio"
-                          : "baixo"}
-                    </span>
-                  </div>
-                  <p className={styles.listDetail}>
-                    {buildStockAlertDetail(item)}
-                  </p>
-                </article>
-              );
-            })
-          ) : (
-            <div className={styles.emptyState}>
-              Nenhuma base em alerta agora. O fisico liso e a cobertura recente
-              estao equilibrados.
-            </div>
-          )}
-        </div>
       </section>
 
       <section className={styles.section}>
@@ -2003,6 +1810,15 @@ function parsePositiveInteger(value: string) {
   return Number.parseInt(value || "0", 10) || 0;
 }
 
+function sumPlainStockByColor(
+  items: BaseStockItem[],
+  color: (typeof TRACKED_BASE_COLORS)[number],
+) {
+  return items
+    .filter((item) => item.color === color)
+    .reduce((sum, item) => sum + item.plain, 0);
+}
+
 function recalculateDraftStockState(item: BaseStockItem): BaseStockItem {
   const total = Math.max(item.total, 0);
   const printedReal = Math.min(Math.max(item.printedReal, 0), total);
@@ -2029,42 +1845,6 @@ function recalculateDraftStockState(item: BaseStockItem): BaseStockItem {
         ? Math.round((plain / averageDailySales) * 10) / 10
         : null,
   };
-}
-
-function needsAttention(item: BaseStockItem) {
-  return (
-    item.plain <= item.reorderPoint ||
-    (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays) ||
-    (item.overcommitted > 0 && item.plain <= 0)
-  );
-}
-
-function getStockAttentionScore(item: BaseStockItem) {
-  if (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays) {
-    return 3;
-  }
-
-  if (item.plain <= item.reorderPoint) {
-    return 2;
-  }
-
-  if (item.overcommitted > 0 && item.plain <= 0) {
-    return 1;
-  }
-
-  return 0;
-}
-
-function buildStockAlertDetail(item: BaseStockItem) {
-  if (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays) {
-    return `No ritmo dos ultimos 30 dias, as lisas em maos dessa base cobrem ${item.coverageDays} dias e o prazo de reposicao configurado e ${item.leadTimeDays} dias. Vale pedir camiseta agora para nao apertar.`;
-  }
-
-  if (item.plain <= item.reorderPoint) {
-    return `As lisas em maos cairam para ${item.plain} e o ponto de reposicao configurado e ${item.reorderPoint}. Melhor acompanhar essa base mais de perto.`;
-  }
-
-  return `Voce deixou ${item.published} publicados nessa base, mas hoje nao ha lisa sobrando para remanejar. Se essa arte vender, a reposicao vai depender de estampada pronta ou de ajuste manual rapido.`;
 }
 
 function sortStockItems(items: BaseStockItem[]) {
