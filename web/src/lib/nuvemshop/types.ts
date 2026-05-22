@@ -38,6 +38,17 @@ export type NuvemshopPromotionInput = {
   combines_with_price_discounts?: boolean;
 };
 
+export type NuvemshopCoupon = {
+  id: number | string;
+  code?: string | null;
+  valid?: boolean | null;
+  status?: string | null;
+  deleted_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  [key: string]: unknown;
+};
+
 export type NuvemshopLocalizedText =
   | string
   | Record<string, string | undefined>
