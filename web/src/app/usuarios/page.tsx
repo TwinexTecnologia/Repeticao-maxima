@@ -1,47 +1,23 @@
 import { AppShell } from "@/components/app-shell";
-import { loadCouponPartnerModuleData, type PartnerRole } from "@/lib/parceiros/repository";
-import { UsuariosClient } from "./usuarios-client";
+import styles from "@/components/panel.module.css";
 
-type PageProps = {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-};
-
-function getSearchValue(
-  searchParams: Record<string, string | string[] | undefined>,
-  key: string,
-) {
-  const value = searchParams[key];
-  return Array.isArray(value) ? value[0] || "" : value || "";
-}
-
-function normalizeRole(value: string): PartnerRole {
-  return value.trim().toLowerCase() === "atleta" ? "atleta" : "influenciador";
-}
-
-export default async function UsuariosPage({ searchParams }: PageProps) {
-  const resolvedSearchParams = (await searchParams) || {};
-  const moduleData = await loadCouponPartnerModuleData();
-  const initialDraft = {
-    name: "",
-    couponCode: getSearchValue(resolvedSearchParams, "couponCode").trim().toUpperCase(),
-    role: normalizeRole(getSearchValue(resolvedSearchParams, "role")),
-    active: true,
-    notes: "",
-  };
-
+export default function UsuariosPage() {
   return (
     <AppShell
       title="Usuarios"
-      subtitle="Cadastre os parceiros por cupom e defina quem entra como influenciador ou atleta dentro da operacao."
+      subtitle="Essa area fica reservada para o futuro controle de acesso do sistema."
       currentPath="/usuarios"
     >
-      <UsuariosClient
-        initialProfiles={moduleData.profiles}
-        initialKnownCoupons={moduleData.knownCoupons}
-        initialPersistence={moduleData.persistence}
-        initialDiscoveryState={moduleData.discoveryState}
-        initialDraft={initialDraft}
-      />
+      <section className={styles.section}>
+        <div className={styles.callout}>
+          <h3>Controle de acesso</h3>
+          <p>
+            A classificacao de cupons, influenciadores e atletas agora fica toda
+            dentro da aba de `Influenciadores`. Esta tela foi liberada para no
+            futuro controlar quem pode acessar e operar o sistema.
+          </p>
+        </div>
+      </section>
     </AppShell>
   );
 }
