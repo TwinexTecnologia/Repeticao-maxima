@@ -93,16 +93,18 @@ export function PartnerRedemptionManager({
   const selectedStock =
     availableStockOptions.find((item) => item.id === form.stockItemId) || null;
   const availableArtOptions = useMemo(() => {
-    if (!selectedStock) {
-      return [] as SiteArtSelectionOption[];
-    }
+    const artMap = new Map<string, number>();
 
-    return artOptions.filter(
-      (item) =>
-        item.sku === selectedStock.sku &&
-        item.color === selectedStock.color &&
-        item.size === selectedStock.size,
-    );
+    artOptions.forEach((item) => {
+      artMap.set(item.artName, (artMap.get(item.artName) ?? 0) + item.publishedStock);
+    });
+
+    return Array.from(artMap.entries())
+      .map(([artName, publishedStock]) => ({
+        artName,
+        publishedStock,
+      }))
+      .sort((left, right) => left.artName.localeCompare(right.artName));
   }, [artOptions, selectedStock]);
   const selectedCouponHistory = useMemo(() => {
     const couponCode = selectedProfile?.couponCode || selectedCouponCode;
@@ -329,10 +331,10 @@ export function PartnerRedemptionManager({
                 <option value="">
                   {availableArtOptions.length > 0
                     ? "Selecione a arte"
-                    : "Nenhuma arte disponivel no site para essa base"}
+                    : "Nenhum produto disponivel no site agora"}
                 </option>
                 {availableArtOptions.map((item) => (
-                  <option key={item.id} value={item.artName}>
+                  <option key={item.artName} value={item.artName}>
                     {item.artName} · {item.publishedStock} no site
                   </option>
                 ))}
