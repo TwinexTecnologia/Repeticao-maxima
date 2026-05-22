@@ -124,6 +124,36 @@ CREATE TABLE IF NOT EXISTS repeticao_maxima.parceiros_cupons (
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.parceiros_cupons TO anon, authenticated, service_role;
 
+CREATE TABLE IF NOT EXISTS repeticao_maxima.parceiros_resgates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  partner_id UUID REFERENCES repeticao_maxima.parceiros_cupons(id) ON DELETE SET NULL,
+  partner_name TEXT NOT NULL DEFAULT '',
+  coupon_code TEXT NOT NULL DEFAULT '',
+  partner_role TEXT NOT NULL DEFAULT 'influenciador',
+  stock_item_id UUID REFERENCES repeticao_maxima.estoque_base(id) ON DELETE SET NULL,
+  sku TEXT NOT NULL DEFAULT '',
+  color TEXT NOT NULL DEFAULT '',
+  size TEXT NOT NULL DEFAULT '',
+  quantity INTEGER NOT NULL DEFAULT 1,
+  unit_cost NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  total_cost NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  granted_at DATE NOT NULL DEFAULT CURRENT_DATE,
+  due_date DATE,
+  status TEXT NOT NULL DEFAULT 'entregue',
+  create_marketing_debt BOOLEAN NOT NULL DEFAULT FALSE,
+  debt_id UUID REFERENCES repeticao_maxima.dividas_internas(id) ON DELETE SET NULL,
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (partner_role IN ('influenciador', 'atleta')),
+  CHECK (status IN ('previsto', 'entregue', 'compensado')),
+  CHECK (quantity >= 1),
+  CHECK (unit_cost >= 0),
+  CHECK (total_cost >= 0)
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.parceiros_resgates TO anon, authenticated, service_role;
+
 ALTER TABLE repeticao_maxima.estoque_dtf
   ADD COLUMN IF NOT EXISTS art_type TEXT NOT NULL DEFAULT 'outro',
   ADD COLUMN IF NOT EXISTS available_qty INTEGER NOT NULL DEFAULT 0,
@@ -156,6 +186,25 @@ ALTER TABLE repeticao_maxima.parceiros_cupons
   ADD COLUMN IF NOT EXISTS coupon_code TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'influenciador',
   ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE repeticao_maxima.parceiros_resgates
+  ADD COLUMN IF NOT EXISTS partner_id UUID REFERENCES repeticao_maxima.parceiros_cupons(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS partner_name TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS coupon_code TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS partner_role TEXT NOT NULL DEFAULT 'influenciador',
+  ADD COLUMN IF NOT EXISTS stock_item_id UUID REFERENCES repeticao_maxima.estoque_base(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS sku TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS color TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS size TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS unit_cost NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS total_cost NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS granted_at DATE NOT NULL DEFAULT CURRENT_DATE,
+  ADD COLUMN IF NOT EXISTS due_date DATE,
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'entregue',
+  ADD COLUMN IF NOT EXISTS create_marketing_debt BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS debt_id UUID REFERENCES repeticao_maxima.dividas_internas(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '';
 
 ALTER DEFAULT PRIVILEGES IN SCHEMA repeticao_maxima

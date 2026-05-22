@@ -10,6 +10,9 @@ import type { NuvemshopCoupon, NuvemshopOrder } from "@/lib/nuvemshop/types";
 
 const OPERATIONS_SCHEMA = "repeticao_maxima";
 const COUPON_PARTNER_TABLE = "parceiros_cupons";
+const PARTNER_REDEMPTION_TABLE = "parceiros_resgates";
+const DEBTS_TABLE = "dividas_internas";
+const STOCK_TABLE = "estoque_base";
 const PAGE_SIZE = 100;
 const MAX_PAGES = 12;
 
@@ -38,6 +41,31 @@ export type CouponDiscoveryRow = {
   orders: number;
   revenue: number;
   lastOrderAt: string | null;
+};
+
+export type PartnerRedemptionStatus = "previsto" | "entregue" | "compensado";
+
+export type PartnerRedemption = {
+  id: string;
+  partnerId: string | null;
+  partnerName: string;
+  couponCode: string;
+  partnerRole: PartnerRole;
+  stockItemId: string | null;
+  sku: string;
+  color: string;
+  size: string;
+  quantity: number;
+  unitCost: number;
+  totalCost: number;
+  grantedAt: string;
+  dueDate: string | null;
+  status: PartnerRedemptionStatus;
+  createMarketingDebt: boolean;
+  debtId: string | null;
+  notes: string;
+  createdAt: string | null;
+  updatedAt: string | null;
 };
 
 export async function loadCouponPartnerProfiles() {
@@ -87,17 +115,66 @@ export async function loadCouponPartnerProfiles() {
 }
 
 export async function loadCouponPartnerModuleData() {
-  const [profilesData, discoveryData] = await Promise.all([
+  const [profilesData, discoveryData, redemptionsData] = await Promise.all([
     loadCouponPartnerProfiles(),
     loadKnownCouponsFromStore(),
+    loadPartnerRedemptions(),
   ]);
 
   return {
     profiles: profilesData.profiles,
     knownCoupons: discoveryData.coupons,
+    redemptions: redemptionsData.redemptions,
     persistence: profilesData.persistence,
     discoveryState: discoveryData.state,
+    redemptionState: redemptionsData.persistence,
   };
+}
+
+export async function loadPartnerRedemptions() {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      redemptions: [] as PartnerRedemption[],
+      persistence: buildDisabledState(
+        `Persistencia desativada. Configure ${supabase.missing.join(" e ")} para salvar resgates.`,
+      ),
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_REDEMPTION_TABLE)
+      .select("*")
+      .order("granted_at", { ascending: false })
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    const redemptions = (data ?? []).map(rowToPartnerRedemption);
+
+    return {
+      redemptions,
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          redemptions.length > 0
+            ? "Resgates carregados do Supabase."
+            : "Supabase conectado. Ainda nao existem resgates cadastrados.",
+        updatedAt: getLatestUpdatedAt(data ?? []),
+      },
+    };
+  } catch (error) {
+    return {
+      redemptions: [] as PartnerRedemption[],
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
 }
 
 export async function createCouponPartnerProfile(input: unknown) {
@@ -205,6 +282,175 @@ export async function updateCouponPartnerProfile(id: string, input: unknown) {
       },
     };
   } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function createPartnerRedemption(input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizePartnerRedemptionInput(input);
+
+  let stockRollback: {
+    stockItemId: string;
+    total: number;
+    printed: number;
+  } | null = null;
+  let createdDebtId: string | null = null;
+
+  try {
+    const { data: stockRow, error: stockError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_TABLE)
+      .select("id, total_qty, printed_qty, sku, color, size")
+      .eq("id", row.stockItemId)
+      .single();
+
+    if (stockError || !stockRow) {
+      throw stockError || new Error("Nao foi possivel localizar a linha de estoque selecionada.");
+    }
+
+    const currentTotal = getIntegerValue(stockRow.total_qty);
+    const currentPrinted = Math.min(getIntegerValue(stockRow.printed_qty), currentTotal);
+
+    if (row.quantity > currentTotal) {
+      throw new Error(`O estoque dessa base tem ${currentTotal} unidade(s) e nao suporta esse resgate.`);
+    }
+
+    if (row.quantity > currentPrinted) {
+      throw new Error(`Essa base tem ${currentPrinted} unidade(s) estampadas reais. Ajuste o saldo antes de resgatar.`);
+    }
+
+    const nextTotal = currentTotal - row.quantity;
+    const nextPrinted = currentPrinted - row.quantity;
+    const now = new Date().toISOString();
+    let debtId: string | null = null;
+
+    const { error: stockUpdateError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_TABLE)
+      .update({
+        total_qty: nextTotal,
+        printed_qty: nextPrinted,
+        updated_at: now,
+      })
+      .eq("id", row.stockItemId);
+
+    if (stockUpdateError) {
+      throw stockUpdateError;
+    }
+
+    stockRollback = {
+      stockItemId: row.stockItemId,
+      total: currentTotal,
+      printed: currentPrinted,
+    };
+
+    if (row.createMarketingDebt && row.dueDate) {
+      const debtRow = {
+        title: `Resgate ${row.partnerName}`,
+        category: "Marketing",
+        due_date: row.dueDate,
+        amount: row.totalCost,
+        status: "aberta",
+        impact: `Resgate em roupa do cupom ${row.couponCode} · ${row.quantity} unidade(s) ${row.sku} ${row.color} ${row.size}`,
+        payment_method: "outro",
+        billing_frequency: "mensal",
+        installments_total: 1,
+        installment_number: 1,
+        group_id: crypto.randomUUID(),
+      };
+      const { data: debtData, error: debtError } = await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(DEBTS_TABLE)
+        .insert(debtRow)
+        .select("id")
+        .single();
+
+      if (debtError) {
+        throw debtError;
+      }
+
+      debtId = debtData?.id ? String(debtData.id) : null;
+      createdDebtId = debtId;
+    }
+
+    const insertRow = {
+      partner_id: row.partnerId,
+      partner_name: row.partnerName,
+      coupon_code: row.couponCode,
+      partner_role: row.partnerRole,
+      stock_item_id: row.stockItemId,
+      sku: row.sku,
+      color: row.color,
+      size: row.size,
+      quantity: row.quantity,
+      unit_cost: row.unitCost,
+      total_cost: row.totalCost,
+      granted_at: row.grantedAt,
+      due_date: row.dueDate,
+      status: row.status,
+      create_marketing_debt: row.createMarketingDebt,
+      debt_id: debtId,
+      notes: row.notes,
+      updated_at: now,
+    };
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_REDEMPTION_TABLE)
+      .insert(insertRow)
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel salvar o resgate.");
+    }
+
+    return {
+      ok: true as const,
+      redemption: rowToPartnerRedemption(data),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message: row.createMarketingDebt
+          ? "Resgate salvo, estoque baixado e compromisso de marketing criado."
+          : "Resgate salvo e estoque baixado com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    if (createdDebtId) {
+      await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(DEBTS_TABLE)
+        .delete()
+        .eq("id", createdDebtId);
+    }
+
+    if (stockRollback) {
+      await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(STOCK_TABLE)
+        .update({
+          total_qty: stockRollback.total,
+          printed_qty: stockRollback.printed,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", stockRollback.stockItemId);
+    }
+
     return {
       ok: false as const,
       persistence: buildDisabledState(getErrorMessage(error)),
@@ -384,6 +630,31 @@ function rowToCouponPartnerProfile(
   };
 }
 
+function rowToPartnerRedemption(row: Record<string, unknown>): PartnerRedemption {
+  return {
+    id: String(row.id ?? ""),
+    partnerId: row.partner_id ? String(row.partner_id) : null,
+    partnerName: String(row.partner_name ?? "").trim(),
+    couponCode: String(row.coupon_code ?? "").trim().toUpperCase(),
+    partnerRole: normalizePartnerRole(row.partner_role),
+    stockItemId: row.stock_item_id ? String(row.stock_item_id) : null,
+    sku: String(row.sku ?? "").trim(),
+    color: String(row.color ?? "").trim(),
+    size: String(row.size ?? "").trim(),
+    quantity: Math.max(getIntegerValue(row.quantity), 0),
+    unitCost: Math.max(getNumberValue(row.unit_cost), 0),
+    totalCost: Math.max(getNumberValue(row.total_cost), 0),
+    grantedAt: normalizeDate(row.granted_at) || "",
+    dueDate: normalizeDate(row.due_date) || null,
+    status: normalizePartnerRedemptionStatus(row.status),
+    createMarketingDebt: row.create_marketing_debt === true,
+    debtId: row.debt_id ? String(row.debt_id) : null,
+    notes: String(row.notes ?? "").trim(),
+    createdAt: typeof row.created_at === "string" ? row.created_at : null,
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+  };
+}
+
 function normalizeCouponPartnerInput(input: unknown) {
   const source = isRecord(input) ? input : {};
   const couponCode = String(source.couponCode ?? "")
@@ -399,6 +670,62 @@ function normalizeCouponPartnerInput(input: unknown) {
     couponCode,
     role: normalizePartnerRole(source.role),
     active: source.active === false ? false : true,
+    notes: String(source.notes ?? "").trim(),
+  };
+}
+
+function normalizePartnerRedemptionInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+  const couponCode = String(source.couponCode ?? "")
+    .trim()
+    .toUpperCase();
+  const stockItemId = String(source.stockItemId ?? "").trim();
+  const partnerName = String(source.partnerName ?? "").trim();
+  const sku = String(source.sku ?? "").trim();
+  const color = String(source.color ?? "").trim();
+  const size = String(source.size ?? "").trim();
+  const quantity = Math.max(getIntegerValue(source.quantity), 1);
+  const unitCost = Math.max(getNumberValue(source.unitCost), 0);
+  const grantedAt = normalizeDate(source.grantedAt) || getTodayDate();
+  const dueDate = normalizeDate(source.dueDate) || "";
+  const createMarketingDebt = source.createMarketingDebt === true;
+
+  if (!couponCode) {
+    throw new Error("Selecione o cupom do parceiro para registrar o resgate.");
+  }
+
+  if (!stockItemId) {
+    throw new Error("Selecione a base do estoque que sera baixada.");
+  }
+
+  if (!sku || !color || !size) {
+    throw new Error("A linha de estoque precisa informar sku, cor e tamanho.");
+  }
+
+  if (!partnerName) {
+    throw new Error("Informe o nome do parceiro.");
+  }
+
+  if (createMarketingDebt && !dueDate) {
+    throw new Error("Informe a data de vencimento para criar a divida de marketing.");
+  }
+
+  return {
+    partnerId: String(source.partnerId ?? "").trim() || null,
+    partnerName,
+    couponCode,
+    partnerRole: normalizePartnerRole(source.partnerRole),
+    stockItemId,
+    sku,
+    color,
+    size,
+    quantity,
+    unitCost,
+    totalCost: Math.round(unitCost * quantity * 100) / 100,
+    grantedAt,
+    dueDate: dueDate || null,
+    status: normalizePartnerRedemptionStatus(source.status),
+    createMarketingDebt,
     notes: String(source.notes ?? "").trim(),
   };
 }
@@ -429,10 +756,58 @@ function parseMoney(value?: string | null) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function getNumberValue(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    return parseMoney(value);
+  }
+
+  return 0;
+}
+
+function getIntegerValue(value: unknown) {
+  const parsed = Math.trunc(getNumberValue(value));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function normalizePartnerRole(value: unknown): PartnerRole {
   return String(value ?? "").trim().toLowerCase() === "atleta"
     ? "atleta"
     : "influenciador";
+}
+
+function normalizePartnerRedemptionStatus(value: unknown): PartnerRedemptionStatus {
+  const normalized = String(value ?? "").trim().toLowerCase();
+
+  if (
+    normalized === "previsto" ||
+    normalized === "entregue" ||
+    normalized === "compensado"
+  ) {
+    return normalized;
+  }
+
+  return "entregue";
+}
+
+function normalizeDate(value: unknown) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const trimmed = value.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : "";
+}
+
+function getTodayDate() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function buildDisabledState(message: string): PartnerPersistenceState {
