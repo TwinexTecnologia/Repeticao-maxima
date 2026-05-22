@@ -93,7 +93,7 @@ export function PartnerCouponManager({
       {
         label: "Cupons vistos na loja",
         value: String(initialKnownCoupons.length),
-        detail: "Cupons encontrados nos pedidos reais da Nuvemshop",
+        detail: "Cupons cadastrados na Nuvemshop e lidos para classificacao",
       },
     ];
   }, [initialKnownCoupons.length, profiles]);
@@ -256,8 +256,8 @@ export function PartnerCouponManager({
             </p>
           </div>
           <div className={styles.chipRow}>
-            <span className={styles.chip}>Base: pedidos reais da Nuvemshop</span>
-            <span className={styles.chip}>Cadastro manual permitido</span>
+            <span className={styles.chip}>Base: cupons cadastrados na Nuvemshop</span>
+            <span className={styles.chip}>Vendas reais complementam a leitura</span>
           </div>
         </div>
 
@@ -413,8 +413,8 @@ export function PartnerCouponManager({
           <div>
             <div className={styles.sectionTitle}>Todos os cupons</div>
             <p className={styles.sectionSubtitle}>
-              A lista junta o que veio dos pedidos e o que voce ja cadastrou
-              manualmente, mesmo sem nenhuma venda.
+              A lista usa os cupons cadastrados na Nuvemshop e soma os numeros
+              de venda quando aquele cupom ja apareceu em pedidos reais.
             </p>
           </div>
           <div className={styles.chipRow}>

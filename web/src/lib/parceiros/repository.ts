@@ -6,7 +6,7 @@ import {
   NuvemshopApiError,
   NuvemshopClient,
 } from "@/lib/nuvemshop/client";
-import type { NuvemshopOrder } from "@/lib/nuvemshop/types";
+import type { NuvemshopCoupon, NuvemshopOrder } from "@/lib/nuvemshop/types";
 
 const OPERATIONS_SCHEMA = "repeticao_maxima";
 const COUPON_PARTNER_TABLE = "parceiros_cupons";
@@ -89,7 +89,7 @@ export async function loadCouponPartnerProfiles() {
 export async function loadCouponPartnerModuleData() {
   const [profilesData, discoveryData] = await Promise.all([
     loadCouponPartnerProfiles(),
-    loadKnownCouponsFromOrders(),
+    loadKnownCouponsFromStore(),
   ]);
 
   return {
@@ -212,7 +212,7 @@ export async function updateCouponPartnerProfile(id: string, input: unknown) {
   }
 }
 
-async function loadKnownCouponsFromOrders() {
+async function loadKnownCouponsFromStore() {
   const credentials = getNuvemshopCredentials();
 
   if (!credentials.ok) {
@@ -226,31 +226,56 @@ async function loadKnownCouponsFromOrders() {
 
   try {
     const client = new NuvemshopClient(credentials.credentials);
-    const orders = await fetchAllOrders(client);
+    const [ordersResult, couponsResult] = await Promise.allSettled([
+      fetchAllOrders(client),
+      fetchAllCoupons(client),
+    ]);
     const couponMap = new Map<string, CouponDiscoveryRow>();
 
-    for (const order of orders) {
-      const code = getCouponCode(order);
+    if (couponsResult.status === "fulfilled") {
+      couponsResult.value.forEach((coupon) => {
+        const code = getCouponCatalogCode(coupon);
 
-      if (!code) {
-        continue;
+        if (!code) {
+          return;
+        }
+
+        couponMap.set(code, {
+          code,
+          orders: 0,
+          revenue: 0,
+          lastOrderAt: null,
+        });
+      });
+    }
+
+    if (ordersResult.status === "fulfilled") {
+      for (const order of ordersResult.value) {
+        const code = getCouponCode(order);
+
+        if (!code) {
+          continue;
+        }
+
+        const current = couponMap.get(code) || {
+          code,
+          orders: 0,
+          revenue: 0,
+          lastOrderAt: null,
+        };
+
+        current.orders += 1;
+        current.revenue += parseMoney(order.total);
+
+        if (
+          !current.lastOrderAt ||
+          new Date(order.created_at || 0) > new Date(current.lastOrderAt)
+        ) {
+          current.lastOrderAt = order.created_at || null;
+        }
+
+        couponMap.set(code, current);
       }
-
-      const current = couponMap.get(code) || {
-        code,
-        orders: 0,
-        revenue: 0,
-        lastOrderAt: null,
-      };
-
-      current.orders += 1;
-      current.revenue += parseMoney(order.total);
-
-      if (!current.lastOrderAt || new Date(order.created_at || 0) > new Date(current.lastOrderAt)) {
-        current.lastOrderAt = order.created_at || null;
-      }
-
-      couponMap.set(code, current);
     }
 
     const coupons = Array.from(couponMap.values()).sort((left, right) => {
@@ -261,18 +286,43 @@ async function loadKnownCouponsFromOrders() {
         return rightDate - leftDate;
       }
 
-      return right.orders - left.orders;
+      if (right.orders !== left.orders) {
+        return right.orders - left.orders;
+      }
+
+      return left.code.localeCompare(right.code);
     });
+
+    if (
+      couponsResult.status === "rejected" &&
+      ordersResult.status === "rejected"
+    ) {
+      const couponMessage = getNuvemshopReadErrorMessage(couponsResult.reason);
+      const orderMessage = getNuvemshopReadErrorMessage(ordersResult.reason);
+
+      return {
+        coupons: [] as CouponDiscoveryRow[],
+        state: buildDisabledState(
+          `Nao foi possivel ler cupons nem pedidos da Nuvemshop. Cupons: ${couponMessage}. Pedidos: ${orderMessage}.`,
+        ),
+      };
+    }
+
+    const discoveryMessage =
+      couponsResult.status === "fulfilled"
+        ? coupons.length > 0
+          ? "Cupons cadastrados na Nuvemshop carregados com vendas reais quando existirem."
+          : "Nuvemshop conectada, mas ainda sem cupons cadastrados."
+        : ordersResult.status === "fulfilled"
+          ? "Nao foi possivel ler os cupons cadastrados na Nuvemshop; a lista foi montada com base nos pedidos que ja venderam."
+          : "Cupons cadastrados na Nuvemshop carregados, mas os pedidos com cupom nao puderam ser lidos agora.";
 
     return {
       coupons,
       state: {
         enabled: true,
         source: "supabase" as const,
-        message:
-          coupons.length > 0
-            ? "Cupons encontrados nos pedidos reais da Nuvemshop."
-            : "Nuvemshop conectada, mas ainda sem pedidos com cupom.",
+        message: discoveryMessage,
         updatedAt: new Date().toISOString(),
       },
     };
@@ -294,6 +344,21 @@ async function fetchAllOrders(client: NuvemshopClient) {
 
   for (let page = 1; page <= MAX_PAGES; page += 1) {
     const batch = await client.listOrders({ page, perPage: PAGE_SIZE });
+    result.push(...batch);
+
+    if (batch.length < PAGE_SIZE) {
+      break;
+    }
+  }
+
+  return result;
+}
+
+async function fetchAllCoupons(client: NuvemshopClient) {
+  const result: NuvemshopCoupon[] = [];
+
+  for (let page = 1; page <= MAX_PAGES; page += 1) {
+    const batch = await client.listCoupons({ page, perPage: PAGE_SIZE });
     result.push(...batch);
 
     if (batch.length < PAGE_SIZE) {
@@ -347,6 +412,14 @@ function getCouponCode(order: NuvemshopOrder) {
   return code;
 }
 
+function getCouponCatalogCode(coupon: NuvemshopCoupon) {
+  const code = String(coupon.code ?? "")
+    .trim()
+    .toUpperCase();
+
+  return code || null;
+}
+
 function parseMoney(value?: string | null) {
   if (!value) {
     return 0;
@@ -392,6 +465,12 @@ function getErrorMessage(error: unknown) {
   }
 
   return "Nao foi possivel concluir a operacao no Supabase.";
+}
+
+function getNuvemshopReadErrorMessage(error: unknown) {
+  return error instanceof NuvemshopApiError
+    ? `${error.message} (${error.status}) ${error.body}`
+    : getErrorMessage(error);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

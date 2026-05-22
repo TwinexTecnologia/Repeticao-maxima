@@ -1,5 +1,6 @@
 import type {
   NuvemshopCategory,
+  NuvemshopCoupon,
   NuvemshopCredentials,
   NuvemshopOrder,
   NuvemshopPromotion,
@@ -90,6 +91,13 @@ export class NuvemshopClient {
   async listOrders(params: ListParams = {}) {
     const searchParams = this.buildPaginationParams(params);
     return this.requestJson<NuvemshopOrder[]>("/orders", {
+      searchParams,
+    });
+  }
+
+  async listCoupons(params: ListParams = {}) {
+    const searchParams = this.buildPaginationParams(params);
+    return this.requestJson<NuvemshopCoupon[]>("/coupons", {
       searchParams,
     });
   }
