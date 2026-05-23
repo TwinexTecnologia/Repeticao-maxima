@@ -40,7 +40,6 @@ export type EmployeeAccessUser = {
 };
 
 export type PartnerUserType = "influenciador" | "atleta" | "afiliado";
-export type PartnerPayoutMethod = "pix" | "bancario";
 
 export type PartnerAccessUser = {
   id: string;
@@ -53,12 +52,6 @@ export type PartnerAccessUser = {
   birthDate: string | null;
   age: number | null;
   shirtSize: string;
-  payoutMethod: PartnerPayoutMethod;
-  pixKey: string;
-  bankName: string;
-  bankAgency: string;
-  bankAccount: string;
-  bankAccountType: string;
   partnerType: PartnerUserType;
   active: boolean;
   notes: string;
@@ -368,12 +361,12 @@ export async function createPartnerAccessUser(input: unknown) {
       email: row.email,
       birth_date: row.birthDate,
       shirt_size: row.shirtSize,
-      payout_method: row.payoutMethod,
-      pix_key: row.pixKey,
-      bank_name: row.bankName,
-      bank_agency: row.bankAgency,
-      bank_account: row.bankAccount,
-      bank_account_type: row.bankAccountType,
+      payout_method: "pix",
+      pix_key: "",
+      bank_name: "",
+      bank_agency: "",
+      bank_account: "",
+      bank_account_type: "",
       active: row.active,
       notes: row.notes,
       updated_at: new Date().toISOString(),
@@ -514,12 +507,6 @@ function rowToPartnerAccessUser(
     birthDate,
     age: birthDate ? getAgeFromDate(birthDate) : null,
     shirtSize: String(row.shirt_size ?? "").trim(),
-    payoutMethod: normalizePayoutMethod(row.payout_method),
-    pixKey: String(row.pix_key ?? "").trim(),
-    bankName: String(row.bank_name ?? "").trim(),
-    bankAgency: String(row.bank_agency ?? "").trim(),
-    bankAccount: String(row.bank_account ?? "").trim(),
-    bankAccountType: String(row.bank_account_type ?? "").trim(),
     partnerType: normalizePartnerUserType(row.partner_type),
     active: row.active === false ? false : true,
     notes: String(row.notes ?? "").trim(),
@@ -576,7 +563,6 @@ function normalizePartnerInput(input: unknown) {
   const email = String(source.email ?? "").trim().toLowerCase();
   const createAccess = source.createAccess === true;
   const password = String(source.password ?? "").trim();
-  const payoutMethod: PartnerPayoutMethod = "bancario";
   const linkedPartnerId = String(source.linkedPartnerId ?? "").trim() || null;
   const partnerType = normalizePartnerUserType(source.partnerType);
   const birthDate = normalizeDate(source.birthDate) || null;
@@ -593,15 +579,6 @@ function normalizePartnerInput(input: unknown) {
     throw new Error("A senha do parceiro precisa ter pelo menos 6 caracteres.");
   }
 
-  if (
-    payoutMethod === "bancario" &&
-    (!String(source.bankName ?? "").trim() ||
-      !String(source.bankAgency ?? "").trim() ||
-      !String(source.bankAccount ?? "").trim())
-  ) {
-    throw new Error("Preencha banco, agencia e conta para dados bancarios.");
-  }
-
   return {
     linkedPartnerId,
     partnerType,
@@ -609,12 +586,6 @@ function normalizePartnerInput(input: unknown) {
     email,
     birthDate,
     shirtSize: String(source.shirtSize ?? "").trim(),
-    payoutMethod,
-    pixKey: String(source.pixKey ?? "").trim(),
-    bankName: String(source.bankName ?? "").trim(),
-    bankAgency: String(source.bankAgency ?? "").trim(),
-    bankAccount: String(source.bankAccount ?? "").trim(),
-    bankAccountType: String(source.bankAccountType ?? "").trim(),
     active: source.active === false ? false : true,
     notes: String(source.notes ?? "").trim(),
     createAccess,
@@ -652,12 +623,6 @@ function normalizePartnerUserType(value: unknown): PartnerUserType {
   }
 
   return "influenciador";
-}
-
-function normalizePayoutMethod(value: unknown): PartnerPayoutMethod {
-  return String(value ?? "").trim().toLowerCase() === "bancario"
-    ? "bancario"
-    : "pix";
 }
 
 function normalizeDate(value: unknown) {
