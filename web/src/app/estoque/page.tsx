@@ -5,6 +5,7 @@ import { loadStockModuleData } from "@/lib/operacoes/repository";
 export default async function EstoquePage() {
   const {
     items,
+    movements,
     persistence,
     dtfItems,
     dtfPersistence,
@@ -22,6 +23,7 @@ export default async function EstoquePage() {
     >
       <EstoqueClient
         initialItems={items}
+        initialMovements={movements}
         initialPersistence={persistence}
         initialDtfItems={dtfItems}
         initialDtfPersistence={dtfPersistence}

@@ -374,10 +374,9 @@ function buildHomeSnapshot(params: {
 }) {
   const { stockItems, debts, orders, cashFlow, financeDashboard, comboRules, unitPrice, config } = params;
 
-  const totalUnits = stockItems.reduce((sum, item) => sum + item.total, 0);
-  const freeUnits = stockItems.reduce((sum, item) => sum + item.free, 0);
+  const totalUnits = stockItems.reduce((sum, item) => sum + item.plain, 0);
   const publishedUnits = stockItems.reduce((sum, item) => sum + item.published, 0);
-  const reorderCount = stockItems.filter(isStockItemInAlert).length;
+  const reorderCount = stockItems.filter(isPlainStockItemInAlert).length;
   const stockValueMinimal = totalUnits * MINIMAL_UNIT_COST;
   const stockValueFull = totalUnits * FULL_UNIT_COST;
   const monthlySalesCount = orders.length;
@@ -611,13 +610,13 @@ function buildHomeSnapshot(params: {
       value: String(reorderCount),
       detail:
         highPriorityStock > 0
-          ? `${highPriorityStock} linhas ja pedem acao imediata.`
+          ? `${highPriorityStock} linhas de lisa ja pedem acao imediata.`
           : "Nenhuma base critica neste momento.",
     },
     {
-      label: "Pecas livres para remanejar",
-      value: String(freeUnits),
-      detail: `${publishedUnits} estao publicadas hoje na Nuvemshop.`,
+      label: "Lisas em casa",
+      value: String(totalUnits),
+      detail: `${publishedUnits} estao alocadas no site so como referencia comercial.`,
     },
   ];
 
@@ -646,7 +645,7 @@ function buildHomeSnapshot(params: {
       detail:
         stockActionRows.length > 0
           ? stockActionRows[0]!.detail
-          : "As linhas atuais ainda nao encostaram no ponto de reposicao.",
+          : "As linhas de lisa ainda nao encostaram no ponto de reposicao.",
     },
     {
       title: "Combo mais sensivel",
@@ -681,7 +680,7 @@ function buildHomeSnapshot(params: {
       `${customerSummary.summary} O combo mais sensivel hoje e ${worstRealisticCombo.title.toLowerCase()}.`,
       stockActionRows.length > 0
         ? `${stockActionRows[0]!.title}: ${stockActionRows[0]!.shortReason}`
-        : "Nenhuma base pede pedido imediato agora; a pressao maior segue no financeiro.",
+        : "Nenhuma base de lisa pede pedido imediato agora; a pressao maior segue no financeiro.",
     ],
     topMetrics,
     financeMetrics,
@@ -711,7 +710,7 @@ function buildHomeSnapshot(params: {
       {
         label: "Venda total na unit.",
         value: formatMoney(stockUnitRevenuePotential),
-        detail: `${totalUnits} pecas a ${formatMoney(config.unitPrice)} se tudo sair na unit. hoje.`,
+        detail: `${totalUnits} lisas em casa a ${formatMoney(config.unitPrice)} se tudo sair na unit. hoje.`,
       },
       {
         label: "Lucro no pior combo",
@@ -748,10 +747,10 @@ function buildHomeSnapshot(params: {
           )}.`,
     stockProjectionSummary:
       openDebtTotal <= 0
-        ? `Hoje o estoque total poderia gerar ate ${formatMoney(stockUnitRevenuePotential)} na unit. e, no cenario mais apertado de combo, ainda projetaria ${formatMoney(stockComboNetPotentialConservative)} liquidos.`
+        ? `Hoje as lisas em casa poderiam gerar ate ${formatMoney(stockUnitRevenuePotential)} na unit. e, no cenario mais apertado de combo, ainda projetariam ${formatMoney(stockComboNetPotentialConservative)} liquidos.`
         : stockCoverageAgainstDebt >= 0
-          ? `O estoque atual teria potencial de cobrir as dividas abertas mesmo no combo mais apertado, com folga estimada de ${formatMoney(stockCoverageAgainstDebt)}.`
-          : `No pior combo atual, o estoque ainda nao paga tudo sozinho: faltariam ${formatMoney(Math.abs(stockCoverageAgainstDebt))} para cobrir as dividas abertas.`,
+          ? `As lisas em casa teriam potencial de cobrir as dividas abertas mesmo no combo mais apertado, com folga estimada de ${formatMoney(stockCoverageAgainstDebt)}.`
+          : `No pior combo atual, as lisas em casa ainda nao pagam tudo sozinhas: faltariam ${formatMoney(Math.abs(stockCoverageAgainstDebt))} para cobrir as dividas abertas.`,
     marginDiagnosis: `O combo continua sendo a leitura mais sensivel do caixa. No melhor caso ele gera ${formatMoney(
       bestCombo.netReceived,
     )} liquidos com ${bestCombo.mixLabel.toLowerCase()}; no cenario mais apertado de 2x com cupom cai para ${formatMoney(
@@ -1146,7 +1145,7 @@ function buildDebtWindowRows(debts: InternalDebt[], dailyNetPace: number) {
 
 function buildStockActionRows(stockItems: BaseStockItem[]) {
   return [...stockItems]
-    .filter(isStockItemInAlert)
+    .filter(isPlainStockItemInAlert)
     .sort((left, right) => getStockRiskScore(right) - getStockRiskScore(left))
     .slice(0, 6)
     .map((item) => {
@@ -1154,43 +1153,31 @@ function buildStockActionRows(stockItems: BaseStockItem[]) {
       const coverageText =
         item.coverageDays === null ? "sem historico de giro" : `${item.coverageDays} dias`;
       const parts: string[] = [];
-      let title = `Acompanhar ${label}`;
-      let shortReason = `base em atencao`;
+      let title = `Acompanhar lisa ${label}`;
+      let shortReason = `lisa em atencao`;
       let level: "alto" | "medio" | "baixo" = "medio";
 
-      if (item.overcommitted > 0) {
-        title = `Remanejar ${label}`;
-        shortReason = `publicado acima do fisico`;
-        level = "alto";
-        parts.push(
-          `Publicado ${item.published} para um fisico total de ${item.total}; hoje faltam ${item.overcommitted} unidades para sustentar a vitrine sem remanejamento.`,
-        );
-      }
-
       if (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays) {
-        title = item.overcommitted > 0 ? title : `Pedir ${label}`;
+        title = `Pedir lisa ${label}`;
         shortReason = `cobertura menor que o prazo`;
-        level = item.overcommitted > 0 ? "alto" : "medio";
+        level = item.coverageDays <= Math.max(item.leadTimeDays * 0.5, 3) ? "alto" : "medio";
         parts.push(
-          `No ritmo atual, a cobertura e ${coverageText} e a reposicao leva ${item.leadTimeDays} dias.`,
+          `No ritmo atual, a cobertura da lisa e ${coverageText} e a reposicao leva ${item.leadTimeDays} dias.`,
         );
       }
 
       if (item.plain <= item.reorderPoint) {
-        title =
-          item.overcommitted > 0 || item.coverageDays !== null
-            ? title
-            : `Pedir ${label}`;
-        shortReason = shortReason === "base em atencao" ? `lisas abaixo do ponto` : shortReason;
-        level = level === "alto" ? "alto" : "medio";
+        title = parts.length > 0 ? title : `Pedir lisa ${label}`;
+        shortReason = shortReason === "lisa em atencao" ? `lisas abaixo do ponto` : shortReason;
+        level = item.plain === 0 ? "alto" : level === "alto" ? "alto" : "medio";
         parts.push(
-          `Sobram ${item.plain} lisas para estampar e o ponto de reposicao esta em ${item.reorderPoint}.`,
+          `Sobram ${item.plain} lisas em casa e o ponto de reposicao esta em ${item.reorderPoint}.`,
         );
       }
 
       if (parts.length === 0) {
         parts.push(
-          `A base ainda tem ${item.free} unidades livres e ${item.published} publicadas na loja.`,
+          `A base ainda tem ${item.plain} lisas em casa. O site mostra ${item.published} alocadas apenas como referencia comercial.`,
         );
       }
 
@@ -1204,14 +1191,13 @@ function buildStockActionRows(stockItems: BaseStockItem[]) {
             : level === "medio"
               ? "acompanhar"
               : "ok",
-        detail: `${parts.join(" ")} Hoje existem ${item.printedReal} estampadas reais, ${item.plain} lisas em maos e ${item.published} publicadas na Nuvemshop.`,
+        detail: `${parts.join(" ")} Hoje existem ${item.plain} lisas em maos e ${item.published} alocadas na Nuvemshop como referencia.`,
       };
     });
 }
 
-function isStockItemInAlert(item: BaseStockItem) {
+function isPlainStockItemInAlert(item: BaseStockItem) {
   return (
-    item.overcommitted > 0 ||
     item.plain <= item.reorderPoint ||
     (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays)
   );
@@ -1219,10 +1205,6 @@ function isStockItemInAlert(item: BaseStockItem) {
 
 function getStockRiskScore(item: BaseStockItem) {
   let score = 0;
-
-  if (item.overcommitted > 0) {
-    score += 100 + item.overcommitted * 5;
-  }
 
   if (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays) {
     score += 60 + (item.leadTimeDays - item.coverageDays);
