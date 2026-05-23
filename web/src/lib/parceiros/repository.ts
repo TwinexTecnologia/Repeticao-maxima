@@ -6,6 +6,7 @@ import {
   NuvemshopApiError,
   NuvemshopClient,
 } from "@/lib/nuvemshop/client";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NuvemshopCoupon, NuvemshopOrder } from "@/lib/nuvemshop/types";
 
 const OPERATIONS_SCHEMA = "repeticao_maxima";
@@ -578,6 +579,255 @@ export async function createPartnerRedemption(input: unknown) {
   }
 }
 
+export async function updatePartnerRedemption(id: string, input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizePartnerRedemptionInput(input);
+  const now = new Date().toISOString();
+  const stockRollbacks: Array<{
+    stockItemId: string;
+    total: number;
+    printed: number;
+  }> = [];
+  let createdDebtId: string | null = null;
+  let previousDebtRow: Record<string, unknown> | null = null;
+
+  try {
+    const { data: existingData, error: existingError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_REDEMPTION_TABLE)
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (existingError || !existingData) {
+      throw existingError || new Error("Nao foi possivel localizar o resgate para editar.");
+    }
+
+    const existingRedemption = rowToPartnerRedemption(existingData);
+    const previouslyAdjustedStock = getAffectsStockFromNotes(existingRedemption.notes);
+
+    if (existingRedemption.debtId) {
+      const { data: debtRow } = await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(DEBTS_TABLE)
+        .select("*")
+        .eq("id", existingRedemption.debtId)
+        .maybeSingle();
+
+      previousDebtRow = debtRow ?? null;
+    }
+
+    if (previouslyAdjustedStock && existingRedemption.stockItemId) {
+      const previousStockRow = await loadStockRowForRedemption(
+        supabase.client,
+        existingRedemption.stockItemId,
+      );
+      const restoredTotal = previousStockRow.total + existingRedemption.quantity;
+
+      await applyStockUpdate(
+        supabase.client,
+        previousStockRow.id,
+        restoredTotal,
+        previousStockRow.printed,
+        now,
+      );
+
+      stockRollbacks.push({
+        stockItemId: previousStockRow.id,
+        total: previousStockRow.total,
+        printed: previousStockRow.printed,
+      });
+    }
+
+    if (row.adjustStock) {
+      const nextStockRow = await loadStockRowForRedemption(
+        supabase.client,
+        row.stockItemId,
+      );
+      const currentPlain = Math.max(nextStockRow.total - nextStockRow.printed, 0);
+
+      if (row.quantity > currentPlain) {
+        throw new Error(
+          `Essa base tem ${currentPlain} lisa(s) disponiveis e nao suporta esse resgate.`,
+        );
+      }
+
+      const nextTotal = nextStockRow.total - row.quantity;
+
+      await applyStockUpdate(
+        supabase.client,
+        nextStockRow.id,
+        nextTotal,
+        nextStockRow.printed,
+        now,
+      );
+
+      if (!stockRollbacks.some((item) => item.stockItemId === nextStockRow.id)) {
+        stockRollbacks.push({
+          stockItemId: nextStockRow.id,
+          total: nextStockRow.total,
+          printed: nextStockRow.printed,
+        });
+      }
+    }
+
+    let debtId: string | null = existingRedemption.debtId;
+
+    if (row.createMarketingDebt && row.dueDate) {
+      const debtPayload = {
+        title: `Resgate ${row.partnerName}`,
+        category: "Marketing",
+        due_date: row.dueDate,
+        amount: row.totalCost,
+        status: "aberta",
+        impact: `Resgate em roupa do cupom ${row.couponCode} · ${row.quantity} unidade(s) ${row.sku} ${row.color} ${row.size}`,
+        payment_method: "outro",
+        billing_frequency: "mensal",
+        installments_total: 1,
+        installment_number: 1,
+        group_id:
+          previousDebtRow?.group_id && typeof previousDebtRow.group_id === "string"
+            ? previousDebtRow.group_id
+            : crypto.randomUUID(),
+      };
+
+      if (existingRedemption.debtId) {
+        const { error: debtUpdateError } = await supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(DEBTS_TABLE)
+          .update({
+            ...debtPayload,
+            updated_at: now,
+          })
+          .eq("id", existingRedemption.debtId);
+
+        if (debtUpdateError) {
+          throw debtUpdateError;
+        }
+      } else {
+        const { data: newDebtData, error: debtInsertError } = await supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(DEBTS_TABLE)
+          .insert(debtPayload)
+          .select("id")
+          .single();
+
+        if (debtInsertError) {
+          throw debtInsertError;
+        }
+
+        debtId = newDebtData?.id ? String(newDebtData.id) : null;
+        createdDebtId = debtId;
+      }
+    } else if (existingRedemption.debtId) {
+      const { error: deleteDebtError } = await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(DEBTS_TABLE)
+        .delete()
+        .eq("id", existingRedemption.debtId);
+
+      if (deleteDebtError) {
+        throw deleteDebtError;
+      }
+
+      debtId = null;
+    }
+
+    const storedNotes = buildPartnerRedemptionNotes(
+      row.artName,
+      row.adjustStock,
+      row.notes,
+    );
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_REDEMPTION_TABLE)
+      .update({
+        partner_id: row.partnerId,
+        partner_name: row.partnerName,
+        coupon_code: row.couponCode,
+        partner_role: row.partnerRole,
+        stock_item_id: row.stockItemId,
+        sku: row.sku,
+        color: row.color,
+        size: row.size,
+        quantity: row.quantity,
+        unit_cost: row.unitCost,
+        total_cost: row.totalCost,
+        granted_at: row.grantedAt,
+        due_date: row.dueDate,
+        status: row.status,
+        create_marketing_debt: row.createMarketingDebt,
+        debt_id: debtId,
+        notes: storedNotes,
+        updated_at: now,
+      })
+      .eq("id", id)
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel atualizar o resgate.");
+    }
+
+    return {
+      ok: true as const,
+      redemption: rowToPartnerRedemption(data),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message: row.adjustStock
+          ? "Resgate atualizado com ajuste de estoque."
+          : "Resgate atualizado sem mexer no estoque.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    if (createdDebtId) {
+      await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(DEBTS_TABLE)
+        .delete()
+        .eq("id", createdDebtId);
+    }
+
+    if (previousDebtRow) {
+      await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(DEBTS_TABLE)
+        .upsert(previousDebtRow, {
+          onConflict: "id",
+        });
+    }
+
+    for (const rollback of stockRollbacks) {
+      await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(STOCK_TABLE)
+        .update({
+          total_qty: rollback.total,
+          printed_qty: rollback.printed,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", rollback.stockItemId);
+    }
+
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
 async function loadKnownCouponsFromStore() {
   const credentials = getNuvemshopCredentials();
 
@@ -824,6 +1074,7 @@ function normalizePartnerRedemptionInput(input: unknown) {
   const couponCode = String(source.couponCode ?? "")
     .trim()
     .toUpperCase();
+  const artName = String(source.artName ?? "").trim();
   const stockItemId = String(source.stockItemId ?? "").trim();
   const partnerName = String(source.partnerName ?? "").trim();
   const sku = String(source.sku ?? "").trim();
@@ -833,6 +1084,7 @@ function normalizePartnerRedemptionInput(input: unknown) {
   const unitCost = Math.max(getNumberValue(source.unitCost), 0);
   const grantedAt = normalizeDate(source.grantedAt) || getTodayDate();
   const dueDate = normalizeDate(source.dueDate) || "";
+  const adjustStock = source.adjustStock === false ? false : true;
   const createMarketingDebt = source.createMarketingDebt === true;
 
   if (!couponCode) {
@@ -849,6 +1101,10 @@ function normalizePartnerRedemptionInput(input: unknown) {
 
   if (!partnerName) {
     throw new Error("Informe o nome do parceiro.");
+  }
+
+  if (!artName) {
+    throw new Error("Selecione a arte disponivel no site para registrar esse resgate.");
   }
 
   if (createMarketingDebt && !dueDate) {
@@ -869,10 +1125,84 @@ function normalizePartnerRedemptionInput(input: unknown) {
     totalCost: Math.round(unitCost * quantity * 100) / 100,
     grantedAt,
     dueDate: dueDate || null,
+    artName,
+    adjustStock,
     status: normalizePartnerRedemptionStatus(source.status),
     createMarketingDebt,
     notes: String(source.notes ?? "").trim(),
   };
+}
+
+async function loadStockRowForRedemption(
+  client: SupabaseClient,
+  stockItemId: string,
+) {
+  const { data, error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(STOCK_TABLE)
+    .select("id, total_qty, printed_qty")
+    .eq("id", stockItemId)
+    .single();
+
+  if (error || !data) {
+    throw error || new Error("Nao foi possivel localizar a linha de estoque selecionada.");
+  }
+
+  const total = getIntegerValue(data.total_qty);
+  const printed = Math.min(getIntegerValue(data.printed_qty), total);
+
+  return {
+    id: String(data.id ?? ""),
+    total,
+    printed,
+  };
+}
+
+async function applyStockUpdate(
+  client: SupabaseClient,
+  stockItemId: string,
+  total: number,
+  printed: number,
+  updatedAt: string,
+) {
+  const { error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(STOCK_TABLE)
+    .update({
+      total_qty: total,
+      printed_qty: Math.min(printed, total),
+      updated_at: updatedAt,
+    })
+    .eq("id", stockItemId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+function buildPartnerRedemptionNotes(
+  artName: string,
+  adjustStock: boolean,
+  notes: string,
+) {
+  const lines = [`[arte] ${artName.trim()}`, `[estoque] ${adjustStock ? "sim" : "nao"}`];
+  const cleanNotes = notes.trim();
+
+  if (cleanNotes) {
+    lines.push(cleanNotes);
+  }
+
+  return lines.join("\n");
+}
+
+function getAffectsStockFromNotes(notes: string) {
+  const match = notes.match(/^\[estoque\]\s*(sim|nao)$/im);
+
+  if (!match) {
+    return true;
+  }
+
+  return match[1]?.trim().toLowerCase() !== "nao";
 }
 
 function normalizePartnerRewardRequestInput(input: unknown) {

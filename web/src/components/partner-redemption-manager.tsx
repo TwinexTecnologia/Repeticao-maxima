@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import styles from "@/components/panel.module.css";
 import type {
@@ -33,6 +34,7 @@ type RedemptionApiResponse = {
 };
 
 type RedemptionFormState = {
+  editingId: string | null;
   partnerId: string;
   stockItemId: string;
   artName: string;
@@ -40,6 +42,7 @@ type RedemptionFormState = {
   unitCost: string;
   grantedAt: string;
   dueDate: string;
+  adjustStock: boolean;
   createMarketingDebt: boolean;
   notes: string;
 };
@@ -52,6 +55,7 @@ export function PartnerRedemptionManager({
   artOptions,
   selectedCouponCode,
 }: PartnerRedemptionManagerProps) {
+  const router = useRouter();
   const activeProfiles = useMemo(
     () => initialProfiles.filter((profile) => profile.active),
     [initialProfiles],
@@ -66,11 +70,20 @@ export function PartnerRedemptionManager({
     useState<PartnerPersistenceState>(initialPersistence);
   const [feedback, setFeedback] = useState(initialPersistence.message);
   const [isSaving, setIsSaving] = useState(false);
-  const availableStockOptions = useMemo(
-    () => liveStockOptions.filter((item) => item.plain > 0),
-    [liveStockOptions],
-  );
+  useEffect(() => {
+    setRedemptions(initialRedemptions);
+  }, [initialRedemptions]);
+
+  useEffect(() => {
+    setLiveStockOptions(stockOptions);
+  }, [stockOptions]);
+
+  useEffect(() => {
+    setPersistence(initialPersistence);
+  }, [initialPersistence]);
+
   const [form, setForm] = useState<RedemptionFormState>({
+    editingId: null,
     partnerId: defaultPartnerId,
     stockItemId: stockOptions.find((item) => item.plain > 0)?.id || "",
     artName: "",
@@ -78,9 +91,17 @@ export function PartnerRedemptionManager({
     unitCost: String(FULL_COST),
     grantedAt: getTodayDate(),
     dueDate: "",
+    adjustStock: true,
     createMarketingDebt: false,
     notes: "",
   });
+  const availableStockOptions = useMemo(
+    () =>
+      liveStockOptions.filter(
+        (item) => item.plain > 0 || item.id === form.stockItemId,
+      ),
+    [form.stockItemId, liveStockOptions],
+  );
 
   useEffect(() => {
     if (!form.partnerId && defaultPartnerId) {
@@ -163,6 +184,44 @@ export function PartnerRedemptionManager({
     }));
   }
 
+  function resetForm() {
+    setForm({
+      editingId: null,
+      partnerId: defaultPartnerId,
+      stockItemId: stockOptions.find((item) => item.plain > 0)?.id || "",
+      artName: "",
+      quantity: "1",
+      unitCost: String(FULL_COST),
+      grantedAt: getTodayDate(),
+      dueDate: "",
+      adjustStock: true,
+      createMarketingDebt: false,
+      notes: "",
+    });
+  }
+
+  function handleEditRedemption(redemption: PartnerRedemption) {
+    const linkedProfile =
+      activeProfiles.find((item) => item.id === redemption.partnerId) ||
+      activeProfiles.find((item) => item.couponCode === redemption.couponCode) ||
+      null;
+
+    setForm({
+      editingId: redemption.id,
+      partnerId: linkedProfile?.id || "",
+      stockItemId: redemption.stockItemId || "",
+      artName: getArtName(redemption.notes),
+      quantity: String(redemption.quantity),
+      unitCost: String(redemption.unitCost),
+      grantedAt: redemption.grantedAt || getTodayDate(),
+      dueDate: redemption.dueDate || "",
+      adjustStock: getAffectsStock(redemption.notes),
+      createMarketingDebt: redemption.createMarketingDebt,
+      notes: getCleanNotes(redemption.notes),
+    });
+    setFeedback("Modo edicao ativo. Ajuste o resgate e salve novamente.");
+  }
+
   async function handleSaveRedemption() {
     if (!selectedProfile) {
       setFeedback("Selecione um parceiro para registrar o resgate.");
@@ -196,16 +255,21 @@ export function PartnerRedemptionManager({
         unitCost: Number(form.unitCost || 0),
         grantedAt: form.grantedAt,
         dueDate: form.dueDate,
+        adjustStock: form.adjustStock,
         createMarketingDebt: form.createMarketingDebt,
-        notes: buildRedemptionNotes(form.artName, form.notes),
+        artName: form.artName,
+        notes: form.notes,
         status: "entregue",
       };
       const response = await fetch("/api/influenciadores/resgates", {
-        method: "POST",
+        method: form.editingId ? "PATCH" : "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          ...payload,
+          id: form.editingId,
+        }),
       });
       const result = (await response.json()) as RedemptionApiResponse;
 
@@ -214,35 +278,21 @@ export function PartnerRedemptionManager({
       }
 
       setRedemptions((current) =>
-        [result.redemption!, ...current].sort((left, right) =>
+        [
+          result.redemption!,
+          ...current.filter((item) => item.id !== result.redemption!.id),
+        ].sort((left, right) =>
           `${right.grantedAt}${right.createdAt || ""}`.localeCompare(
             `${left.grantedAt}${left.createdAt || ""}`,
           ),
-        ),
-      );
-      setLiveStockOptions((current) =>
-        current.map((item) =>
-          item.id === selectedStock.id
-            ? {
-                ...item,
-                total: Math.max(item.total - Number(form.quantity || 1), 0),
-                plain: Math.max(item.plain - Number(form.quantity || 1), 0),
-              }
-            : item,
         ),
       );
       if (result.persistence) {
         setPersistence(result.persistence);
       }
       setFeedback(result.message || "Resgate salvo com sucesso.");
-      setForm((current) => ({
-        ...current,
-        artName: "",
-        quantity: "1",
-        dueDate: "",
-        createMarketingDebt: false,
-        notes: "",
-      }));
+      resetForm();
+      router.refresh();
     } catch (error) {
       setFeedback(
         error instanceof Error
@@ -277,6 +327,15 @@ export function PartnerRedemptionManager({
       <div className={styles.twoColumn}>
         <article className={styles.configCard}>
           <div className={styles.formStack}>
+            <div className={styles.callout}>
+              <h3>{form.editingId ? "Editando resgate" : "Novo resgate"}</h3>
+              <p>
+                {form.editingId
+                  ? "Voce pode editar um resgate ja salvo e decidir se essa edicao mexe no estoque ou nao."
+                  : "Registre um novo resgate e escolha se a baixa da lisa deve acontecer agora."}
+              </p>
+            </div>
+
             <label className={styles.filterField}>
               <span>Parceiro</span>
               <select
@@ -442,6 +501,23 @@ export function PartnerRedemptionManager({
             >
               <input
                 type="checkbox"
+                checked={form.adjustStock}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    adjustStock: event.target.checked,
+                  }))
+                }
+              />
+              Mexer no estoque dessa lisa
+            </label>
+
+            <label
+              className={styles.secondaryButton}
+              style={{ gap: 10, cursor: "pointer", width: "fit-content" }}
+            >
+              <input
+                type="checkbox"
                 checked={form.createMarketingDebt}
                 onChange={(event) =>
                   setForm((current) => ({
@@ -461,8 +537,22 @@ export function PartnerRedemptionManager({
               onClick={handleSaveRedemption}
               disabled={!persistence.enabled || isSaving}
             >
-              {isSaving ? "Salvando..." : "Salvar resgate"}
+              {isSaving
+                ? "Salvando..."
+                : form.editingId
+                  ? "Salvar edicao"
+                  : "Salvar resgate"}
             </button>
+            {form.editingId ? (
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                onClick={resetForm}
+                disabled={isSaving}
+              >
+                Cancelar edicao
+              </button>
+            ) : null}
           </div>
         </article>
 
@@ -486,7 +576,7 @@ export function PartnerRedemptionManager({
               <div className={styles.metricHint}>
                 {selectedStock
                   ? `${form.artName.trim() || "Arte nao selecionada"} · ${selectedStock.sku} · ${selectedStock.plain} lisa(s) disponiveis`
-                  : "Escolha a linha da lisa em estoque que sera baixada."}
+                  : "Escolha a linha da lisa usada como referencia para esse resgate."}
               </div>
             </article>
             <article className={styles.metricCard}>
@@ -497,7 +587,9 @@ export function PartnerRedemptionManager({
               <div className={styles.metricHint}>
                 {form.createMarketingDebt && form.dueDate
                   ? `Compromisso previsto para ${formatDate(form.dueDate)}`
-                  : "Sem compromisso financeiro adicional."}
+                  : form.adjustStock
+                    ? "Vai mexer no estoque. Sem compromisso financeiro adicional."
+                    : "Nao mexe no estoque e fica so no registro financeiro/historico."}
               </div>
             </article>
           </div>
@@ -514,8 +606,10 @@ export function PartnerRedemptionManager({
               <th>Qtd</th>
               <th>Custo</th>
               <th>Vencimento</th>
+              <th>Estoque</th>
               <th>Status</th>
               <th>Obs.</th>
+              <th>Acoes</th>
             </tr>
           </thead>
           <tbody>
@@ -533,13 +627,23 @@ export function PartnerRedemptionManager({
                   <td>{item.quantity}</td>
                   <td>{formatMoney(item.totalCost)}</td>
                   <td>{item.dueDate ? formatDate(item.dueDate) : "-"}</td>
+                  <td>{getAffectsStock(item.notes) ? "Baixou" : "Nao mexeu"}</td>
                   <td>{item.status}</td>
                   <td>{getCleanNotes(item.notes) || "-"}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      onClick={() => handleEditRedemption(item)}
+                    >
+                      Editar
+                    </button>
+                  </td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan={8}>
+                <td colSpan={10}>
                   Esse parceiro ainda nao tem resgates registrados.
                 </td>
               </tr>
@@ -582,21 +686,6 @@ function formatDate(value: string | null) {
   }).format(parsed);
 }
 
-function buildRedemptionNotes(artName: string, notes: string) {
-  const cleanArt = artName.trim();
-  const cleanNotes = notes.trim();
-
-  if (cleanArt && cleanNotes) {
-    return `[arte] ${cleanArt}\n${cleanNotes}`;
-  }
-
-  if (cleanArt) {
-    return `[arte] ${cleanArt}`;
-  }
-
-  return cleanNotes;
-}
-
 function getArtName(notes: string) {
   const match = notes.match(/^\[arte\]\s*(.+)$/im);
   return match?.[1]?.trim() || "Arte nao informada";
@@ -605,5 +694,16 @@ function getArtName(notes: string) {
 function getCleanNotes(notes: string) {
   return notes
     .replace(/^\[arte\]\s*.+$/im, "")
+    .replace(/^\[estoque\]\s*.+$/im, "")
     .replace(/^\s+|\s+$/g, "");
+}
+
+function getAffectsStock(notes: string) {
+  const match = notes.match(/^\[estoque\]\s*(sim|nao)$/im);
+
+  if (!match) {
+    return true;
+  }
+
+  return match[1]?.trim().toLowerCase() !== "nao";
 }
