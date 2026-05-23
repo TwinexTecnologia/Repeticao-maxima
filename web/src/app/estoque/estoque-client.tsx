@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import styles from "@/components/panel.module.css";
 import {
@@ -10,9 +11,11 @@ import {
   type DtfStockItem,
   type NuvemshopStockProduct,
   type OperationalPersistenceState,
+  type StockMovement,
 } from "@/lib/operacoes/repository";
 type EstoqueClientProps = {
   initialItems: BaseStockItem[];
+  initialMovements: StockMovement[];
   initialPersistence: OperationalPersistenceState;
   initialDtfItems: DtfStockItem[];
   initialDtfPersistence: OperationalPersistenceState;
@@ -29,6 +32,12 @@ type StockApiResponse = {
   item?: BaseStockItem;
 };
 
+type StockSavePayload = BaseStockItem & {
+  movementReasonCategory?: string;
+  movementReasonText?: string;
+  movementSourceModule?: string;
+};
+
 type DtfApiResponse = {
   ok: boolean;
   message?: string;
@@ -39,12 +48,15 @@ type DtfApiResponse = {
 type StockAdjustmentState = {
   mode: "add" | "remove";
   quantity: string;
+  reasonCategory: string;
+  reasonText: string;
 };
 
 const TRACKED_BASE_COLORS = ["Preta", "Branca", "Roxa"] as const;
 
 export function EstoqueClient({
   initialItems,
+  initialMovements,
   initialPersistence,
   initialDtfItems,
   initialDtfPersistence,
@@ -53,6 +65,7 @@ export function EstoqueClient({
   initialNuvemshopStock,
   initialNuvemshopStockState,
 }: EstoqueClientProps) {
+  const router = useRouter();
   const initialVisibleBaseItems = initialItems.filter((item) =>
     TRACKED_BASE_COLORS.includes(item.color as (typeof TRACKED_BASE_COLORS)[number]),
   );
@@ -63,6 +76,7 @@ export function EstoqueClient({
   );
   const defaultBaseCategory = getDefaultStockCategory(initialNuvemshopStock);
   const [items, setItems] = useState(initialItems);
+  const [movements, setMovements] = useState(initialMovements);
   const [persistence, setPersistence] =
     useState<OperationalPersistenceState>(initialPersistence);
   const [feedback, setFeedback] = useState("");
@@ -73,6 +87,8 @@ export function EstoqueClient({
     color: "Preta",
     size: "M",
     total: "0",
+    movementReasonCategory: "entrada_lote",
+    movementReasonText: "",
     reorderPoint: "0",
     leadTimeDays: "10",
     notes: "",
@@ -118,6 +134,18 @@ export function EstoqueClient({
   const [selectedNuvemshopColor, setSelectedNuvemshopColor] = useState("");
   const [selectedNuvemshopSize, setSelectedNuvemshopSize] = useState("");
   const [visibleNuvemshopItems, setVisibleNuvemshopItems] = useState(2);
+
+  useEffect(() => {
+    setItems(initialItems);
+  }, [initialItems]);
+
+  useEffect(() => {
+    setMovements(initialMovements);
+  }, [initialMovements]);
+
+  useEffect(() => {
+    setPersistence(initialPersistence);
+  }, [initialPersistence]);
 
   const visibleBaseItems = useMemo(
     () =>
@@ -432,6 +460,14 @@ export function EstoqueClient({
     setFeedback("");
 
     try {
+      if (addQuantityPreview <= 0) {
+        throw new Error("Informe quantas lisas chegaram nesse lote.");
+      }
+
+      if (!form.movementReasonText.trim()) {
+        throw new Error("Informe a justificativa dessa entrada no estoque.");
+      }
+
       const response = await fetch("/api/operacoes/estoque", {
         method: "POST",
         headers: {
@@ -474,11 +510,14 @@ export function EstoqueClient({
         color: "Preta",
         size: "M",
         total: "0",
+        movementReasonCategory: "entrada_lote",
+        movementReasonText: "",
         reorderPoint: "0",
         leadTimeDays: "10",
         notes: "",
       });
       setFeedback(result.message || "Linha de estoque salva.");
+      router.refresh();
     } catch (error) {
       setFeedback(
         error instanceof Error
@@ -492,7 +531,7 @@ export function EstoqueClient({
 
   async function saveStockItem(
     id: string,
-    itemToSave: BaseStockItem,
+    itemToSave: StockSavePayload,
     successMessage?: string,
   ) {
     setSavingItemId(id);
@@ -545,6 +584,8 @@ export function EstoqueClient({
     return stockAdjustments[id] ?? {
       mode: "add",
       quantity: "1",
+      reasonCategory: "entrada_lote",
+      reasonText: "",
     };
   }
 
@@ -559,6 +600,11 @@ export function EstoqueClient({
 
     if (quantity <= 0) {
       setFeedback("Informe quantas lisas voce quer adicionar ou retirar.");
+      return;
+    }
+
+    if (!adjustment.reasonText.trim()) {
+      setFeedback("Informe a justificativa dessa movimentacao de estoque.");
       return;
     }
 
@@ -585,7 +631,12 @@ export function EstoqueClient({
     });
     const ok = await saveStockItem(
       id,
-      nextDraft,
+      {
+        ...nextDraft,
+        movementReasonCategory: adjustment.reasonCategory,
+        movementReasonText: adjustment.reasonText,
+        movementSourceModule: "estoque",
+      },
       adjustment.mode === "add"
         ? "Lisas adicionadas com sucesso."
         : "Lisas retiradas com sucesso.",
@@ -597,8 +648,11 @@ export function EstoqueClient({
         [id]: {
           mode: adjustment.mode,
           quantity: "1",
+          reasonCategory: adjustment.mode === "add" ? "entrada_lote" : "saida_manual",
+          reasonText: "",
         },
       }));
+      router.refresh();
     }
   }
 
@@ -902,6 +956,36 @@ export function EstoqueClient({
                 />
               </label>
               <label className={styles.filterField}>
+                <span>Motivo da entrada</span>
+                <select
+                  value={form.movementReasonCategory}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      movementReasonCategory: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="entrada_lote">Chegada de lote</option>
+                  <option value="devolucao">Devolucao ao estoque</option>
+                  <option value="correcao_ajuste">Correcao de contagem</option>
+                  <option value="entrada_manual">Entrada manual</option>
+                </select>
+              </label>
+              <label className={styles.filterField}>
+                <span>Justificativa da entrada</span>
+                <input
+                  value={form.movementReasonText}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      movementReasonText: event.target.value,
+                    }))
+                  }
+                  placeholder="Ex.: lote recebido do fornecedor hoje"
+                />
+              </label>
+              <label className={styles.filterField}>
                 <span>Ponto de reposicao</span>
                 <input
                   type="number"
@@ -1058,6 +1142,7 @@ export function EstoqueClient({
                                   [selectedItem.id]: {
                                     ...getStockAdjustment(selectedItem.id),
                                     mode: "add",
+                                    reasonCategory: "entrada_lote",
                                   },
                                 }))
                               }
@@ -1077,6 +1162,7 @@ export function EstoqueClient({
                                   [selectedItem.id]: {
                                     ...getStockAdjustment(selectedItem.id),
                                     mode: "remove",
+                                    reasonCategory: "saida_manual",
                                   },
                                 }))
                               }
@@ -1097,6 +1183,50 @@ export function EstoqueClient({
                                 }))
                               }
                               style={{ maxWidth: 100 }}
+                            />
+                            <select
+                              value={getStockAdjustment(selectedItem.id).reasonCategory}
+                              onChange={(event) =>
+                                setStockAdjustments((current) => ({
+                                  ...current,
+                                  [selectedItem.id]: {
+                                    ...getStockAdjustment(selectedItem.id),
+                                    reasonCategory: event.target.value,
+                                  },
+                                }))
+                              }
+                            >
+                              {getStockAdjustment(selectedItem.id).mode === "add" ? (
+                                <>
+                                  <option value="entrada_lote">Chegada de lote</option>
+                                  <option value="devolucao">Devolucao ao estoque</option>
+                                  <option value="correcao_ajuste">Correcao de contagem</option>
+                                  <option value="entrada_manual">Entrada manual</option>
+                                </>
+                              ) : (
+                                <>
+                                  <option value="venda_site">Venda no site</option>
+                                  <option value="resgate_influenciador">Resgate de influenciador</option>
+                                  <option value="uso_interno">Uso interno</option>
+                                  <option value="perda_avaria">Perda ou avaria</option>
+                                  <option value="correcao_ajuste">Correcao de contagem</option>
+                                  <option value="saida_manual">Saida manual</option>
+                                </>
+                              )}
+                            </select>
+                            <input
+                              value={getStockAdjustment(selectedItem.id).reasonText}
+                              onChange={(event) =>
+                                setStockAdjustments((current) => ({
+                                  ...current,
+                                  [selectedItem.id]: {
+                                    ...getStockAdjustment(selectedItem.id),
+                                    reasonText: event.target.value,
+                                  },
+                                }))
+                              }
+                              placeholder="Justifique essa movimentacao"
+                              style={{ minWidth: 220 }}
                             />
                             <button
                               type="button"
@@ -1201,6 +1331,54 @@ export function EstoqueClient({
                   <td>{row.notes || "-"}</td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Lastro do estoque</div>
+            <p className={styles.sectionSubtitle}>
+              Tudo que entra ou sai da lisa fica registrado com motivo e justificativa.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Quando</th>
+                <th>Base</th>
+                <th>Movimento</th>
+                <th>Qtd</th>
+                <th>Antes</th>
+                <th>Depois</th>
+                <th>Motivo</th>
+                <th>Justificativa</th>
+              </tr>
+            </thead>
+            <tbody>
+              {movements.length > 0 ? (
+                movements.map((movement) => (
+                  <tr key={movement.id}>
+                    <td>{formatDateTime(movement.createdAt || "")}</td>
+                    <td>{`${movement.sku} · ${movement.color} · ${movement.size}`}</td>
+                    <td>{labelForMovementType(movement.movementType)}</td>
+                    <td>{movement.quantity}</td>
+                    <td>{movement.plainBefore}</td>
+                    <td>{movement.plainAfter}</td>
+                    <td>{labelForMovementReason(movement.reasonCategory)}</td>
+                    <td>{movement.reasonText || "-"}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={8}>Ainda nao existem movimentacoes registradas.</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -1773,6 +1951,42 @@ function labelForDtfType(value: DtfArtType) {
       return "Full";
     default:
       return "Outro";
+  }
+}
+
+function labelForMovementType(value: StockMovement["movementType"]) {
+  switch (value) {
+    case "entrada":
+      return "Entrada";
+    case "saida":
+      return "Saida";
+    default:
+      return "Ajuste";
+  }
+}
+
+function labelForMovementReason(value: string) {
+  switch (value) {
+    case "entrada_lote":
+      return "Chegada de lote";
+    case "devolucao":
+      return "Devolucao";
+    case "correcao_ajuste":
+      return "Correcao";
+    case "entrada_manual":
+      return "Entrada manual";
+    case "venda_site":
+      return "Venda no site";
+    case "resgate_influenciador":
+      return "Resgate de influenciador";
+    case "uso_interno":
+      return "Uso interno";
+    case "perda_avaria":
+      return "Perda ou avaria";
+    case "saida_manual":
+      return "Saida manual";
+    default:
+      return value || "-";
   }
 }
 

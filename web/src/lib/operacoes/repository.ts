@@ -14,6 +14,7 @@ import type {
 const OPERATIONS_SCHEMA = "repeticao_maxima";
 const DEBTS_TABLE = "dividas_internas";
 const STOCK_TABLE = "estoque_base";
+const STOCK_MOVEMENTS_TABLE = "estoque_movimentacoes";
 const DTF_TABLE = "estoque_dtf";
 const NUVEMSHOP_PAGE_SIZE = 100;
 const NUVEMSHOP_MAX_PAGES = 6;
@@ -84,6 +85,24 @@ export type StockSelectionOption = {
   printedReal: number;
   plain: number;
   notes: string;
+};
+
+export type StockMovementType = "entrada" | "saida" | "ajuste";
+
+export type StockMovement = {
+  id: string;
+  stockItemId: string | null;
+  sku: string;
+  color: string;
+  size: string;
+  movementType: StockMovementType;
+  quantity: number;
+  plainBefore: number;
+  plainAfter: number;
+  reasonCategory: string;
+  reasonText: string;
+  sourceModule: string;
+  createdAt: string | null;
 };
 
 export type SiteArtSelectionOption = {
@@ -345,6 +364,7 @@ export async function loadStockModuleData() {
   if (!supabase.ok) {
     return {
       items: getFallbackStock(),
+      movements: [] as StockMovement[],
       dtfItems: [],
       dtfCatalog: catalog.products,
       nuvemshopStock: catalog.stockProducts,
@@ -360,7 +380,11 @@ export async function loadStockModuleData() {
   }
 
   try {
-    const [{ data: stockData, error: stockError }, { data: dtfData, error: dtfError }] =
+    const [
+      { data: stockData, error: stockError },
+      { data: dtfData, error: dtfError },
+      { data: movementData, error: movementError },
+    ] =
       await Promise.all([
         supabase.client
           .schema(OPERATIONS_SCHEMA)
@@ -373,6 +397,12 @@ export async function loadStockModuleData() {
           .from(DTF_TABLE)
           .select("*")
           .order("product_name", { ascending: true }),
+        supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(STOCK_MOVEMENTS_TABLE)
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(80),
       ]);
 
     if (stockError) {
@@ -381,6 +411,10 @@ export async function loadStockModuleData() {
 
     if (dtfError) {
       throw dtfError;
+    }
+
+    if (movementError) {
+      throw movementError;
     }
 
     const items = (stockData ?? []).map((row) =>
@@ -393,9 +427,11 @@ export async function loadStockModuleData() {
     const dtfItems = (dtfData ?? []).map((row) =>
       rowToDtfItem(row, catalog.salesByProductId),
     );
+    const movements = (movementData ?? []).map(rowToStockMovement);
 
     return {
       items: items.length > 0 ? items : [],
+      movements,
       dtfItems,
       dtfCatalog: catalog.products,
       nuvemshopStock: catalog.stockProducts,
@@ -423,6 +459,7 @@ export async function loadStockModuleData() {
   } catch (error) {
     return {
       items: getFallbackStock(),
+      movements: [] as StockMovement[],
       dtfItems: [],
       dtfCatalog: catalog.products,
       nuvemshopStock: catalog.stockProducts,
@@ -462,6 +499,13 @@ export async function createStockItem(input: unknown) {
     if (existingError) {
       throw existingError;
     }
+
+    const previousTotal = getIntegerValue(existingRow?.total_qty);
+    const previousPrinted = Math.min(
+      getIntegerValue(existingRow?.printed_qty),
+      previousTotal,
+    );
+    const previousPlain = Math.max(previousTotal - previousPrinted, 0);
 
     const operation = existingRow?.id
       ? supabase.client
@@ -503,13 +547,35 @@ export async function createStockItem(input: unknown) {
       throw error;
     }
 
+    const nextItem = rowToStockItem(
+      data,
+      stampedContext.publishedByBaseColorSize,
+      stampedContext.salesByBaseColorSize,
+    );
+
+    if (row.total > 0) {
+      await createStockMovement(supabase.client, {
+        stockItemId: String(data.id ?? existingRow?.id ?? ""),
+        sku: nextItem.sku,
+        color: nextItem.color,
+        size: nextItem.size,
+        movementType: "entrada",
+        quantity: row.total,
+        plainBefore: previousPlain,
+        plainAfter: nextItem.plain,
+        reasonCategory: row.movementReasonCategory || "entrada_lote",
+        reasonText:
+          row.movementReasonText ||
+          (existingRow?.id
+            ? "Saldo adicionado em linha existente."
+            : "Cadastro inicial da linha de estoque."),
+        sourceModule: row.movementSourceModule || "estoque",
+      });
+    }
+
     return {
       ok: true as const,
-      item: rowToStockItem(
-        data,
-        stampedContext.publishedByBaseColorSize,
-        stampedContext.salesByBaseColorSize,
-      ),
+      item: nextItem,
       persistence: {
         enabled: true,
         source: "supabase" as const,
@@ -544,6 +610,29 @@ export async function updateStockItem(id: string, input: unknown) {
   const stampedContext = await loadStampedStockContext();
 
   try {
+    const { data: existingRow, error: existingError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_TABLE)
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (existingError || !existingRow) {
+      throw existingError || new Error("Nao foi possivel localizar a linha do estoque.");
+    }
+
+    const previousItem = rowToStockItem(
+      existingRow,
+      stampedContext.publishedByBaseColorSize,
+      stampedContext.salesByBaseColorSize,
+    );
+    const nextPlain = Math.max(row.total - row.printedReal, 0);
+    const plainDelta = nextPlain - previousItem.plain;
+
+    if (plainDelta !== 0 && !row.movementReasonText) {
+      throw new Error("Informe a justificativa dessa movimentacao de estoque.");
+    }
+
     const { data, error } = await supabase.client
       .schema(OPERATIONS_SCHEMA)
       .from(STOCK_TABLE)
@@ -566,13 +655,36 @@ export async function updateStockItem(id: string, input: unknown) {
       throw error;
     }
 
+    const nextItem = rowToStockItem(
+      data,
+      stampedContext.publishedByBaseColorSize,
+      stampedContext.salesByBaseColorSize,
+    );
+
+    if (plainDelta !== 0) {
+      await createStockMovement(supabase.client, {
+        stockItemId: nextItem.id,
+        sku: nextItem.sku,
+        color: nextItem.color,
+        size: nextItem.size,
+        movementType:
+          plainDelta > 0
+            ? "entrada"
+            : row.movementReasonCategory === "correcao_ajuste"
+              ? "ajuste"
+              : "saida",
+        quantity: Math.abs(plainDelta),
+        plainBefore: previousItem.plain,
+        plainAfter: nextItem.plain,
+        reasonCategory: row.movementReasonCategory || "ajuste_manual",
+        reasonText: row.movementReasonText,
+        sourceModule: row.movementSourceModule || "estoque",
+      });
+    }
+
     return {
       ok: true as const,
-      item: rowToStockItem(
-        data,
-        stampedContext.publishedByBaseColorSize,
-        stampedContext.salesByBaseColorSize,
-      ),
+      item: nextItem,
       persistence: {
         enabled: true,
         source: "supabase" as const,
@@ -772,6 +884,24 @@ function rowToStockItem(
   };
 }
 
+function rowToStockMovement(row: Record<string, unknown>): StockMovement {
+  return {
+    id: String(row.id ?? ""),
+    stockItemId: row.stock_item_id ? String(row.stock_item_id) : null,
+    sku: String(row.sku ?? ""),
+    color: String(row.color ?? ""),
+    size: String(row.size ?? ""),
+    movementType: normalizeStockMovementType(row.movement_type),
+    quantity: Math.max(getIntegerValue(row.quantity), 0),
+    plainBefore: Math.max(getIntegerValue(row.plain_before), 0),
+    plainAfter: Math.max(getIntegerValue(row.plain_after), 0),
+    reasonCategory: String(row.reason_category ?? "").trim(),
+    reasonText: String(row.reason_text ?? "").trim(),
+    sourceModule: String(row.source_module ?? "").trim(),
+    createdAt: typeof row.created_at === "string" ? row.created_at : null,
+  };
+}
+
 function rowToDtfItem(
   row: Record<string, unknown>,
   salesByProductId: Map<string, number>,
@@ -834,6 +964,10 @@ function normalizeStockInput(input: unknown) {
     reorderPoint: Math.max(getIntegerValue(source.reorderPoint), 0),
     leadTimeDays: Math.max(getIntegerValue(source.leadTimeDays), 10),
     notes: String(source.notes ?? "").trim(),
+    movementReasonCategory: String(source.movementReasonCategory ?? "").trim(),
+    movementReasonText: String(source.movementReasonText ?? "").trim(),
+    movementSourceModule:
+      String(source.movementSourceModule ?? "").trim() || "estoque",
   };
 }
 
@@ -910,6 +1044,16 @@ function normalizeDtfArtType(value: unknown): DtfArtType {
   }
 
   return "outro";
+}
+
+function normalizeStockMovementType(value: unknown): StockMovementType {
+  const normalized = String(value ?? "").trim().toLowerCase();
+
+  if (normalized === "entrada" || normalized === "saida" || normalized === "ajuste") {
+    return normalized;
+  }
+
+  return "ajuste";
 }
 
 function getFallbackDebts(): InternalDebt[] {
@@ -1815,6 +1959,48 @@ function getLatestUpdatedAt(rows: Array<Record<string, unknown>>) {
     .sort((left, right) => right.localeCompare(left));
 
   return values[0] ?? null;
+}
+
+async function createStockMovement(
+  client: ReturnType<typeof createSupabaseServerClient> extends infer T
+    ? T extends { ok: true; client: infer C }
+      ? C
+      : never
+    : never,
+  movement: {
+    stockItemId: string;
+    sku: string;
+    color: string;
+    size: string;
+    movementType: StockMovementType;
+    quantity: number;
+    plainBefore: number;
+    plainAfter: number;
+    reasonCategory: string;
+    reasonText: string;
+    sourceModule: string;
+  },
+) {
+  const { error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(STOCK_MOVEMENTS_TABLE)
+    .insert({
+      stock_item_id: movement.stockItemId || null,
+      sku: movement.sku,
+      color: movement.color,
+      size: movement.size,
+      movement_type: movement.movementType,
+      quantity: movement.quantity,
+      plain_before: movement.plainBefore,
+      plain_after: movement.plainAfter,
+      reason_category: movement.reasonCategory || "ajuste_manual",
+      reason_text: movement.reasonText,
+      source_module: movement.sourceModule || "estoque",
+    });
+
+  if (error) {
+    throw error;
+  }
 }
 
 function buildDisabledState(message: string): OperationalPersistenceState {
