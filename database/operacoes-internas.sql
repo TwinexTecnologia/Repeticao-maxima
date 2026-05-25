@@ -292,19 +292,51 @@ CREATE TABLE IF NOT EXISTS repeticao_maxima.parceiros_solicitacoes_resgate (
   window_start_date DATE,
   window_end_date DATE,
   status TEXT NOT NULL DEFAULT 'pendente',
+  admin_coupon_code TEXT NOT NULL DEFAULT '',
+  admin_message TEXT NOT NULL DEFAULT '',
   notes TEXT NOT NULL DEFAULT '',
   requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   reviewed_at TIMESTAMPTZ,
+  partner_seen_at TIMESTAMPTZ,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CHECK (partner_role IN ('influenciador', 'atleta')),
   CHECK (request_type IN ('roupa', 'apoio')),
-  CHECK (status IN ('pendente', 'aprovado', 'recusado')),
+  CHECK (status IN ('pendente', 'aprovado', 'pago', 'recusado')),
   CHECK (requested_amount >= 0),
   CHECK (available_amount >= 0),
   CHECK (minimum_amount >= 0)
 );
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.parceiros_solicitacoes_resgate TO anon, authenticated, service_role;
+
+CREATE TABLE IF NOT EXISTS repeticao_maxima.parceiros_campanhas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  qualification_goal NUMERIC(12, 2) NOT NULL DEFAULT 2000,
+  bonus_amount NUMERIC(12, 2) NOT NULL DEFAULT 300,
+  ranking_locked BOOLEAN NOT NULL DEFAULT TRUE,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (qualification_goal >= 0),
+  CHECK (bonus_amount >= 0),
+  CHECK (end_date >= start_date)
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.parceiros_campanhas TO anon, authenticated, service_role;
+
+CREATE TABLE IF NOT EXISTS repeticao_maxima.parceiros_campanhas_participantes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id UUID NOT NULL REFERENCES repeticao_maxima.parceiros_campanhas(id) ON DELETE CASCADE,
+  partner_id UUID NOT NULL REFERENCES repeticao_maxima.parceiros_cupons(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (campaign_id, partner_id)
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.parceiros_campanhas_participantes TO anon, authenticated, service_role;
 
 ALTER TABLE repeticao_maxima.profiles_usuarios
   ADD COLUMN IF NOT EXISTS auth_user_id UUID,
@@ -350,10 +382,37 @@ ALTER TABLE repeticao_maxima.parceiros_solicitacoes_resgate
   ADD COLUMN IF NOT EXISTS window_start_date DATE,
   ADD COLUMN IF NOT EXISTS window_end_date DATE,
   ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pendente',
+  ADD COLUMN IF NOT EXISTS admin_coupon_code TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS admin_message TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS partner_seen_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+ALTER TABLE repeticao_maxima.parceiros_solicitacoes_resgate
+  DROP CONSTRAINT IF EXISTS parceiros_solicitacoes_resgate_status_check;
+
+ALTER TABLE repeticao_maxima.parceiros_solicitacoes_resgate
+  ADD CONSTRAINT parceiros_solicitacoes_resgate_status_check
+  CHECK (status IN ('pendente', 'aprovado', 'pago', 'recusado'));
+
+ALTER TABLE repeticao_maxima.parceiros_campanhas
+  ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS start_date DATE,
+  ADD COLUMN IF NOT EXISTS end_date DATE,
+  ADD COLUMN IF NOT EXISTS qualification_goal NUMERIC(12, 2) NOT NULL DEFAULT 2000,
+  ADD COLUMN IF NOT EXISTS bonus_amount NUMERIC(12, 2) NOT NULL DEFAULT 300,
+  ADD COLUMN IF NOT EXISTS ranking_locked BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+ALTER TABLE repeticao_maxima.parceiros_campanhas_participantes
+  ADD COLUMN IF NOT EXISTS campaign_id UUID REFERENCES repeticao_maxima.parceiros_campanhas(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS partner_id UUID REFERENCES repeticao_maxima.parceiros_cupons(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 INSERT INTO repeticao_maxima.dividas_internas (
   title,

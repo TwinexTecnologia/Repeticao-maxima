@@ -11,6 +11,8 @@ import {
   getPartnerAvailableBalances,
   loadPartnerPerformanceSnapshot,
 } from "@/lib/parceiros/performance";
+import { loadPartnerCampaignSnapshots } from "@/lib/parceiros/campaigns";
+import { loadPartnerCampaigns } from "@/lib/parceiros/campaigns-repository";
 import {
   loadCouponPartnerProfiles,
   loadPartnerRedemptions,
@@ -40,10 +42,11 @@ export default async function MeuDesempenhoPage({
 
   const params = searchParams ? await searchParams : undefined;
   const selectedMonth = params?.month || getCurrentMonthInput();
-  const [profilesData, allRedemptions, rewardRequests] = await Promise.all([
+  const [profilesData, allRedemptions, rewardRequests, campaignsData] = await Promise.all([
     loadCouponPartnerProfiles(),
     loadPartnerRedemptions(),
     loadPartnerRewardRequests({ userProfileId: user.profileId }),
+    loadPartnerCampaigns(),
   ]);
   const profile = profilesData.profiles.find(
     (item) => item.id === user.linkedPartnerId && item.active,
@@ -96,6 +99,12 @@ export default async function MeuDesempenhoPage({
     (item) =>
       item.partnerId === user.linkedPartnerId || item.couponCode === profile.couponCode,
   );
+  const partnerCampaigns = campaignsData.campaigns.filter(
+    (campaign) =>
+      campaign.active &&
+      campaign.participants.some((participant) => participant.partnerId === profile.id),
+  );
+  const campaignSnapshots = await loadPartnerCampaignSnapshots(partnerCampaigns);
   const greetingRole = profile.role === "atleta" ? "atleta" : "influenciador";
 
   return (
@@ -135,6 +144,15 @@ export default async function MeuDesempenhoPage({
             <div className={styles.metricValue}>{formatMoney(performance.data.row.monthlyGoal)}</div>
             <div className={styles.metricHint}>
               Faltam {formatMoney(performance.data.row.monthlyAmountToGoal)} para liberar
+            </div>
+          </article>
+          <article className={styles.metricCard}>
+            <div className={styles.metricLabel}>Janela atual acaba em</div>
+            <div className={styles.metricValue}>
+              {formatDateOnly(performance.data.rollingWindow.endDate)}
+            </div>
+            <div className={styles.metricHint}>
+              Esse e o prazo final da sua meta normal de 3 meses.
             </div>
           </article>
           <article className={styles.metricCard}>
@@ -187,6 +205,87 @@ export default async function MeuDesempenhoPage({
           ) : null}
         </div>
       </section>
+
+      {campaignSnapshots.length > 0 ? (
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <div className={styles.sectionTitle}>Campanhas ativas</div>
+              <p className={styles.sectionSubtitle}>
+                Essas campanhas sao extras e separadas da sua meta normal de 3 meses.
+              </p>
+            </div>
+          </div>
+          <div className={styles.catalogGrid}>
+            {campaignSnapshots.map((campaign) => {
+              const myEntry =
+                campaign.leaderboard.find((item) => item.partnerId === profile.id) || null;
+
+              return (
+                <article key={campaign.campaignId} className={styles.catalogCard}>
+                  <div className={styles.listTitleRow}>
+                    <div className={styles.sectionTitle}>{campaign.name}</div>
+                    <span className={`${styles.pill} ${styles.pillMedium}`}>
+                      {campaign.rankingLocked ? "Ranking parcial" : "Ranking liberado"}
+                    </span>
+                  </div>
+                  <p className={styles.sectionSubtitle}>
+                    {campaign.description || "Campanha extra com bonus separado do contrato."}
+                  </p>
+                  <div className={styles.metaList}>
+                    <div className={styles.metaItem}>
+                      <strong>Periodo</strong>
+                      <span>
+                        {formatDateOnly(campaign.startDate)} ate {formatDateOnly(campaign.endDate)}
+                      </span>
+                    </div>
+                    <div className={styles.metaItem}>
+                      <strong>Meta para entrar</strong>
+                      <span>{formatMoney(campaign.qualificationGoal)}</span>
+                    </div>
+                    <div className={styles.metaItem}>
+                      <strong>Bonus extra</strong>
+                      <span>{formatMoney(campaign.bonusAmount)} no Pix</span>
+                    </div>
+                    <div className={styles.metaItem}>
+                      <strong>Prazo restante</strong>
+                      <span>
+                        {campaign.daysRemaining > 0
+                          ? `${campaign.daysRemaining} dia(s)`
+                          : "Encerrando hoje"}
+                      </span>
+                    </div>
+                    <div className={styles.metaItem}>
+                      <strong>Sua posicao</strong>
+                      <span>
+                        {myEntry
+                          ? `${campaign.rankingLocked ? myEntry.displayRank : myEntry.actualRank}º lugar`
+                          : "-"}
+                      </span>
+                    </div>
+                    <div className={styles.metaItem}>
+                      <strong>Sua corrida</strong>
+                      <span>
+                        {myEntry?.qualified
+                          ? "Voce ja entrou na disputa do bonus."
+                          : `Faltam ${formatMoney(myEntry?.remainingToGoal || 0)} para entrar.`}
+                      </span>
+                    </div>
+                  </div>
+                  <div className={styles.callout} style={{ marginTop: 16 }}>
+                    <h3>Importante</h3>
+                    <p>
+                      Sua meta normal continua valendo separadamente. Se voce bater a meta
+                      antes do fim dessa campanha, o beneficio normal de roupa ja pode ser
+                      liberado e o bonus em Pix fica reservado ao 1º lugar geral.
+                    </p>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       <PartnerPerformanceClient
         selectedMonth={performance.data.selectedMonth}
@@ -257,6 +356,8 @@ export default async function MeuDesempenhoPage({
                 <th>Destino</th>
                 <th>Valor</th>
                 <th>Status</th>
+                <th>Cupom</th>
+                <th>Mensagem</th>
                 <th>Solicitado em</th>
               </tr>
             </thead>
@@ -267,13 +368,15 @@ export default async function MeuDesempenhoPage({
                     <td>{request.requestType === "apoio" ? "Apoio" : "Roupa"}</td>
                     <td>{request.supportGoal || "Cupom / roupa"}</td>
                     <td>{formatMoney(request.requestedAmount)}</td>
-                    <td>{request.status}</td>
+                    <td>{labelForRequestStatus(request.status)}</td>
+                    <td>{request.adminCouponCode || "-"}</td>
+                    <td>{request.adminMessage || "-"}</td>
                     <td>{formatDateTime(request.requestedAt)}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5}>Nenhuma solicitacao feita ainda.</td>
+                  <td colSpan={7}>Nenhuma solicitacao feita ainda.</td>
                 </tr>
               )}
             </tbody>
@@ -323,4 +426,25 @@ export default async function MeuDesempenhoPage({
       </section>
     </AppShell>
   );
+}
+
+function labelForRequestStatus(value: "pendente" | "aprovado" | "pago" | "recusado") {
+  switch (value) {
+    case "aprovado":
+      return "Cupom liberado";
+    case "pago":
+      return "Pago";
+    case "recusado":
+      return "Recusado";
+    default:
+      return "Pendente";
+  }
+}
+
+function formatDateOnly(value?: string | null) {
+  if (!value) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("pt-BR").format(new Date(`${value}T00:00:00`));
 }

@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/app-shell";
+import { PartnerCampaignManager } from "@/components/partner-campaign-manager";
 import { PartnerCouponManager } from "@/components/partner-coupon-manager";
 import { PartnerRedemptionManager } from "@/components/partner-redemption-manager";
 import styles from "@/components/panel.module.css";
@@ -7,6 +8,12 @@ import {
   loadSiteArtSelectionOptions,
   loadStockSelectionOptions,
 } from "@/lib/operacoes/repository";
+import {
+  loadPartnerCampaignSnapshots,
+} from "@/lib/parceiros/campaigns";
+import {
+  loadPartnerCampaigns,
+} from "@/lib/parceiros/campaigns-repository";
 import {
   loadCouponPartnerModuleData,
   type CouponPartnerProfile,
@@ -551,12 +558,14 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
     selectedCoupon: getSearchValue(resolvedSearchParams, "selectedCoupon"),
   };
   const credentials = getNuvemshopCredentials();
-  const [{ config: financeConfig }, moduleData, stockOptions, artOptions] = await Promise.all([
+  const [{ config: financeConfig }, moduleData, stockOptions, artOptions, campaignsData] = await Promise.all([
     loadFinanceConfig(),
     loadCouponPartnerModuleData(),
     loadStockSelectionOptions(),
     loadSiteArtSelectionOptions(),
+    loadPartnerCampaigns(),
   ]);
+  const campaignSnapshots = await loadPartnerCampaignSnapshots(campaignsData.campaigns);
   const initialDraft = {
     name: "",
     couponCode: getSearchValue(resolvedSearchParams, "couponCode").trim().toUpperCase(),
@@ -768,6 +777,13 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
             </article>
           </div>
         </section>
+
+        <PartnerCampaignManager
+          initialProfiles={moduleData.profiles}
+          initialCampaigns={campaignsData.campaigns}
+          initialSnapshots={campaignSnapshots}
+          initialPersistence={campaignsData.persistence}
+        />
 
         <section className={styles.section}>
           <div className={styles.sectionHeader}>

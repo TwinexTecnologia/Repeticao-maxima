@@ -190,6 +190,12 @@
   border: 1px solid rgba(123, 44, 191, 0.12);
 }
 
+.accountActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .accountMeta {
   display: grid;
   gap: 2px;
@@ -203,6 +209,119 @@
 .accountMeta span {
   font-size: 0.8rem;
   color: #755b8d;
+}
+
+.notificationWrap {
+  position: relative;
+}
+
+.notificationButton {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(123, 44, 191, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+  color: #4f2f6d;
+  position: relative;
+  box-shadow: 0 8px 22px rgba(88, 28, 135, 0.08);
+}
+
+.notificationButton svg {
+  width: 22px;
+  height: 22px;
+}
+
+.notificationBadge {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #7b2cbf;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  box-shadow: 0 8px 18px rgba(94, 24, 159, 0.28);
+}
+
+.notificationPanel {
+  width: min(360px, calc(100vw - 32px));
+  padding: 16px;
+  border-radius: 22px;
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 30;
+  background: #ffffff;
+  border: 1px solid rgba(123, 44, 191, 0.12);
+  box-shadow: 0 20px 48px rgba(88, 28, 135, 0.16);
+}
+
+.notificationHeader {
+  display: grid;
+  gap: 4px;
+}
+
+.notificationHeader strong {
+  color: #2d1941;
+}
+
+.notificationHeader span {
+  color: #6f5b82;
+  font-size: 0.86rem;
+}
+
+.notificationList {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.notificationItem {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(123, 44, 191, 0.08);
+  background: rgba(123, 44, 191, 0.03);
+}
+
+.notificationItemTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.notificationItemTop strong {
+  color: #2d1941;
+  font-size: 0.92rem;
+}
+
+.notificationItemTop span {
+  color: #8e4700;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.notificationItem p {
+  color: #6f5b82;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.notificationEmpty {
+  margin-top: 14px;
+  color: #6f5b82;
+  font-size: 0.92rem;
 }
 
 .badge {
@@ -1193,6 +1312,61 @@
   margin-top: 14px;
   display: grid;
   gap: 10px;
+}
+
+.metaItem {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #6f5b82;
+}
+
+.metaItem strong {
+  color: #2d1941;
+}
+
+.checkboxGrid {
+  margin-top: 20px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.checkboxList {
+  margin-top: 14px;
+  display: grid;
+  gap: 12px;
+  max-height: 340px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.checkboxCard {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(123, 44, 191, 0.08);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.checkboxCard input {
+  margin-top: 3px;
+}
+
+.checkboxCard strong {
+  color: #2d1941;
+  display: block;
+}
+
+.checkboxCard span {
+  display: block;
+  margin-top: 4px;
+  color: #6f5b82;
+  line-height: 1.5;
+  font-size: 0.92rem;
 }
 
 .metaRow {
