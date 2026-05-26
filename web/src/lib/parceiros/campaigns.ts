@@ -38,6 +38,8 @@ export type PartnerCampaignSnapshot = {
   campaignId: string;
   name: string;
   description: string;
+  importantMessage: string;
+  useCurrentWindow: boolean;
   startDate: string;
   endDate: string;
   qualificationGoal: number;
@@ -51,7 +53,10 @@ export type PartnerCampaignSnapshot = {
   winnerPartnerId: string | null;
 };
 
-export async function loadPartnerCampaignSnapshots(campaigns: PartnerCampaign[]) {
+export async function loadPartnerCampaignSnapshots(
+  campaigns: PartnerCampaign[],
+  windowOverride?: { startDate: string; endDate: string },
+) {
   if (campaigns.length === 0) {
     return [] as PartnerCampaignSnapshot[];
   }
@@ -68,14 +73,21 @@ export async function loadPartnerCampaignSnapshots(campaigns: PartnerCampaign[])
       loadFinanceConfig(),
       fetchAllOrders(client),
     ]);
+    const defaultWindow = getRollingWindowRange(getCurrentMonthInput());
 
     return campaigns.map((campaign) => {
+      const effectiveWindow =
+        campaign.useCurrentWindow === true
+          ? windowOverride ?? defaultWindow
+          : { startDate: campaign.startDate, endDate: campaign.endDate };
+      const startDate = effectiveWindow.startDate;
+      const endDate = effectiveWindow.endDate;
       const leaderboard = campaign.participants
         .map((participant) => {
           const partnerOrders = orders.filter(
             (order) =>
               getCouponCode(order) === participant.couponCode &&
-              matchesDateRange(order, campaign.startDate, campaign.endDate),
+              matchesDateRange(order, startDate, endDate),
           );
           const stats = aggregateCouponStats(partnerOrders, financeConfig);
 
@@ -123,15 +135,17 @@ export async function loadPartnerCampaignSnapshots(campaigns: PartnerCampaign[])
         campaignId: campaign.id,
         name: campaign.name,
         description: campaign.description,
-        startDate: campaign.startDate,
-        endDate: campaign.endDate,
+        importantMessage: campaign.importantMessage,
+        useCurrentWindow: campaign.useCurrentWindow,
+        startDate,
+        endDate,
         qualificationGoal: campaign.qualificationGoal,
         bonusAmount: campaign.bonusAmount,
         rankingLocked: campaign.rankingLocked,
         active: campaign.active,
         totalNetRevenue: leaderboard.reduce((sum, item) => sum + item.netRevenue, 0),
         qualifiedCount: leaderboard.filter((item) => item.qualified).length,
-        daysRemaining: getDaysRemaining(campaign.endDate),
+        daysRemaining: getDaysRemaining(endDate),
         winnerPartnerId: leaderboard[0]?.partnerId || null,
         leaderboard,
       };
@@ -143,6 +157,31 @@ export async function loadPartnerCampaignSnapshots(campaigns: PartnerCampaign[])
 
     return [] as PartnerCampaignSnapshot[];
   }
+}
+
+function getCurrentMonthInput() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function normalizeMonthInput(value: string) {
+  return /^\d{4}-\d{2}$/.test(value) ? value : getCurrentMonthInput();
+}
+
+function getRollingWindowRange(monthInput: string) {
+  const normalizedMonth = normalizeMonthInput(monthInput);
+  const [yearText, monthText] = normalizedMonth.split("-");
+  const year = Number.parseInt(yearText || "", 10);
+  const monthIndex = Number.parseInt(monthText || "", 10) - 1;
+  const start = new Date(year, monthIndex - 2, 1);
+  const end = new Date(year, monthIndex + 1, 0);
+  const startDate = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-01`;
+  const endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")}`;
+
+  return {
+    startDate,
+    endDate,
+  };
 }
 
 function normalizeText(value: string) {

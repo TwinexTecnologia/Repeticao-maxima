@@ -104,7 +104,10 @@ export default async function MeuDesempenhoPage({
       campaign.active &&
       campaign.participants.some((participant) => participant.partnerId === profile.id),
   );
-  const campaignSnapshots = await loadPartnerCampaignSnapshots(partnerCampaigns);
+  const campaignSnapshots = await loadPartnerCampaignSnapshots(
+    partnerCampaigns,
+    performance.data.rollingWindow,
+  );
   const greetingRole = profile.role === "atleta" ? "atleta" : "influenciador";
 
   return (
@@ -234,7 +237,7 @@ export default async function MeuDesempenhoPage({
                   </p>
                   <div className={styles.metaList}>
                     <div className={styles.metaItem}>
-                      <strong>Periodo</strong>
+                      <strong>{campaign.useCurrentWindow ? "Janela atual" : "Periodo"}</strong>
                       <span>
                         {formatDateOnly(campaign.startDate)} ate {formatDateOnly(campaign.endDate)}
                       </span>
@@ -272,14 +275,12 @@ export default async function MeuDesempenhoPage({
                       </span>
                     </div>
                   </div>
-                  <div className={styles.callout} style={{ marginTop: 16 }}>
-                    <h3>Importante</h3>
-                    <p>
-                      Sua meta normal continua valendo separadamente. Se voce bater a meta
-                      antes do fim dessa campanha, o beneficio normal de roupa ja pode ser
-                      liberado e o bonus em Pix fica reservado ao 1º lugar geral.
-                    </p>
-                  </div>
+                  {campaign.importantMessage ? (
+                    <div className={styles.callout} style={{ marginTop: 16 }}>
+                      <h3>Importante</h3>
+                      <p>{campaign.importantMessage}</p>
+                    </div>
+                  ) : null}
                 </article>
               );
             })}

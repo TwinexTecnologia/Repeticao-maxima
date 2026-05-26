@@ -1546,6 +1546,11 @@
     align-items: stretch;
   }
 
+  .metaItem {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
   .chartRow {
     display: grid;
     grid-template-columns: 1fr;
