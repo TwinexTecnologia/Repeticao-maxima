@@ -35,17 +35,19 @@ export function AuthUserMenu({ fullName, email }: AuthUserMenuProps) {
         <strong>{fullName}</strong>
         <span>{email}</span>
       </div>
-      <Link href="/perfil" className={styles.secondaryButton}>
-        Perfil
-      </Link>
-      <button
-        type="button"
-        className={styles.secondaryButton}
-        onClick={handleSignOut}
-        disabled={isSigningOut}
-      >
-        {isSigningOut ? "Saindo..." : "Sair"}
-      </button>
+      <div className={styles.accountActions}>
+        <Link href="/perfil" className={styles.secondaryButton}>
+          Perfil
+        </Link>
+        <button
+          type="button"
+          className={styles.secondaryButton}
+          onClick={handleSignOut}
+          disabled={isSigningOut}
+        >
+          {isSigningOut ? "Saindo..." : "Sair"}
+        </button>
+      </div>
     </div>
   );
 }

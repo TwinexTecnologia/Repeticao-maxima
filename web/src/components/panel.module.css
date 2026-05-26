@@ -1551,7 +1551,7 @@
   }
 
   .content {
-    padding: 18px;
+    padding: 14px;
   }
 
   .topbar {
@@ -1560,17 +1560,19 @@
   }
 
   .titleBlock h1 {
-    font-size: 1.8rem;
+    font-size: 1.65rem;
   }
 
   .titleBlock p {
     margin-top: 8px;
     font-size: 0.95rem;
+    display: none;
   }
 
   .accountCard {
     width: 100%;
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: stretch;
     justify-content: flex-start;
   }
 
@@ -1578,15 +1580,19 @@
     width: 100%;
   }
 
-  .accountCard > a,
-  .accountCard > button {
+  .accountActions {
+    width: 100%;
+  }
+
+  .accountActions > a,
+  .accountActions > button {
     flex: 1;
   }
 
   .section,
   .heroCard,
   .metricCard {
-    padding: 18px;
+    padding: 14px;
   }
 
   .metricGrid {
