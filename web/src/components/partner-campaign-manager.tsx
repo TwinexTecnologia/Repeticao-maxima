@@ -28,6 +28,8 @@ type CampaignFormState = {
   editingId: string | null;
   name: string;
   description: string;
+  importantMessage: string;
+  useCurrentWindow: boolean;
   startDate: string;
   endDate: string;
   qualificationGoal: string;
@@ -52,6 +54,8 @@ export function PartnerCampaignManager({
     editingId: null,
     name: "",
     description: "",
+    importantMessage: "",
+    useCurrentWindow: false,
     startDate: "",
     endDate: "",
     qualificationGoal: "2000",
@@ -79,8 +83,9 @@ export function PartnerCampaignManager({
 
     try {
       const name = form.name.trim();
-      const startDate = form.startDate.trim();
-      const endDate = form.endDate.trim();
+      const effectiveWindow = form.useCurrentWindow ? getCurrentWindowRange() : null;
+      const startDate = (effectiveWindow?.startDate ?? form.startDate).trim();
+      const endDate = (effectiveWindow?.endDate ?? form.endDate).trim();
       const qualificationGoal = Number(form.qualificationGoal || 0);
       const bonusAmount = Number(form.bonusAmount || 0);
 
@@ -107,6 +112,8 @@ export function PartnerCampaignManager({
       const payload = {
         name,
         description: form.description,
+        importantMessage: form.importantMessage,
+        useCurrentWindow: form.useCurrentWindow,
         startDate,
         endDate,
         qualificationGoal,
@@ -173,6 +180,8 @@ export function PartnerCampaignManager({
         body: JSON.stringify({
           name: campaign.name,
           description: campaign.description,
+          importantMessage: campaign.importantMessage,
+          useCurrentWindow: campaign.useCurrentWindow,
           startDate: campaign.startDate,
           endDate: campaign.endDate,
           qualificationGoal: campaign.qualificationGoal,
@@ -216,6 +225,8 @@ export function PartnerCampaignManager({
       editingId: campaign.id,
       name: campaign.name,
       description: campaign.description,
+      importantMessage: campaign.importantMessage,
+      useCurrentWindow: campaign.useCurrentWindow,
       startDate: campaign.startDate,
       endDate: campaign.endDate,
       qualificationGoal: String(campaign.qualificationGoal),
@@ -232,6 +243,8 @@ export function PartnerCampaignManager({
       editingId: null,
       name: "",
       description: "",
+      importantMessage: "",
+      useCurrentWindow: false,
       startDate: "",
       endDate: "",
       qualificationGoal: "2000",
@@ -357,6 +370,7 @@ export function PartnerCampaignManager({
                 <input
                   type="date"
                   value={form.startDate}
+                  disabled={form.useCurrentWindow}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, startDate: event.target.value }))
                   }
@@ -367,6 +381,7 @@ export function PartnerCampaignManager({
                 <input
                   type="date"
                   value={form.endDate}
+                  disabled={form.useCurrentWindow}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, endDate: event.target.value }))
                   }
@@ -395,6 +410,19 @@ export function PartnerCampaignManager({
                     }))
                   }
                   placeholder="Ex.: bateu 2 mil, entrou na corrida"
+                />
+              </label>
+              <label className={styles.filterField}>
+                <span>Importante (opcional)</span>
+                <input
+                  value={form.importantMessage}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      importantMessage: event.target.value,
+                    }))
+                  }
+                  placeholder="Ex.: cupom vai aparecer em ate 72h no painel"
                 />
               </label>
             </div>
@@ -434,6 +462,28 @@ export function PartnerCampaignManager({
                   <span>
                     Quando ativa, ela aparece para os participantes no painel deles.
                   </span>
+                </div>
+              </label>
+              <label className={styles.checkboxCard}>
+                <input
+                  type="checkbox"
+                  checked={form.useCurrentWindow}
+                  onChange={(event) =>
+                    setForm((current) => {
+                      const next = event.target.checked;
+                      const windowRange = next ? getCurrentWindowRange() : null;
+                      return {
+                        ...current,
+                        useCurrentWindow: next,
+                        startDate: windowRange?.startDate ?? current.startDate,
+                        endDate: windowRange?.endDate ?? current.endDate,
+                      };
+                    })
+                  }
+                />
+                <div>
+                  <strong>Usar janela atual</strong>
+                  <span>Mostra a janela de 3 meses atual para eles no lugar do periodo.</span>
                 </div>
               </label>
             </div>
@@ -493,6 +543,8 @@ export function PartnerCampaignManager({
           {campaigns.length > 0 ? (
             campaigns.map((campaign) => {
               const snapshot = snapshotMap.get(campaign.id);
+              const displayedStartDate = snapshot?.startDate ?? campaign.startDate;
+              const displayedEndDate = snapshot?.endDate ?? campaign.endDate;
 
               return (
                 <article key={campaign.id} className={styles.catalogCard}>
@@ -513,9 +565,9 @@ export function PartnerCampaignManager({
 
                   <div className={styles.metaList} style={{ marginTop: 16 }}>
                     <div className={styles.metaItem}>
-                      <strong>Periodo</strong>
+                      <strong>{campaign.useCurrentWindow ? "Janela atual" : "Periodo"}</strong>
                       <span>
-                        {formatDate(campaign.startDate)} ate {formatDate(campaign.endDate)}
+                        {formatDate(displayedStartDate)} ate {formatDate(displayedEndDate)}
                       </span>
                     </div>
                     <div className={styles.metaItem}>
@@ -648,4 +700,17 @@ function formatDate(value: string) {
   }
 
   return new Intl.DateTimeFormat("pt-BR").format(new Date(`${value}T00:00:00`));
+}
+
+function getCurrentWindowRange() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const startDate = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-01`;
+  const endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")}`;
+
+  return {
+    startDate,
+    endDate,
+  };
 }
