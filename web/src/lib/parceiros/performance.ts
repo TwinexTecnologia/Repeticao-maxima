@@ -82,6 +82,10 @@ export type PartnerAvailableBalances = {
 export async function loadPartnerPerformanceSnapshot(
   profile: CouponPartnerProfile,
   monthInput: string,
+  overrides?: {
+    window?: { startDate: string; endDate: string; label?: string };
+    monthlyGoal?: number;
+  },
 ): Promise<{ ok: true; data: PartnerPerformanceSnapshot } | { ok: false; message: string }> {
   const credentials = getNuvemshopCredentials();
 
@@ -99,7 +103,17 @@ export async function loadPartnerPerformanceSnapshot(
       fetchAllOrders(client),
     ]);
     const selectedMonth = normalizeMonthInput(monthInput);
-    const rollingWindow = getRollingWindowRange(selectedMonth);
+    const rollingWindow = overrides?.window
+      ? {
+          startDate: overrides.window.startDate,
+          endDate: overrides.window.endDate,
+          label:
+            overrides.window.label ||
+            `${formatDateOnly(overrides.window.startDate)} a ${formatDateOnly(
+              overrides.window.endDate,
+            )}`,
+        }
+      : getRollingWindowRange(selectedMonth);
     const couponCode = profile.couponCode.trim().toUpperCase();
     const couponOrders = orders.filter((order) => getCouponCode(order) === couponCode);
     const rollingOrders = couponOrders.filter((order) =>
@@ -107,7 +121,7 @@ export async function loadPartnerPerformanceSnapshot(
     );
     const windowStats = aggregateCouponStats(rollingOrders, couponCode, financeConfig);
     const lifetimeStats = aggregateCouponStats(couponOrders, couponCode, financeConfig);
-    const row = buildPartnerRow(profile, windowStats, lifetimeStats);
+    const row = buildPartnerRow(profile, windowStats, lifetimeStats, overrides?.monthlyGoal);
     const orderRows = rollingOrders
       .slice()
       .sort((left, right) => {
@@ -198,6 +212,14 @@ export function formatDateTime(value?: string | null) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+export function formatDateOnly(value?: string | null) {
+  if (!value) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("pt-BR").format(new Date(`${value}T00:00:00`));
 }
 
 export function getGoalProgressPercent(value: number, goal: number) {
@@ -386,9 +408,13 @@ function buildPartnerRow(
   profile: CouponPartnerProfile,
   monthStats: CouponStats,
   lifetimeStats: CouponStats,
+  monthlyGoalOverride?: number,
 ): PartnerPerformanceRow {
-  const monthlyGoal =
-    profile.role === "atleta" ? ATHLETE_WINDOW_GOAL : INFLUENCER_WINDOW_GOAL;
+  const monthlyGoal = Number.isFinite(monthlyGoalOverride || NaN)
+    ? Math.max(monthlyGoalOverride || 0, 0)
+    : profile.role === "atleta"
+      ? ATHLETE_WINDOW_GOAL
+      : INFLUENCER_WINDOW_GOAL;
   const monthlyCreditPercent =
     profile.role === "atleta"
       ? ATHLETE_WINDOW_CREDIT_PERCENT

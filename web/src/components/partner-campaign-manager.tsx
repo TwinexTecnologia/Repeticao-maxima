@@ -85,9 +85,8 @@ export function PartnerCampaignManager({
 
     try {
       const name = form.name.trim();
-      const effectiveWindow = form.useCurrentWindow ? getCurrentWindowRange() : null;
-      const startDate = (effectiveWindow?.startDate ?? form.startDate).trim();
-      const endDate = (effectiveWindow?.endDate ?? form.endDate).trim();
+      const startDate = form.startDate.trim();
+      const endDate = form.endDate.trim();
       const qualificationGoal = Number(form.qualificationGoal || 0);
       const bonusAmount = Number(form.bonusAmount || 0);
 
@@ -376,7 +375,6 @@ export function PartnerCampaignManager({
                 <input
                   type="date"
                   value={form.startDate}
-                  disabled={form.useCurrentWindow}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, startDate: event.target.value }))
                   }
@@ -387,7 +385,6 @@ export function PartnerCampaignManager({
                 <input
                   type="date"
                   value={form.endDate}
-                  disabled={form.useCurrentWindow}
                   onChange={(event) =>
                     setForm((current) => ({ ...current, endDate: event.target.value }))
                   }
@@ -493,22 +490,16 @@ export function PartnerCampaignManager({
                   type="checkbox"
                   checked={form.useCurrentWindow}
                   onChange={(event) =>
-                    setForm((current) => {
-                      const next = event.target.checked;
-                      const windowRange = next ? getCurrentWindowRange() : null;
-                      return {
-                        ...current,
-                        useCurrentWindow: next,
-                        startDate: windowRange?.startDate ?? current.startDate,
-                        endDate: windowRange?.endDate ?? current.endDate,
-                      };
-                    })
+                    setForm((current) => ({
+                      ...current,
+                      useCurrentWindow: event.target.checked,
+                    }))
                   }
                 />
                 <div>
                   <strong>Usar janela atual</strong>
                   <span>
-                    No painel deles aparece a janela atual de 3 meses (nao trava datas).
+                    Essa campanha define a janela atual do painel (inicio/fim ficam travados).
                   </span>
                 </div>
               </label>
@@ -734,15 +725,3 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat("pt-BR").format(new Date(`${value}T00:00:00`));
 }
 
-function getCurrentWindowRange() {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth() - 2, 1);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  const startDate = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-01`;
-  const endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")}`;
-
-  return {
-    startDate,
-    endDate,
-  };
-}

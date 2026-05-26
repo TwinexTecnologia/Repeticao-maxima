@@ -4,6 +4,7 @@ import { AppShell } from "@/components/app-shell";
 import styles from "@/components/panel.module.css";
 import {
   ATHLETE_SUPPORT_MINIMUM_REDEMPTION,
+  formatDateOnly,
   formatDateTime,
   formatMoney,
   getCurrentMonthInput,
@@ -71,7 +72,27 @@ export default async function MeuDesempenhoPage({
     );
   }
 
-  const performance = await loadPartnerPerformanceSnapshot(profile, selectedMonth);
+  const partnerCampaigns = campaignsData.campaigns.filter(
+    (campaign) =>
+      campaign.active &&
+      campaign.participants.some((participant) => participant.partnerId === profile.id),
+  );
+  const windowCampaign =
+    partnerCampaigns
+      .filter((campaign) => campaign.useCurrentWindow)
+      .slice()
+      .sort((left, right) => (right.endDate || "").localeCompare(left.endDate || ""))[0] || null;
+  const effectiveMonth = windowCampaign?.endDate ? windowCampaign.endDate.slice(0, 7) : selectedMonth;
+  const performance = await loadPartnerPerformanceSnapshot(profile, effectiveMonth, {
+    window: windowCampaign
+      ? {
+          startDate: windowCampaign.startDate,
+          endDate: windowCampaign.endDate,
+          label: `${formatDateOnly(windowCampaign.startDate)} a ${formatDateOnly(windowCampaign.endDate)}`,
+        }
+      : undefined,
+    monthlyGoal: windowCampaign?.qualificationGoal,
+  });
 
   if (!performance.ok) {
     return (
@@ -99,15 +120,7 @@ export default async function MeuDesempenhoPage({
     (item) =>
       item.partnerId === user.linkedPartnerId || item.couponCode === profile.couponCode,
   );
-  const partnerCampaigns = campaignsData.campaigns.filter(
-    (campaign) =>
-      campaign.active &&
-      campaign.participants.some((participant) => participant.partnerId === profile.id),
-  );
-  const campaignSnapshots = await loadPartnerCampaignSnapshots(
-    partnerCampaigns,
-    performance.data.rollingWindow,
-  );
+  const campaignSnapshots = await loadPartnerCampaignSnapshots(partnerCampaigns);
   const greetingRole = profile.role === "atleta" ? "atleta" : "influenciador";
 
   return (
@@ -120,14 +133,31 @@ export default async function MeuDesempenhoPage({
         <form className={styles.filterGrid} method="get">
           <label className={styles.filterField}>
             <span>Mes final da janela</span>
-            <input type="month" name="month" defaultValue={performance.data.selectedMonth} />
+            <input
+              type="month"
+              name="month"
+              defaultValue={performance.data.selectedMonth}
+              disabled={Boolean(windowCampaign)}
+            />
           </label>
+          {windowCampaign ? (
+            <input type="hidden" name="month" value={performance.data.selectedMonth} />
+          ) : null}
           <div className={styles.filterActions}>
             <button type="submit" className={styles.primaryButton}>
               Atualizar leitura
             </button>
           </div>
         </form>
+        {windowCampaign ? (
+          <div className={styles.callout} style={{ marginTop: 16 }}>
+            <h3>Janela travada pela campanha</h3>
+            <p>
+              {windowCampaign.name}: {formatDateOnly(windowCampaign.startDate)} ate{" "}
+              {formatDateOnly(windowCampaign.endDate)}.
+            </p>
+          </div>
+        ) : null}
       </section>
 
       <section className={styles.section}>
@@ -448,12 +478,4 @@ function labelForRequestStatus(value: "pendente" | "aprovado" | "pago" | "recusa
     default:
       return "Pendente";
   }
-}
-
-function formatDateOnly(value?: string | null) {
-  if (!value) {
-    return "-";
-  }
-
-  return new Intl.DateTimeFormat("pt-BR").format(new Date(`${value}T00:00:00`));
 }
