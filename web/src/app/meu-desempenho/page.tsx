@@ -369,7 +369,7 @@ export default async function MeuDesempenhoPage({
                     <td>{request.supportGoal || "Cupom / roupa"}</td>
                     <td>{formatMoney(request.requestedAmount)}</td>
                     <td>{labelForRequestStatus(request.status)}</td>
-                    <td>{request.adminCouponCode || "-"}</td>
+                    <td>{request.couponCode || "-"}</td>
                     <td>{request.adminMessage || "-"}</td>
                     <td>{formatDateTime(request.requestedAt)}</td>
                   </tr>
