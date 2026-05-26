@@ -88,6 +88,8 @@ export type PartnerRewardRequest = {
   windowStartDate: string | null;
   windowEndDate: string | null;
   status: PartnerRewardRequestStatus;
+  adminCouponCode?: string | null;
+  adminMessage?: string | null;
   notes: string;
   requestedAt: string | null;
   reviewedAt: string | null;
