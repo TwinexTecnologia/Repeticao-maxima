@@ -56,7 +56,6 @@ export type PartnerCampaignSnapshot = {
 
 export async function loadPartnerCampaignSnapshots(
   campaigns: PartnerCampaign[],
-  windowOverride?: { startDate: string; endDate: string },
 ) {
   if (campaigns.length === 0) {
     return [] as PartnerCampaignSnapshot[];
@@ -74,15 +73,10 @@ export async function loadPartnerCampaignSnapshots(
       loadFinanceConfig(),
       fetchAllOrders(client),
     ]);
-    const defaultWindow = getRollingWindowRange(getCurrentMonthInput());
 
     return campaigns.map((campaign) => {
-      const effectiveWindow =
-        campaign.useCurrentWindow === true
-          ? windowOverride ?? defaultWindow
-          : { startDate: campaign.startDate, endDate: campaign.endDate };
-      const startDate = effectiveWindow.startDate;
-      const endDate = effectiveWindow.endDate;
+      const startDate = campaign.startDate;
+      const endDate = campaign.endDate;
       const leaderboard = campaign.participants
         .map((participant) => {
           const partnerOrders = orders.filter(
@@ -159,31 +153,6 @@ export async function loadPartnerCampaignSnapshots(
 
     return [] as PartnerCampaignSnapshot[];
   }
-}
-
-function getCurrentMonthInput() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function normalizeMonthInput(value: string) {
-  return /^\d{4}-\d{2}$/.test(value) ? value : getCurrentMonthInput();
-}
-
-function getRollingWindowRange(monthInput: string) {
-  const normalizedMonth = normalizeMonthInput(monthInput);
-  const [yearText, monthText] = normalizedMonth.split("-");
-  const year = Number.parseInt(yearText || "", 10);
-  const monthIndex = Number.parseInt(monthText || "", 10) - 1;
-  const start = new Date(year, monthIndex - 2, 1);
-  const end = new Date(year, monthIndex + 1, 0);
-  const startDate = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-01`;
-  const endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")}`;
-
-  return {
-    startDate,
-    endDate,
-  };
 }
 
 function normalizeText(value: string) {

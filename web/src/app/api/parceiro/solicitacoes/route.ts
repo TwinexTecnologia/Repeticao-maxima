@@ -3,10 +3,12 @@ import { NextResponse } from "next/server";
 import { loadAuthenticatedAppUser } from "@/lib/auth/access";
 import {
   ATHLETE_SUPPORT_MINIMUM_REDEMPTION,
+  formatDateOnly,
   getCurrentMonthInput,
   getPartnerAvailableBalances,
   loadPartnerPerformanceSnapshot,
 } from "@/lib/parceiros/performance";
+import { loadPartnerCampaigns } from "@/lib/parceiros/campaigns-repository";
 import {
   createPartnerRewardRequest,
   loadCouponPartnerProfiles,
@@ -44,7 +46,10 @@ export async function POST(request: Request) {
     };
     const selectedMonth = body.selectedMonth || getCurrentMonthInput();
     const requestType = body.requestType === "apoio" ? "apoio" : "roupa";
-    const profilesData = await loadCouponPartnerProfiles();
+    const [profilesData, campaignsData] = await Promise.all([
+      loadCouponPartnerProfiles(),
+      loadPartnerCampaigns(),
+    ]);
     const profile = profilesData.profiles.find(
       (item) => item.id === user.linkedPartnerId && item.active,
     );
@@ -59,8 +64,29 @@ export async function POST(request: Request) {
       );
     }
 
+    const partnerCampaigns = campaignsData.campaigns.filter(
+      (campaign) =>
+        campaign.active &&
+        campaign.useCurrentWindow &&
+        campaign.participants.some((participant) => participant.partnerId === profile.id),
+    );
+    const windowCampaign =
+      partnerCampaigns
+        .slice()
+        .sort((left, right) => (right.endDate || "").localeCompare(left.endDate || ""))[0] || null;
+    const effectiveMonth = windowCampaign?.endDate ? windowCampaign.endDate.slice(0, 7) : selectedMonth;
+
     const [performance, requests] = await Promise.all([
-      loadPartnerPerformanceSnapshot(profile, selectedMonth),
+      loadPartnerPerformanceSnapshot(profile, effectiveMonth, {
+        window: windowCampaign
+          ? {
+              startDate: windowCampaign.startDate,
+              endDate: windowCampaign.endDate,
+              label: `${formatDateOnly(windowCampaign.startDate)} a ${formatDateOnly(windowCampaign.endDate)}`,
+            }
+          : undefined,
+        monthlyGoal: windowCampaign?.qualificationGoal,
+      }),
       loadPartnerRewardRequests({ userProfileId: user.profileId }),
     ]);
 
