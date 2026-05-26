@@ -16,6 +16,7 @@ import {
 } from "@/lib/parceiros/campaigns-repository";
 import {
   loadCouponPartnerModuleData,
+  loadPartnerRewardRequests,
   type CouponPartnerProfile,
   type PartnerRole,
 } from "@/lib/parceiros/repository";
@@ -558,12 +559,20 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
     selectedCoupon: getSearchValue(resolvedSearchParams, "selectedCoupon"),
   };
   const credentials = getNuvemshopCredentials();
-  const [{ config: financeConfig }, moduleData, stockOptions, artOptions, campaignsData] = await Promise.all([
+  const [
+    { config: financeConfig },
+    moduleData,
+    stockOptions,
+    artOptions,
+    campaignsData,
+    rewardRequests,
+  ] = await Promise.all([
     loadFinanceConfig(),
     loadCouponPartnerModuleData(),
     loadStockSelectionOptions(),
     loadSiteArtSelectionOptions(),
     loadPartnerCampaigns(),
+    loadPartnerRewardRequests({ statuses: ["pendente"] }),
   ]);
   const campaignSnapshots = await loadPartnerCampaignSnapshots(campaignsData.campaigns);
   const initialDraft = {
@@ -783,6 +792,7 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
           initialCampaigns={campaignsData.campaigns}
           initialSnapshots={campaignSnapshots}
           initialPersistence={campaignsData.persistence}
+          initialRewardRequests={rewardRequests}
         />
 
         <section className={styles.section}>

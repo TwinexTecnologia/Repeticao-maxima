@@ -71,7 +71,7 @@ export type PartnerRedemption = {
 };
 
 export type PartnerRewardRequestType = "roupa" | "apoio";
-export type PartnerRewardRequestStatus = "pendente" | "aprovado" | "recusado";
+export type PartnerRewardRequestStatus = "pendente" | "aprovado" | "pago" | "recusado";
 
 export type PartnerRewardRequest = {
   id: string;
@@ -88,11 +88,12 @@ export type PartnerRewardRequest = {
   windowStartDate: string | null;
   windowEndDate: string | null;
   status: PartnerRewardRequestStatus;
-  adminCouponCode?: string | null;
-  adminMessage?: string | null;
+  adminCouponCode: string;
+  adminMessage: string;
   notes: string;
   requestedAt: string | null;
   reviewedAt: string | null;
+  partnerSeenAt: string | null;
   updatedAt: string | null;
 };
 
@@ -274,7 +275,10 @@ export async function createPartnerRewardRequest(input: unknown) {
         window_start_date: row.windowStartDate,
         window_end_date: row.windowEndDate,
         status: "pendente",
+        admin_coupon_code: "",
+        admin_message: "",
         notes: row.notes,
+        partner_seen_at: null,
         updated_at: new Date().toISOString(),
       })
       .select("*")
@@ -291,6 +295,64 @@ export async function createPartnerRewardRequest(input: unknown) {
         enabled: true,
         source: "supabase" as const,
         message: "Solicitacao enviada para o admin com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function reviewPartnerRewardRequest(id: string, input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizePartnerRewardRequestReviewInput(input);
+  const reviewedAt = new Date().toISOString();
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_REWARD_REQUEST_TABLE)
+      .update({
+        status: row.status,
+        admin_coupon_code: row.adminCouponCode,
+        admin_message: row.adminMessage,
+        reviewed_at: reviewedAt,
+        partner_seen_at: null,
+        updated_at: reviewedAt,
+      })
+      .eq("id", id)
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel atualizar a solicitacao.");
+    }
+
+    return {
+      ok: true as const,
+      request: rowToPartnerRewardRequest(data),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          row.status === "pago"
+            ? "Solicitacao marcada como paga."
+            : row.status === "recusado"
+              ? "Solicitacao recusada."
+              : "Solicitacao aprovada com cupom liberado.",
         updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
       },
     };
@@ -1045,9 +1107,12 @@ function rowToPartnerRewardRequest(
     windowStartDate: normalizeDate(row.window_start_date) || null,
     windowEndDate: normalizeDate(row.window_end_date) || null,
     status: normalizePartnerRewardRequestStatus(row.status),
+    adminCouponCode: String(row.admin_coupon_code ?? "").trim().toUpperCase(),
+    adminMessage: String(row.admin_message ?? "").trim(),
     notes: String(row.notes ?? "").trim(),
     requestedAt: typeof row.requested_at === "string" ? row.requested_at : null,
     reviewedAt: typeof row.reviewed_at === "string" ? row.reviewed_at : null,
+    partnerSeenAt: typeof row.partner_seen_at === "string" ? row.partner_seen_at : null,
     updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
   };
 }
@@ -1243,6 +1308,34 @@ function normalizePartnerRewardRequestInput(input: unknown) {
   };
 }
 
+function normalizePartnerRewardRequestReviewInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+  const status = normalizePartnerRewardRequestStatus(source.status);
+  const adminCouponCode = String(source.adminCouponCode ?? "")
+    .trim()
+    .toUpperCase();
+  const adminMessage = String(source.adminMessage ?? "").trim();
+  const requestType = normalizePartnerRewardRequestType(source.requestType);
+
+  if (status === "pendente") {
+    throw new Error("Escolha uma acao valida para a solicitacao.");
+  }
+
+  if (requestType === "roupa" && status === "aprovado" && !adminCouponCode) {
+    throw new Error("Informe o cupom liberado para aprovar esse resgate em roupa.");
+  }
+
+  if (requestType === "apoio" && status === "aprovado") {
+    throw new Error("Para apoio esportivo, use marcar como pago ou recusar.");
+  }
+
+  return {
+    status,
+    adminCouponCode,
+    adminMessage,
+  };
+}
+
 function getCouponCode(order: NuvemshopOrder) {
   const code =
     order.coupon
@@ -1319,7 +1412,11 @@ function normalizePartnerRewardRequestStatus(
 ): PartnerRewardRequestStatus {
   const normalized = String(value ?? "").trim().toLowerCase();
 
-  if (normalized === "aprovado" || normalized === "recusado") {
+  if (
+    normalized === "aprovado" ||
+    normalized === "pago" ||
+    normalized === "recusado"
+  ) {
     return normalized;
   }
 
