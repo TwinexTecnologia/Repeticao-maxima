@@ -25,6 +25,8 @@ import { PartnerPerformanceClient } from "./partner-performance-client";
 type MeuDesempenhoPageProps = {
   searchParams?: Promise<{
     month?: string;
+    rangeStart?: string;
+    rangeEnd?: string;
   }>;
 };
 
@@ -43,6 +45,8 @@ export default async function MeuDesempenhoPage({
 
   const params = searchParams ? await searchParams : undefined;
   const selectedMonth = params?.month || getCurrentMonthInput();
+  const customRangeStart = normalizeDateParam(params?.rangeStart);
+  const customRangeEnd = normalizeDateParam(params?.rangeEnd);
   const [profilesData, allRedemptions, rewardRequests, campaignsData] = await Promise.all([
     loadCouponPartnerProfiles(),
     loadPartnerRedemptions(),
@@ -93,6 +97,16 @@ export default async function MeuDesempenhoPage({
       : undefined,
     monthlyGoal: windowCampaign?.qualificationGoal,
   });
+  const customPerformance =
+    customRangeStart && customRangeEnd
+      ? await loadPartnerPerformanceSnapshot(profile, effectiveMonth, {
+          window: {
+            startDate: customRangeStart,
+            endDate: customRangeEnd,
+            label: `${formatDateOnly(customRangeStart)} a ${formatDateOnly(customRangeEnd)}`,
+          },
+        })
+      : null;
 
   if (!performance.ok) {
     return (
@@ -156,6 +170,58 @@ export default async function MeuDesempenhoPage({
               {windowCampaign.name}: {formatDateOnly(windowCampaign.startDate)} ate{" "}
               {formatDateOnly(windowCampaign.endDate)}.
             </p>
+          </div>
+        ) : null}
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Filtrar periodo</div>
+            <p className={styles.sectionSubtitle}>
+              Escolha qualquer periodo para ver suas vendas, sem mexer na janela travada.
+            </p>
+          </div>
+        </div>
+
+        <form className={styles.filterGrid} method="get">
+          <input type="hidden" name="month" value={performance.data.selectedMonth} />
+          <label className={styles.filterField}>
+            <span>Inicio</span>
+            <input type="date" name="rangeStart" defaultValue={customRangeStart || ""} />
+          </label>
+          <label className={styles.filterField}>
+            <span>Fim</span>
+            <input type="date" name="rangeEnd" defaultValue={customRangeEnd || ""} />
+          </label>
+          <div className={styles.filterActions}>
+            <button type="submit" className={styles.secondaryButton}>
+              Filtrar
+            </button>
+          </div>
+        </form>
+
+        {customPerformance && customPerformance.ok ? (
+          <div className={styles.metricGrid} style={{ marginTop: 16 }}>
+            <article className={styles.metricCard}>
+              <div className={styles.metricLabel}>Vendas no periodo</div>
+              <div className={styles.metricValue}>{customPerformance.data.row.orders}</div>
+              <div className={styles.metricHint}>
+                {customPerformance.data.rollingWindow.label}
+              </div>
+            </article>
+            <article className={styles.metricCard}>
+              <div className={styles.metricLabel}>Receita liquida no periodo</div>
+              <div className={styles.metricValue}>
+                {formatMoney(customPerformance.data.row.netRevenue)}
+              </div>
+              <div className={styles.metricHint}>Somente no intervalo escolhido</div>
+            </article>
+          </div>
+        ) : customPerformance && !customPerformance.ok ? (
+          <div className={styles.warningPanel} style={{ marginTop: 16 }}>
+            <div className={styles.warningTitle}>Erro ao filtrar periodo</div>
+            <p className={styles.warningText}>{customPerformance.message}</p>
           </div>
         ) : null}
       </section>
@@ -465,6 +531,16 @@ export default async function MeuDesempenhoPage({
       </section>
     </AppShell>
   );
+}
+
+function normalizeDateParam(value: unknown) {
+  const text = String(value ?? "").trim();
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    return null;
+  }
+
+  return text;
 }
 
 function labelForRequestStatus(value: "pendente" | "aprovado" | "pago" | "recusado") {
