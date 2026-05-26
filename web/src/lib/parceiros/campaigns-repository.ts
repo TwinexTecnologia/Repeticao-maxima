@@ -25,6 +25,8 @@ export type PartnerCampaign = {
   id: string;
   name: string;
   description: string;
+  importantMessage: string;
+  useCurrentWindow: boolean;
   startDate: string;
   endDate: string;
   qualificationGoal: number;
@@ -170,6 +172,8 @@ async function savePartnerCampaignRecord(id: string | null, input: unknown) {
       end_date: row.endDate,
       qualification_goal: row.qualificationGoal,
       bonus_amount: row.bonusAmount,
+      important_message: row.importantMessage,
+      use_current_window: row.useCurrentWindow,
       ranking_locked: row.rankingLocked,
       active: row.active,
       updated_at: now,
@@ -252,6 +256,8 @@ function rowToPartnerCampaign(
     id: String(row.id ?? ""),
     name: String(row.name ?? "").trim(),
     description: String(row.description ?? "").trim(),
+    importantMessage: String(row.important_message ?? "").trim(),
+    useCurrentWindow: row.use_current_window === true,
     startDate: normalizeDate(row.start_date) || "",
     endDate: normalizeDate(row.end_date) || "",
     qualificationGoal: Math.max(getNumberValue(row.qualification_goal), 0),
@@ -289,13 +295,22 @@ function normalizePartnerCampaignInput(input: unknown) {
         : [],
     ),
   );
-  const startDate = normalizeDate(source.startDate);
-  const endDate = normalizeDate(source.endDate);
+  const useCurrentWindow =
+    source.useCurrentWindow === true ||
+    String(source.useCurrentWindow ?? "").trim().toLowerCase() === "true";
+  let startDate = normalizeDate(source.startDate);
+  let endDate = normalizeDate(source.endDate);
   const qualificationGoal = Math.max(getNumberValue(source.qualificationGoal), 0);
   const bonusAmount = Math.max(getNumberValue(source.bonusAmount), 0);
 
   if (!String(source.name ?? "").trim()) {
     throw new Error("Informe o nome da campanha.");
+  }
+
+  if (useCurrentWindow && (!startDate || !endDate)) {
+    const windowRange = getRollingWindowRange(getCurrentMonthInput());
+    startDate = windowRange.startDate;
+    endDate = windowRange.endDate;
   }
 
   if (!startDate || !endDate) {
@@ -313,6 +328,8 @@ function normalizePartnerCampaignInput(input: unknown) {
   return {
     name: String(source.name ?? "").trim(),
     description: String(source.description ?? "").trim(),
+    importantMessage: String(source.importantMessage ?? "").trim(),
+    useCurrentWindow,
     startDate,
     endDate,
     qualificationGoal,
@@ -337,6 +354,31 @@ function normalizePartnerRole(value: unknown): PartnerRole {
   return String(value ?? "").trim().toLowerCase() === "atleta"
     ? "atleta"
     : "influenciador";
+}
+
+function getCurrentMonthInput() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function normalizeMonthInput(value: string) {
+  return /^\d{4}-\d{2}$/.test(value) ? value : getCurrentMonthInput();
+}
+
+function getRollingWindowRange(monthInput: string) {
+  const normalizedMonth = normalizeMonthInput(monthInput);
+  const [yearText, monthText] = normalizedMonth.split("-");
+  const year = Number.parseInt(yearText || "", 10);
+  const monthIndex = Number.parseInt(monthText || "", 10) - 1;
+  const start = new Date(year, monthIndex - 2, 1);
+  const end = new Date(year, monthIndex + 1, 0);
+  const startDate = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-01`;
+  const endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")}`;
+
+  return {
+    startDate,
+    endDate,
+  };
 }
 
 function getLatestUpdatedAt(rows: Array<Record<string, unknown>>) {
