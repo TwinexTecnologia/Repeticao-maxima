@@ -1,9 +1,31 @@
 import { AppShell } from "@/components/app-shell";
+import { PartnerCampaignManager } from "@/components/partner-campaign-manager";
+import { PartnerCouponManager } from "@/components/partner-coupon-manager";
+import { PartnerRedemptionManager } from "@/components/partner-redemption-manager";
 import styles from "@/components/panel.module.css";
 import { loadFinanceConfig } from "@/lib/financeiro/repository";
-import { getNuvemshopCredentials, NuvemshopApiError, NuvemshopClient } from "@/lib/nuvemshop/client";
+import {
+  loadSiteArtSelectionOptions,
+  loadStockSelectionOptions,
+} from "@/lib/operacoes/repository";
+import {
+  loadPartnerCampaignSnapshots,
+} from "@/lib/parceiros/campaigns";
+import {
+  loadPartnerCampaigns,
+} from "@/lib/parceiros/campaigns-repository";
+import {
+  loadCouponPartnerModuleData,
+  loadPartnerRewardRequests,
+  type CouponPartnerProfile,
+  type PartnerRole,
+} from "@/lib/parceiros/repository";
+import {
+  getNuvemshopCredentials,
+  NuvemshopApiError,
+  NuvemshopClient,
+} from "@/lib/nuvemshop/client";
 import type { NuvemshopOrder } from "@/lib/nuvemshop/types";
-import { loadCouponPartnerProfiles, type CouponPartnerProfile, type PartnerRole } from "@/lib/parceiros/repository";
 
 const PAGE_SIZE = 100;
 const MAX_PAGES = 12;
@@ -537,10 +559,29 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
     selectedCoupon: getSearchValue(resolvedSearchParams, "selectedCoupon"),
   };
   const credentials = getNuvemshopCredentials();
-  const [{ config: financeConfig }, profilesData] = await Promise.all([
+  const [
+    { config: financeConfig },
+    moduleData,
+    stockOptions,
+    artOptions,
+    campaignsData,
+    rewardRequests,
+  ] = await Promise.all([
     loadFinanceConfig(),
-    loadCouponPartnerProfiles(),
+    loadCouponPartnerModuleData(),
+    loadStockSelectionOptions(),
+    loadSiteArtSelectionOptions(),
+    loadPartnerCampaigns(),
+    loadPartnerRewardRequests({ statuses: ["pendente"] }),
   ]);
+  const campaignSnapshots = await loadPartnerCampaignSnapshots(campaignsData.campaigns);
+  const initialDraft = {
+    name: "",
+    couponCode: getSearchValue(resolvedSearchParams, "couponCode").trim().toUpperCase(),
+    role: normalizeRole(getSearchValue(resolvedSearchParams, "role")),
+    active: true,
+    notes: "",
+  };
 
   if (!credentials.ok) {
     return (
@@ -566,7 +607,7 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
     client,
     filters,
     financeConfig,
-    profilesData.profiles,
+    moduleData.profiles,
   );
 
   if (!dashboard.ok) {
@@ -607,9 +648,51 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
   return (
       <AppShell
         title="Influenciadores"
-        subtitle="Extrato de cupons e leitura dos parceiros por janela de 3 meses."
+        subtitle="Programa por janela de 3 meses, separando influenciador e atleta com leitura de roupa liberada e apoio acumulativo."
         currentPath="/influenciadores"
       >
+        <section className={styles.section}>
+          <div className={styles.definitionGrid}>
+            <article className={styles.definitionCard}>
+              <div className={styles.listTitleRow}>
+                <div className={styles.listTitle}>Influenciador</div>
+                <span className={`${styles.pill} ${styles.pillMedium}`}>
+                  14% em roupa
+                </span>
+              </div>
+              <p className={styles.listDetail}>
+                Bateu {formatMoney(INFLUENCER_WINDOW_GOAL)} liquidos em ate 3
+                meses, libera {INFLUENCER_CREDIT_PERCENT}% em roupa. Se nao
+                fechar a janela, zera e recomeca.
+              </p>
+            </article>
+            <article className={styles.definitionCard}>
+              <div className={styles.listTitleRow}>
+                <div className={styles.listTitle}>Atleta</div>
+                <span className={`${styles.pill} ${styles.pillLow}`}>
+                  10% + 4%
+                </span>
+              </div>
+              <p className={styles.listDetail}>
+                Bateu {formatMoney(ATHLETE_WINDOW_GOAL)} em ate 3 meses, libera{" "}
+                {ATHLETE_WINDOW_CREDIT_PERCENT}% em roupa.
+              </p>
+            </article>
+            <article className={styles.definitionCard}>
+              <div className={styles.listTitleRow}>
+                <div className={styles.listTitle}>Saldo de apoio</div>
+                <span className={`${styles.pill} ${styles.pillLow}`}>
+                  Base R$ 400
+                </span>
+              </div>
+              <p className={styles.listDetail}>
+                O atleta acumula {ATHLETE_SUPPORT_PERCENT}% da receita liquida
+                total para pintura, kit ou ajuda em campeonato.
+              </p>
+            </article>
+          </div>
+        </section>
+
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
             <div>
@@ -655,14 +738,6 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
                 Resumo montado a partir dos cupons classificados e dos pedidos
                 reais do periodo.
               </p>
-            </div>
-            <div className={styles.chipRow}>
-              <a href="/influenciadores/campanhas" className={styles.secondaryButton}>
-                Criar campanha
-              </a>
-              <a href="/influenciadores/poupanca-atleta" className={styles.secondaryButton}>
-                Poupanca do atleta
-              </a>
             </div>
           </div>
 
@@ -711,6 +786,189 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
             </article>
           </div>
         </section>
+
+        <PartnerCampaignManager
+          initialProfiles={moduleData.profiles}
+          initialCampaigns={campaignsData.campaigns}
+          initialSnapshots={campaignSnapshots}
+          initialPersistence={campaignsData.persistence}
+          initialRewardRequests={rewardRequests}
+        />
+
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <div className={styles.sectionTitle}>Corrida da meta</div>
+              <p className={styles.sectionSubtitle}>
+                Aqui voce enxerga rapidamente o quanto cada parceiro avancou na
+                janela atual e quem ja liberou roupa ou apoio.
+              </p>
+            </div>
+            <div className={styles.chipRow}>
+              <span className={styles.chip}>{rollingWindow.label}</span>
+              <span className={styles.chip}>Meta influencia: R$ 2.000</span>
+              <span className={styles.chip}>Meta atleta: R$ 1.500</span>
+            </div>
+          </div>
+
+          <div className={styles.orderLayout}>
+            <article className={styles.catalogCard}>
+              <div className={styles.sectionHeader}>
+                <div>
+                  <div className={styles.sectionTitle}>Grafico dos influenciadores</div>
+                  <p className={styles.sectionSubtitle}>
+                    Linha por linha, o quanto cada influenciador ja percorreu da meta.
+                  </p>
+                </div>
+                <span className={styles.chip}>
+                  Lider: {topInfluencer ? topInfluencer.code : "-"}
+                </span>
+              </div>
+              {influencerRows.length > 0 ? (
+                <div className={styles.chartGrid}>
+                  {influencerRows.map((row) => (
+                    <a
+                      key={row.code}
+                      href={buildPartnerLink(filters, row.code)}
+                      className={styles.chartRowLink}
+                    >
+                      <div className={styles.chartRow}>
+                        <div className={styles.chartLabel}>
+                          <strong>{row.name}</strong>
+                          <span>{row.code}</span>
+                        </div>
+                        <div className={styles.chartTrack}>
+                          <div
+                            className={styles.chartBar}
+                            style={{
+                              width: `${getGoalProgressPercent(row.netRevenue, row.monthlyGoal)}%`,
+                            }}
+                          />
+                        </div>
+                        <div className={styles.chartValue}>
+                          {formatMoney(row.netRevenue)} / {formatMoney(row.monthlyGoal)}
+                        </div>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <div className={styles.emptyState}>
+                  Nenhum influenciador ativo apareceu com os filtros atuais.
+                </div>
+              )}
+            </article>
+
+            <article className={styles.catalogCard}>
+              <div className={styles.sectionHeader}>
+                <div>
+                  <div className={styles.sectionTitle}>Grafico dos atletas</div>
+                  <p className={styles.sectionSubtitle}>
+                    Aqui voce acompanha a corrida da meta de roupa dos atletas.
+                  </p>
+                </div>
+                <span className={styles.chip}>
+                  Lider: {topAthlete ? topAthlete.code : "-"}
+                </span>
+              </div>
+              {athleteRows.length > 0 ? (
+                <div className={styles.chartGrid}>
+                  {athleteRows.map((row) => (
+                    <a
+                      key={row.code}
+                      href={buildPartnerLink(filters, row.code)}
+                      className={styles.chartRowLink}
+                    >
+                      <div className={styles.chartRow}>
+                        <div className={styles.chartLabel}>
+                          <strong>{row.name}</strong>
+                          <span>{row.code}</span>
+                        </div>
+                        <div className={styles.chartTrack}>
+                          <div
+                            className={styles.chartBar}
+                            style={{
+                              width: `${getGoalProgressPercent(row.netRevenue, row.monthlyGoal)}%`,
+                              background:
+                                "linear-gradient(90deg, #2f7a48 0%, #7b2cbf 100%)",
+                            }}
+                          />
+                        </div>
+                        <div className={styles.chartValue}>
+                          {formatMoney(row.netRevenue)} / {formatMoney(row.monthlyGoal)}
+                        </div>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <div className={styles.emptyState}>
+                  Nenhum atleta ativo apareceu com os filtros atuais.
+                </div>
+              )}
+            </article>
+          </div>
+        </section>
+
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <div className={styles.sectionTitle}>Saldo de apoio dos atletas</div>
+              <p className={styles.sectionSubtitle}>
+                Esse grafico mostra o saldo acumulado para pintura, kit ou ajuda de campeonato.
+              </p>
+            </div>
+          </div>
+          {athleteRows.length > 0 ? (
+            <div className={styles.chartGrid}>
+              {athleteRows.map((row) => (
+                <a
+                  key={row.code}
+                  href={buildPartnerLink(filters, row.code)}
+                  className={styles.chartRowLink}
+                >
+                  <div className={styles.chartRow}>
+                    <div className={styles.chartLabel}>
+                      <strong>{row.name}</strong>
+                      <span>
+                        Proximo apoio em{" "}
+                        {row.nextSupportMilestone !== null
+                          ? formatMoney(row.nextSupportMilestone)
+                          : "-"}
+                      </span>
+                    </div>
+                    <div className={styles.chartTrack}>
+                      <div
+                        className={styles.chartBar}
+                        style={{
+                          width: `${getSupportCyclePercent(row.cumulativeSupport)}%`,
+                          background:
+                            "linear-gradient(90deg, #8e4700 0%, #d17b00 100%)",
+                        }}
+                      />
+                    </div>
+                    <div className={styles.chartValue}>
+                      {formatMoney(row.cumulativeSupport)}
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          ) : (
+            <div className={styles.emptyState}>
+              Nenhum atleta ativo apareceu com os filtros atuais.
+            </div>
+          )}
+        </section>
+
+        <PartnerRedemptionManager
+          initialProfiles={moduleData.profiles}
+          initialRedemptions={moduleData.redemptions}
+          initialPersistence={moduleData.redemptionState}
+          stockOptions={stockOptions}
+          artOptions={artOptions}
+          selectedCouponCode={selectedCoupon?.code || ""}
+        />
 
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
@@ -869,37 +1127,37 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
             <div>
-              <div className={styles.sectionTitle}>Extrato de cupons</div>
-              <p className={styles.sectionSubtitle}>Lista completa dos parceiros ativos.</p>
+              <div className={styles.sectionTitle}>Tabela de influenciadores</div>
+              <p className={styles.sectionSubtitle}>
+                Lista completa dos influenciadores ativos com a leitura numerica da janela.
+              </p>
             </div>
           </div>
 
-          {partnerRows.length > 0 ? (
+          {influencerRows.length > 0 ? (
             <div className={styles.tableWrap}>
               <table className={styles.table}>
                 <thead>
                   <tr>
                     <th>Parceiro</th>
                     <th>Cupom</th>
-                    <th>Papel</th>
                     <th>Pedidos</th>
                     <th>Receita liquida 3m</th>
                     <th>Roupa liberada</th>
-                    <th>Saldo apoio</th>
+                    <th>Status da meta</th>
                     <th>Ultimo pedido</th>
                     <th>Atalho</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {partnerRows.map((row) => (
+                  {influencerRows.map((row) => (
                     <tr key={row.code}>
                       <td>{row.name}</td>
                       <td>{row.code}</td>
-                      <td>{row.role === "atleta" ? "Atleta" : "Influenciador"}</td>
                       <td>{row.orders}</td>
                       <td>{formatMoney(row.netRevenue)}</td>
                       <td>{formatMoney(row.monthlyUnlockedCredit)}</td>
-                      <td>{row.role === "atleta" ? formatMoney(row.cumulativeSupport) : "-"}</td>
+                      <td>{getGoalStatusLabel(row)}</td>
                       <td>{formatDateTime(row.lastOrderAt)}</td>
                       <td>
                         <a
@@ -916,10 +1174,126 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
             </div>
           ) : (
             <div className={styles.emptyState}>
-              Nenhum parceiro ativo apareceu com os filtros atuais.
+              Nenhum influenciador ativo apareceu com os filtros atuais.
             </div>
           )}
         </section>
+
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <div className={styles.sectionTitle}>Tabela de atletas</div>
+              <p className={styles.sectionSubtitle}>
+                Lista completa dos atletas com a corrida da meta e o saldo acumulado de apoio.
+              </p>
+            </div>
+          </div>
+          {athleteRows.length > 0 ? (
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Parceiro</th>
+                    <th>Cupom</th>
+                    <th>Receita liquida 3m</th>
+                    <th>Roupa liberada</th>
+                    <th>Saldo de apoio</th>
+                    <th>Falta para apoio</th>
+                    <th>Ultimo pedido</th>
+                    <th>Atalho</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {athleteRows.map((row) => (
+                    <tr key={row.code}>
+                      <td>{row.name}</td>
+                      <td>{row.code}</td>
+                      <td>{formatMoney(row.netRevenue)}</td>
+                      <td>{formatMoney(row.monthlyUnlockedCredit)}</td>
+                      <td>{formatMoney(row.cumulativeSupport)}</td>
+                      <td>
+                        {row.nextSupportMilestone !== null
+                          ? formatMoney(row.nextSupportMilestone)
+                          : "-"}
+                      </td>
+                      <td>{formatDateTime(row.lastOrderAt)}</td>
+                      <td>
+                        <a
+                          href={buildPartnerLink(filters, row.code)}
+                          className={styles.secondaryButton}
+                        >
+                          Ver detalhe
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className={styles.emptyState}>
+              Nenhum atleta ativo apareceu com os filtros atuais.
+            </div>
+          )}
+        </section>
+
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <div className={styles.sectionTitle}>Cupons sem classificacao</div>
+              <p className={styles.sectionSubtitle}>
+                Se um cupom ja vendeu e nao aparece nos paineis acima, ele ainda
+                precisa ser marcado como influenciador ou atleta.
+              </p>
+            </div>
+          </div>
+
+          {unclassifiedRows.length > 0 ? (
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Cupom</th>
+                    <th>Pedidos</th>
+                    <th>Receita liquida</th>
+                    <th>Ultimo pedido</th>
+                    <th>Atalho</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {unclassifiedRows.map((row) => (
+                    <tr key={row.code}>
+                      <td>{row.code}</td>
+                      <td>{row.orders}</td>
+                      <td>{formatMoney(row.netRevenue)}</td>
+                      <td>{formatDateTime(row.lastOrderAt)}</td>
+                      <td>
+                        <a
+                          href={`/influenciadores?couponCode=${encodeURIComponent(row.code)}&role=influenciador`}
+                          className={styles.secondaryButton}
+                        >
+                          Classificar cupom
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className={styles.emptyState}>
+              Todos os cupons com vendas no periodo ja foram classificados.
+            </div>
+          )}
+        </section>
+
+        <PartnerCouponManager
+          initialProfiles={moduleData.profiles}
+          initialKnownCoupons={moduleData.knownCoupons}
+          initialPersistence={moduleData.persistence}
+          initialDiscoveryState={moduleData.discoveryState}
+          initialDraft={initialDraft}
+        />
       </AppShell>
     );
 }
