@@ -12,6 +12,7 @@ import type { PartnerCampaignSnapshot } from "@/lib/parceiros/campaigns";
 import type {
   CouponPartnerProfile,
   PartnerPersistenceState,
+  PartnerRewardRequest,
 } from "@/lib/parceiros/repository";
 
 type PartnerCampaignManagerProps = {
@@ -19,6 +20,7 @@ type PartnerCampaignManagerProps = {
   initialCampaigns: PartnerCampaign[];
   initialSnapshots: PartnerCampaignSnapshot[];
   initialPersistence: PartnerPersistenceState;
+  initialRewardRequests?: PartnerRewardRequest[];
 };
 
 type CampaignApiResponse = {
@@ -28,6 +30,12 @@ type CampaignApiResponse = {
 };
 
 type CampaignGoalMode = "unica" | "segmento" | "pessoa";
+
+type RewardRequestApiResponse = {
+  ok: boolean;
+  message?: string;
+  request?: PartnerRewardRequest;
+};
 
 type CampaignFormState = {
   editingId: string | null;
@@ -51,6 +59,7 @@ export function PartnerCampaignManager({
   initialCampaigns,
   initialSnapshots,
   initialPersistence,
+  initialRewardRequests,
 }: PartnerCampaignManagerProps) {
   const router = useRouter();
   const [campaigns, setCampaigns] = useState(initialCampaigns);
@@ -58,6 +67,7 @@ export function PartnerCampaignManager({
   const [isSaving, setIsSaving] = useState(false);
   const [processingCampaignId, setProcessingCampaignId] = useState("");
   const [goalsOpen, setGoalsOpen] = useState(false);
+  const [requestsOpen, setRequestsOpen] = useState(false);
   const [form, setForm] = useState<CampaignFormState>({
     editingId: null,
     name: "",
@@ -74,6 +84,14 @@ export function PartnerCampaignManager({
     influencerGoal: "2000",
     participantGoals: {},
   });
+  const [rewardRequests, setRewardRequests] = useState<PartnerRewardRequest[]>(
+    initialRewardRequests ?? [],
+  );
+  const [requestDrafts, setRequestDrafts] = useState<
+    Record<string, { adminCouponCode: string; adminMessage: string }>
+  >({});
+  const [processingRequestId, setProcessingRequestId] = useState("");
+  const [requestFeedback, setRequestFeedback] = useState("");
 
   const activeProfiles = useMemo(
     () =>
@@ -132,6 +150,75 @@ export function PartnerCampaignManager({
     }
 
     return result;
+  }
+
+  function getRequestDraft(request: PartnerRewardRequest) {
+    return (
+      requestDrafts[request.id] ?? {
+        adminCouponCode: request.adminCouponCode || "",
+        adminMessage: "",
+      }
+    );
+  }
+
+  async function handleReviewRequest(
+    request: PartnerRewardRequest,
+    action: "approve" | "pay" | "reject",
+  ) {
+    const draft = getRequestDraft(request);
+    const status =
+      action === "approve" ? "aprovado" : action === "pay" ? "pago" : "recusado";
+    const adminMessage =
+      draft.adminMessage.trim() ||
+      (action === "approve"
+        ? "Cupom liberado. Em ate 72 horas ele ficara disponivel no seu painel."
+        : action === "pay"
+          ? "Seu apoio foi marcado como pago. Nossa equipe segue com o contato."
+          : "Seu pedido foi analisado e nao foi aprovado nessa rodada.");
+
+    if (
+      request.requestType === "roupa" &&
+      action === "approve" &&
+      !draft.adminCouponCode.trim()
+    ) {
+      setRequestFeedback("Informe o cupom para aprovar a solicitacao de roupa.");
+      return;
+    }
+
+    setProcessingRequestId(request.id);
+    setRequestFeedback("");
+
+    try {
+      const response = await fetch(`/api/influenciadores/solicitacoes/${request.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          requestType: request.requestType,
+          status,
+          adminCouponCode: draft.adminCouponCode,
+          adminMessage,
+        }),
+      });
+      const result = (await response.json()) as RewardRequestApiResponse;
+
+      if (!response.ok || !result.ok || !result.request) {
+        throw new Error(result.message || "Nao foi possivel revisar a solicitacao.");
+      }
+
+      setRewardRequests((current) =>
+        current.map((item) => (item.id === request.id ? result.request! : item)),
+      );
+      setRequestFeedback(result.message || "Solicitacao atualizada.");
+      router.refresh();
+    } catch (error) {
+      setRequestFeedback(
+        error instanceof Error ? error.message : "Nao foi possivel revisar a solicitacao.",
+      );
+    } finally {
+      setProcessingRequestId("");
+    }
   }
 
   async function handleSaveCampaign() {
@@ -481,6 +568,11 @@ export function PartnerCampaignManager({
     ];
   }, [campaigns]);
 
+  const pendingRequests = useMemo(
+    () => rewardRequests.filter((request) => request.status === "pendente"),
+    [rewardRequests],
+  );
+
   return (
     <section className={styles.section}>
       <div className={styles.sectionHeader}>
@@ -494,6 +586,16 @@ export function PartnerCampaignManager({
         <div className={styles.chipRow}>
           <span className={styles.chip}>Bonus extra separado do contrato</span>
           <span className={styles.chip}>Ranking parcial pode ficar mascarado</span>
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            onClick={() => setRequestsOpen((current) => !current)}
+            style={{ padding: "6px 10px" }}
+          >
+            {requestsOpen
+              ? "Fechar solicitacoes"
+              : `Solicitacoes (${pendingRequests.length})`}
+          </button>
         </div>
       </div>
 
@@ -512,6 +614,121 @@ export function PartnerCampaignManager({
           <h3>Status das campanhas</h3>
           <p>{feedback}</p>
         </div>
+      ) : null}
+
+      {requestsOpen ? (
+        <article className={styles.catalogCard} style={{ marginTop: 20 }}>
+          <div className={styles.sectionTitle}>Solicitacoes de resgate (meta de 3 meses)</div>
+          <p className={styles.sectionSubtitle}>
+            Quando o parceiro pede resgate no painel dele, aparece aqui para voce aprovar e
+            informar o cupom.
+          </p>
+
+          {requestFeedback ? (
+            <div className={styles.callout} style={{ marginTop: 16 }}>
+              <h3>Status das solicitacoes</h3>
+              <p>{requestFeedback}</p>
+            </div>
+          ) : null}
+
+          {pendingRequests.length > 0 ? (
+            <div className={styles.tableWrap} style={{ marginTop: 16 }}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Parceiro</th>
+                    <th>Cupom</th>
+                    <th>Tipo</th>
+                    <th>Destino</th>
+                    <th>Valor</th>
+                    <th>Cupom liberado</th>
+                    <th>Mensagem</th>
+                    <th>Acoes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingRequests.map((request) => (
+                    <tr key={request.id}>
+                      <td>{request.partnerName}</td>
+                      <td>{request.couponCode}</td>
+                      <td>{request.requestType === "apoio" ? "Apoio" : "Roupa"}</td>
+                      <td>{request.supportGoal || "Cupom / roupa"}</td>
+                      <td>{formatMoney(request.requestedAmount)}</td>
+                      <td>
+                        {request.requestType === "roupa" ? (
+                          <input
+                            value={getRequestDraft(request).adminCouponCode}
+                            onChange={(event) =>
+                              setRequestDrafts((current) => ({
+                                ...current,
+                                [request.id]: {
+                                  ...getRequestDraft(request),
+                                  adminCouponCode: event.target.value,
+                                },
+                              }))
+                            }
+                            placeholder="Ex.: ALIMA72H"
+                          />
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      <td>
+                        <input
+                          value={getRequestDraft(request).adminMessage}
+                          onChange={(event) =>
+                            setRequestDrafts((current) => ({
+                              ...current,
+                              [request.id]: {
+                                ...getRequestDraft(request),
+                                adminMessage: event.target.value,
+                              },
+                            }))
+                          }
+                          placeholder="Mensagem (opcional)"
+                        />
+                      </td>
+                      <td>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            className={styles.secondaryButton}
+                            onClick={() => handleReviewRequest(request, "approve")}
+                            disabled={processingRequestId === request.id}
+                          >
+                            Aprovar
+                          </button>
+                          {request.requestType === "apoio" ? (
+                            <button
+                              type="button"
+                              className={styles.secondaryButton}
+                              onClick={() => handleReviewRequest(request, "pay")}
+                              disabled={processingRequestId === request.id}
+                            >
+                              Marcar pago
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className={styles.secondaryButton}
+                            onClick={() => handleReviewRequest(request, "reject")}
+                            disabled={processingRequestId === request.id}
+                          >
+                            Recusar
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className={styles.emptyState} style={{ marginTop: 16 }}>
+              Nenhuma solicitacao pendente agora.
+            </div>
+          )}
+        </article>
       ) : null}
 
       <div className={styles.orderLayout} style={{ marginTop: 24 }}>
