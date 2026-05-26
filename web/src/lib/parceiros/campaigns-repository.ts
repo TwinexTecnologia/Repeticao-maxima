@@ -27,6 +27,7 @@ export type PartnerCampaign = {
   description: string;
   importantMessage: string;
   useCurrentWindow: boolean;
+  showRanking: boolean;
   startDate: string;
   endDate: string;
   qualificationGoal: number;
@@ -174,6 +175,7 @@ async function savePartnerCampaignRecord(id: string | null, input: unknown) {
       bonus_amount: row.bonusAmount,
       important_message: row.importantMessage,
       use_current_window: row.useCurrentWindow,
+      show_ranking: row.showRanking,
       ranking_locked: row.rankingLocked,
       active: row.active,
       updated_at: now,
@@ -258,6 +260,7 @@ function rowToPartnerCampaign(
     description: String(row.description ?? "").trim(),
     importantMessage: String(row.important_message ?? "").trim(),
     useCurrentWindow: row.use_current_window === true,
+    showRanking: row.show_ranking !== false,
     startDate: normalizeDate(row.start_date) || "",
     endDate: normalizeDate(row.end_date) || "",
     qualificationGoal: Math.max(getNumberValue(row.qualification_goal), 0),
@@ -302,6 +305,10 @@ function normalizePartnerCampaignInput(input: unknown) {
   let endDate = normalizeDate(source.endDate);
   const qualificationGoal = Math.max(getNumberValue(source.qualificationGoal), 0);
   const bonusAmount = Math.max(getNumberValue(source.bonusAmount), 0);
+  const showRanking =
+    source.showRanking === false || String(source.showRanking ?? "").trim().toLowerCase() === "false"
+      ? false
+      : true;
 
   if (!String(source.name ?? "").trim()) {
     throw new Error("Informe o nome da campanha.");
@@ -330,6 +337,7 @@ function normalizePartnerCampaignInput(input: unknown) {
     description: String(source.description ?? "").trim(),
     importantMessage: String(source.importantMessage ?? "").trim(),
     useCurrentWindow,
+    showRanking,
     startDate,
     endDate,
     qualificationGoal,

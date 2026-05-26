@@ -40,6 +40,7 @@ export type PartnerCampaignSnapshot = {
   description: string;
   importantMessage: string;
   useCurrentWindow: boolean;
+  showRanking: boolean;
   startDate: string;
   endDate: string;
   qualificationGoal: number;
@@ -137,6 +138,7 @@ export async function loadPartnerCampaignSnapshots(
         description: campaign.description,
         importantMessage: campaign.importantMessage,
         useCurrentWindow: campaign.useCurrentWindow,
+        showRanking: campaign.showRanking,
         startDate,
         endDate,
         qualificationGoal: campaign.qualificationGoal,
