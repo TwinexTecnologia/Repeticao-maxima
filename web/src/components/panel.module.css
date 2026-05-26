@@ -1458,8 +1458,32 @@
   }
 
   .sidebar {
+    padding: 16px;
     border-right: none;
     border-bottom: 1px solid rgba(123, 44, 191, 0.08);
+  }
+
+  .brandCard {
+    grid-template-columns: auto 1fr;
+    justify-items: start;
+    align-items: center;
+    padding: 12px 14px;
+    gap: 14px;
+    border-radius: 22px;
+    box-shadow: 0 14px 26px rgba(8, 2, 14, 0.26);
+  }
+
+  .brandLogoWrap {
+    width: auto;
+  }
+
+  .brandLogo {
+    width: 64px;
+  }
+
+  .brandName {
+    text-align: left;
+    letter-spacing: 0.1em;
   }
 
   .metricGrid {
@@ -1508,8 +1532,55 @@
 }
 
 @media (max-width: 720px) {
+  .sidebar {
+    padding: 14px 14px 12px;
+  }
+
+  .brandCard {
+    padding: 10px 12px;
+    gap: 12px;
+    border-radius: 20px;
+  }
+
+  .brandLogo {
+    width: 54px;
+  }
+
+  .brandName {
+    font-size: 0.9rem;
+  }
+
   .content {
     padding: 18px;
+  }
+
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .titleBlock h1 {
+    font-size: 1.8rem;
+  }
+
+  .titleBlock p {
+    margin-top: 8px;
+    font-size: 0.95rem;
+  }
+
+  .accountCard {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .accountMeta {
+    width: 100%;
+  }
+
+  .accountCard > a,
+  .accountCard > button {
+    flex: 1;
   }
 
   .section,
