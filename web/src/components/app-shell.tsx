@@ -34,8 +34,8 @@ export async function AppShell({
             <Image
               src="/logo-repeticao-maxima.png"
               alt="Logo Repeticao Maxima"
-              width={132}
-              height={132}
+              width={108}
+              height={108}
               className={styles.brandLogo}
               priority
             />

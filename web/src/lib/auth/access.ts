@@ -246,7 +246,11 @@ export async function requirePageAccess(currentPath: string) {
     redirect("/acesso-negado");
   }
 
-  if (user.userType === "parceiro" && !currentPath.startsWith("/meu-desempenho")) {
+  if (
+    user.userType === "parceiro" &&
+    !currentPath.startsWith("/meu-desempenho") &&
+    !currentPath.startsWith("/perfil")
+  ) {
     redirect("/meu-desempenho");
   }
 

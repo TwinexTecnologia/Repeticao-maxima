@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import styles from "./panel.module.css";
@@ -34,6 +35,9 @@ export function AuthUserMenu({ fullName, email }: AuthUserMenuProps) {
         <strong>{fullName}</strong>
         <span>{email}</span>
       </div>
+      <Link href="/perfil" className={styles.secondaryButton}>
+        Perfil
+      </Link>
       <button
         type="button"
         className={styles.secondaryButton}
