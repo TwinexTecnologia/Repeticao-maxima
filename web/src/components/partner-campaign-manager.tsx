@@ -30,6 +30,7 @@ type CampaignFormState = {
   description: string;
   importantMessage: string;
   useCurrentWindow: boolean;
+  showRanking: boolean;
   startDate: string;
   endDate: string;
   qualificationGoal: string;
@@ -56,6 +57,7 @@ export function PartnerCampaignManager({
     description: "",
     importantMessage: "",
     useCurrentWindow: false,
+    showRanking: true,
     startDate: "",
     endDate: "",
     qualificationGoal: "2000",
@@ -114,6 +116,7 @@ export function PartnerCampaignManager({
         description: form.description,
         importantMessage: form.importantMessage,
         useCurrentWindow: form.useCurrentWindow,
+        showRanking: form.showRanking,
         startDate,
         endDate,
         qualificationGoal,
@@ -182,6 +185,7 @@ export function PartnerCampaignManager({
           description: campaign.description,
           importantMessage: campaign.importantMessage,
           useCurrentWindow: campaign.useCurrentWindow,
+          showRanking: campaign.showRanking,
           startDate: campaign.startDate,
           endDate: campaign.endDate,
           qualificationGoal: campaign.qualificationGoal,
@@ -227,6 +231,7 @@ export function PartnerCampaignManager({
       description: campaign.description,
       importantMessage: campaign.importantMessage,
       useCurrentWindow: campaign.useCurrentWindow,
+      showRanking: campaign.showRanking,
       startDate: campaign.startDate,
       endDate: campaign.endDate,
       qualificationGoal: String(campaign.qualificationGoal),
@@ -245,6 +250,7 @@ export function PartnerCampaignManager({
       description: "",
       importantMessage: "",
       useCurrentWindow: false,
+      showRanking: true,
       startDate: "",
       endDate: "",
       qualificationGoal: "2000",
@@ -431,7 +437,25 @@ export function PartnerCampaignManager({
               <label className={styles.checkboxCard}>
                 <input
                   type="checkbox"
+                  checked={form.showRanking}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      showRanking: event.target.checked,
+                      rankingLocked: event.target.checked ? current.rankingLocked : false,
+                    }))
+                  }
+                />
+                <div>
+                  <strong>Mostrar ranking</strong>
+                  <span>Se desligar, eles nao veem posicao nem ranking.</span>
+                </div>
+              </label>
+              <label className={styles.checkboxCard}>
+                <input
+                  type="checkbox"
                   checked={form.rankingLocked}
+                  disabled={!form.showRanking}
                   onChange={(event) =>
                     setForm((current) => ({
                       ...current,
@@ -483,7 +507,9 @@ export function PartnerCampaignManager({
                 />
                 <div>
                   <strong>Usar janela atual</strong>
-                  <span>Mostra a janela de 3 meses atual para eles no lugar do periodo.</span>
+                  <span>
+                    No painel deles aparece a janela atual de 3 meses (nao trava datas).
+                  </span>
                 </div>
               </label>
             </div>
@@ -565,7 +591,9 @@ export function PartnerCampaignManager({
 
                   <div className={styles.metaList} style={{ marginTop: 16 }}>
                     <div className={styles.metaItem}>
-                      <strong>{campaign.useCurrentWindow ? "Janela atual" : "Periodo"}</strong>
+                      <strong>
+                        {campaign.useCurrentWindow ? "Janela atual (do painel)" : "Periodo travado"}
+                      </strong>
                       <span>
                         {formatDate(displayedStartDate)} ate {formatDate(displayedEndDate)}
                       </span>
@@ -585,7 +613,11 @@ export function PartnerCampaignManager({
                     <div className={styles.metaItem}>
                       <strong>Ranking</strong>
                       <span>
-                        {campaign.rankingLocked ? "Travado para eles" : "Liberado para eles"}
+                        {!campaign.showRanking
+                          ? "Sem ranking"
+                          : campaign.rankingLocked
+                            ? "Travado para eles"
+                            : "Liberado para eles"}
                       </span>
                     </div>
                   </div>

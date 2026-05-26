@@ -229,7 +229,11 @@ export default async function MeuDesempenhoPage({
                   <div className={styles.listTitleRow}>
                     <div className={styles.sectionTitle}>{campaign.name}</div>
                     <span className={`${styles.pill} ${styles.pillMedium}`}>
-                      {campaign.rankingLocked ? "Ranking parcial" : "Ranking liberado"}
+                      {!campaign.showRanking
+                        ? "Sem ranking"
+                        : campaign.rankingLocked
+                          ? "Ranking parcial"
+                          : "Ranking liberado"}
                     </span>
                   </div>
                   <p className={styles.sectionSubtitle}>
@@ -237,7 +241,9 @@ export default async function MeuDesempenhoPage({
                   </p>
                   <div className={styles.metaList}>
                     <div className={styles.metaItem}>
-                      <strong>{campaign.useCurrentWindow ? "Janela atual" : "Periodo"}</strong>
+                      <strong>
+                        {campaign.useCurrentWindow ? "Janela atual (do painel)" : "Periodo travado"}
+                      </strong>
                       <span>
                         {formatDateOnly(campaign.startDate)} ate {formatDateOnly(campaign.endDate)}
                       </span>
@@ -258,14 +264,16 @@ export default async function MeuDesempenhoPage({
                           : "Encerrando hoje"}
                       </span>
                     </div>
-                    <div className={styles.metaItem}>
-                      <strong>Sua posicao</strong>
-                      <span>
-                        {myEntry
-                          ? `${campaign.rankingLocked ? myEntry.displayRank : myEntry.actualRank}º lugar`
-                          : "-"}
-                      </span>
-                    </div>
+                    {campaign.showRanking ? (
+                      <div className={styles.metaItem}>
+                        <strong>Sua posicao</strong>
+                        <span>
+                          {myEntry
+                            ? `${campaign.rankingLocked ? myEntry.displayRank : myEntry.actualRank}º lugar`
+                            : "-"}
+                        </span>
+                      </div>
+                    ) : null}
                     <div className={styles.metaItem}>
                       <strong>Sua corrida</strong>
                       <span>
