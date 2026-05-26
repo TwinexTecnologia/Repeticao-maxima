@@ -27,6 +27,8 @@ type CampaignApiResponse = {
   campaign?: PartnerCampaign;
 };
 
+type CampaignGoalMode = "unica" | "segmento" | "pessoa";
+
 type CampaignFormState = {
   editingId: string | null;
   name: string;
@@ -38,6 +40,10 @@ type CampaignFormState = {
   rankingLocked: boolean;
   active: boolean;
   participantIds: string[];
+  goalMode: CampaignGoalMode;
+  athleteGoal: string;
+  influencerGoal: string;
+  participantGoals: Record<string, string>;
 };
 
 export function PartnerCampaignManager({
@@ -51,6 +57,7 @@ export function PartnerCampaignManager({
   const [feedback, setFeedback] = useState(initialPersistence.message);
   const [isSaving, setIsSaving] = useState(false);
   const [processingCampaignId, setProcessingCampaignId] = useState("");
+  const [goalsOpen, setGoalsOpen] = useState(false);
   const [form, setForm] = useState<CampaignFormState>({
     editingId: null,
     name: "",
@@ -62,6 +69,10 @@ export function PartnerCampaignManager({
     rankingLocked: true,
     active: true,
     participantIds: [],
+    goalMode: "unica",
+    athleteGoal: "1500",
+    influencerGoal: "2000",
+    participantGoals: {},
   });
 
   const activeProfiles = useMemo(
@@ -75,52 +86,235 @@ export function PartnerCampaignManager({
     () => new Map(initialSnapshots.map((item) => [item.campaignId, item])),
     [initialSnapshots],
   );
+  const profileById = useMemo(
+    () => new Map(activeProfiles.map((profile) => [profile.id, profile])),
+    [activeProfiles],
+  );
+
+  function getDefaultQualificationGoal(profile: CouponPartnerProfile | undefined, state: CampaignFormState) {
+    const fallback = Number(state.qualificationGoal || 0);
+    const athleteGoal = Number(state.athleteGoal || 0);
+    const influencerGoal = Number(state.influencerGoal || 0);
+
+    if (!profile) {
+      return fallback;
+    }
+
+    if (profile.role === "atleta") {
+      return Number.isFinite(athleteGoal) && athleteGoal > 0 ? athleteGoal : fallback;
+    }
+
+    return Number.isFinite(influencerGoal) && influencerGoal > 0 ? influencerGoal : fallback;
+  }
+
+  async function saveCampaign(payload: {
+    name: string;
+    description: string;
+    startDate: string;
+    endDate: string;
+    qualificationGoal: number;
+    bonusAmount: number;
+    rankingLocked: boolean;
+    active: boolean;
+    participantIds: string[];
+  }) {
+    const response = await fetch("/api/influenciadores/campanhas", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    const result = (await response.json()) as CampaignApiResponse;
+
+    if (!response.ok || !result.ok || !result.campaign) {
+      throw new Error(result.message || "Nao foi possivel salvar a campanha.");
+    }
+
+    return result;
+  }
 
   async function handleSaveCampaign() {
     setIsSaving(true);
     setFeedback("");
 
     try {
-      const payload = {
-        name: form.name,
-        description: form.description,
-        startDate: form.startDate,
-        endDate: form.endDate,
-        qualificationGoal: Number(form.qualificationGoal || 0),
-        bonusAmount: Number(form.bonusAmount || 0),
-        rankingLocked: form.rankingLocked,
-        active: form.active,
-        participantIds: form.participantIds,
-      };
-      const response = await fetch(
-        form.editingId
-          ? `/api/influenciadores/campanhas/${form.editingId}`
-          : "/api/influenciadores/campanhas",
-        {
-          method: form.editingId ? "PUT" : "POST",
+      if (form.editingId) {
+        const payload = {
+          name: form.name,
+          description: form.description,
+          startDate: form.startDate,
+          endDate: form.endDate,
+          qualificationGoal: Number(form.qualificationGoal || 0),
+          bonusAmount: Number(form.bonusAmount || 0),
+          rankingLocked: form.rankingLocked,
+          active: form.active,
+          participantIds: form.participantIds,
+        };
+        const response = await fetch(`/api/influenciadores/campanhas/${form.editingId}`, {
+          method: "PUT",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify(payload),
-        },
-      );
-      const result = (await response.json()) as CampaignApiResponse;
+        });
+        const result = (await response.json()) as CampaignApiResponse;
 
-      if (!response.ok || !result.ok || !result.campaign) {
-        throw new Error(result.message || "Nao foi possivel salvar a campanha.");
+        if (!response.ok || !result.ok || !result.campaign) {
+          throw new Error(result.message || "Nao foi possivel salvar a campanha.");
+        }
+
+        setCampaigns((current) =>
+          sortCampaigns(
+            current.some((item) => item.id === result.campaign!.id)
+              ? current.map((item) =>
+                  item.id === result.campaign!.id ? result.campaign! : item,
+                )
+              : [result.campaign!, ...current],
+          ),
+        );
+        setFeedback(result.message || "Campanha salva com sucesso.");
+        resetForm();
+        router.refresh();
+        return;
       }
 
-      setCampaigns((current) =>
-        sortCampaigns(
-          current.some((item) => item.id === result.campaign!.id)
-            ? current.map((item) =>
-                item.id === result.campaign!.id ? result.campaign! : item,
-              )
-            : [result.campaign!, ...current],
-        ),
-      );
+      if (form.participantIds.length === 0) {
+        throw new Error("Selecione ao menos um participante.");
+      }
+
+      const basePayload = {
+        description: form.description,
+        startDate: form.startDate,
+        endDate: form.endDate,
+        bonusAmount: Number(form.bonusAmount || 0),
+        rankingLocked: form.rankingLocked,
+        active: form.active,
+      };
+
+      if (form.goalMode === "segmento") {
+        const selectedProfiles = form.participantIds
+          .map((id) => profileById.get(id))
+          .filter((profile): profile is CouponPartnerProfile => Boolean(profile));
+        const athleteIds = selectedProfiles
+          .filter((profile) => profile.role === "atleta")
+          .map((profile) => profile.id);
+        const influencerIds = selectedProfiles
+          .filter((profile) => profile.role !== "atleta")
+          .map((profile) => profile.id);
+
+        const groups: Array<{ label: string; goal: number; participantIds: string[] }> = [];
+        if (athleteIds.length > 0) {
+          groups.push({
+            label: "Atletas",
+            goal: Number(form.athleteGoal || 0),
+            participantIds: athleteIds,
+          });
+        }
+        if (influencerIds.length > 0) {
+          groups.push({
+            label: "Influenciadores",
+            goal: Number(form.influencerGoal || 0),
+            participantIds: influencerIds,
+          });
+        }
+
+        if (groups.length === 0) {
+          throw new Error("Selecione participantes para criar campanha por segmento.");
+        }
+
+        const results: CampaignApiResponse[] = [];
+        for (const group of groups) {
+          const name = groups.length > 1 ? `${form.name} (${group.label})` : form.name;
+          results.push(
+            await saveCampaign({
+              name,
+              ...basePayload,
+              qualificationGoal: Math.max(group.goal || 0, 0),
+              participantIds: group.participantIds,
+            }),
+          );
+        }
+
+        setCampaigns((current) =>
+          sortCampaigns([
+            ...results.map((result) => result.campaign!).filter(Boolean),
+            ...current,
+          ]),
+        );
+        setFeedback(`Criadas ${results.length} campanha(s) por segmento.`);
+        resetForm();
+        setGoalsOpen(false);
+        router.refresh();
+        return;
+      }
+
+      if (form.goalMode === "pessoa") {
+        const groups = new Map<string, { goal: number; participantIds: string[] }>();
+
+        for (const partnerId of form.participantIds) {
+          const profile = profileById.get(partnerId);
+          const defaultGoal = getDefaultQualificationGoal(profile, form);
+          const rawGoal = form.participantGoals[partnerId];
+          const parsedGoal = Number.parseFloat(String(rawGoal ?? defaultGoal));
+          const goal = Number.isFinite(parsedGoal) ? Math.max(parsedGoal, 0) : 0;
+          const key = goal.toFixed(2);
+          const current = groups.get(key) ?? { goal, participantIds: [] };
+          current.participantIds.push(partnerId);
+          current.goal = goal;
+          groups.set(key, current);
+        }
+
+        const groupedCampaigns = Array.from(groups.values()).filter(
+          (group) => group.participantIds.length > 0,
+        );
+
+        if (groupedCampaigns.length === 0) {
+          throw new Error("Defina ao menos uma meta para criar campanha por pessoa.");
+        }
+
+        const sortedGroups = groupedCampaigns.sort((left, right) => right.goal - left.goal);
+
+        const results: CampaignApiResponse[] = [];
+        for (const group of sortedGroups) {
+          const name =
+            sortedGroups.length > 1
+              ? `${form.name} (${formatMoney(group.goal)})`
+              : form.name;
+          results.push(
+            await saveCampaign({
+              name,
+              ...basePayload,
+              qualificationGoal: group.goal,
+              participantIds: group.participantIds,
+            }),
+          );
+        }
+
+        setCampaigns((current) =>
+          sortCampaigns([
+            ...results.map((result) => result.campaign!).filter(Boolean),
+            ...current,
+          ]),
+        );
+        setFeedback(`Criadas ${results.length} campanha(s) por meta.`);
+        resetForm();
+        setGoalsOpen(false);
+        router.refresh();
+        return;
+      }
+
+      const result = await saveCampaign({
+        name: form.name,
+        ...basePayload,
+        qualificationGoal: Number(form.qualificationGoal || 0),
+        participantIds: form.participantIds,
+      });
+
+      setCampaigns((current) => sortCampaigns([result.campaign!, ...current]));
       setFeedback(result.message || "Campanha salva com sucesso.");
       resetForm();
+      setGoalsOpen(false);
       router.refresh();
     } catch (error) {
       setFeedback(
@@ -199,7 +393,12 @@ export function PartnerCampaignManager({
       rankingLocked: campaign.rankingLocked,
       active: campaign.active,
       participantIds: campaign.participants.map((item) => item.partnerId),
+      goalMode: "unica",
+      athleteGoal: "1500",
+      influencerGoal: "2000",
+      participantGoals: {},
     });
+    setGoalsOpen(false);
     setFeedback(`Editando a campanha ${campaign.name}.`);
   }
 
@@ -215,15 +414,38 @@ export function PartnerCampaignManager({
       rankingLocked: true,
       active: true,
       participantIds: [],
+      goalMode: "unica",
+      athleteGoal: "1500",
+      influencerGoal: "2000",
+      participantGoals: {},
     });
+    setGoalsOpen(false);
   }
 
   function toggleParticipant(partnerId: string) {
     setForm((current) => ({
       ...current,
-      participantIds: current.participantIds.includes(partnerId)
-        ? current.participantIds.filter((item) => item !== partnerId)
-        : [...current.participantIds, partnerId],
+      ...(() => {
+        const selected = current.participantIds.includes(partnerId);
+        const participantIds = selected
+          ? current.participantIds.filter((item) => item !== partnerId)
+          : [...current.participantIds, partnerId];
+
+        if (current.goalMode !== "pessoa") {
+          return { participantIds };
+        }
+
+        const participantGoals = { ...current.participantGoals };
+
+        if (selected) {
+          delete participantGoals[partnerId];
+        } else if (!participantGoals[partnerId]) {
+          const profile = profileById.get(partnerId);
+          participantGoals[partnerId] = String(getDefaultQualificationGoal(profile, current));
+        }
+
+        return { participantIds, participantGoals };
+      })(),
     }));
   }
 
@@ -314,12 +536,31 @@ export function PartnerCampaignManager({
                 />
               </label>
               <label className={styles.filterField}>
-                <span>Meta para entrar</span>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <span>Meta para entrar</span>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    onClick={() => setGoalsOpen((current) => !current)}
+                    disabled={Boolean(form.editingId)}
+                    style={{ padding: "6px 10px" }}
+                  >
+                    {goalsOpen ? "Fechar opcoes" : "Personalizar"}
+                  </button>
+                </div>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={form.qualificationGoal}
+                  disabled={goalsOpen && !form.editingId && form.goalMode !== "unica"}
                   onChange={(event) =>
                     setForm((current) => ({
                       ...current,
@@ -374,6 +615,175 @@ export function PartnerCampaignManager({
                 />
               </label>
             </div>
+
+            {goalsOpen && !form.editingId ? (
+              <div className={styles.callout} style={{ marginTop: 16 }}>
+                <h3>Metas personalizadas</h3>
+                <p style={{ marginTop: 6 }}>
+                  Segmento e pessoa criam campanhas separadas para cada meta.
+                </p>
+
+                <div className={styles.checkboxGrid} style={{ marginTop: 12 }}>
+                  <label className={styles.checkboxCard}>
+                    <input
+                      type="radio"
+                      name="goalMode"
+                      checked={form.goalMode === "unica"}
+                      onChange={() =>
+                        setForm((current) => ({
+                          ...current,
+                          goalMode: "unica",
+                        }))
+                      }
+                    />
+                    <div>
+                      <strong>Meta unica</strong>
+                      <span>Uma campanha para todos com a mesma meta.</span>
+                    </div>
+                  </label>
+                  <label className={styles.checkboxCard}>
+                    <input
+                      type="radio"
+                      name="goalMode"
+                      checked={form.goalMode === "segmento"}
+                      onChange={() =>
+                        setForm((current) => ({
+                          ...current,
+                          goalMode: "segmento",
+                        }))
+                      }
+                    />
+                    <div>
+                      <strong>Por segmento</strong>
+                      <span>Cria uma campanha para atletas e outra para influenciadores.</span>
+                    </div>
+                  </label>
+                  <label className={styles.checkboxCard}>
+                    <input
+                      type="radio"
+                      name="goalMode"
+                      checked={form.goalMode === "pessoa"}
+                      onChange={() =>
+                        setForm((current) => {
+                          const participantGoals = { ...current.participantGoals };
+                          for (const participantId of current.participantIds) {
+                            if (!participantGoals[participantId]) {
+                              const profile = profileById.get(participantId);
+                              participantGoals[participantId] = String(
+                                getDefaultQualificationGoal(profile, current),
+                              );
+                            }
+                          }
+
+                          return {
+                            ...current,
+                            goalMode: "pessoa",
+                            participantGoals,
+                          };
+                        })
+                      }
+                    />
+                    <div>
+                      <strong>Por pessoa</strong>
+                      <span>Cria campanhas separadas agrupando as metas definidas.</span>
+                    </div>
+                  </label>
+                </div>
+
+                {form.goalMode === "segmento" ? (
+                  <div className={styles.filterGrid} style={{ marginTop: 12 }}>
+                    <label className={styles.filterField}>
+                      <span>Meta do atleta</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={form.athleteGoal}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            athleteGoal: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className={styles.filterField}>
+                      <span>Meta do influenciador</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={form.influencerGoal}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            influencerGoal: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                ) : null}
+
+                {form.goalMode === "pessoa" ? (
+                  <div style={{ marginTop: 12 }}>
+                    {form.participantIds.length > 0 ? (
+                      <div className={styles.tableWrap}>
+                        <table className={styles.table}>
+                          <thead>
+                            <tr>
+                              <th>Parceiro</th>
+                              <th>Segmento</th>
+                              <th>Meta</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {form.participantIds
+                              .map((id) => profileById.get(id))
+                              .filter(
+                                (profile): profile is CouponPartnerProfile => Boolean(profile),
+                              )
+                              .sort((left, right) => left.name.localeCompare(right.name))
+                              .map((profile) => (
+                                <tr key={profile.id}>
+                                  <td>{profile.name}</td>
+                                  <td>
+                                    {profile.role === "atleta" ? "Atleta" : "Influenciador"}
+                                  </td>
+                                  <td style={{ maxWidth: 180 }}>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={
+                                        form.participantGoals[profile.id] ??
+                                        String(getDefaultQualificationGoal(profile, form))
+                                      }
+                                      onChange={(event) =>
+                                        setForm((current) => ({
+                                          ...current,
+                                          participantGoals: {
+                                            ...current.participantGoals,
+                                            [profile.id]: event.target.value,
+                                          },
+                                        }))
+                                      }
+                                    />
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className={styles.emptyState}>
+                        Selecione os participantes abaixo para definir a meta de cada um.
+                      </div>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className={styles.checkboxGrid}>
               <label className={styles.checkboxCard}>
