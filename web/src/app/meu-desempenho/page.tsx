@@ -4,6 +4,7 @@ import { AppShell } from "@/components/app-shell";
 import styles from "@/components/panel.module.css";
 import {
   ATHLETE_SUPPORT_MINIMUM_REDEMPTION,
+  ATHLETE_SUPPORT_PERCENT,
   formatDateOnly,
   formatDateTime,
   formatMoney,
@@ -136,6 +137,17 @@ export default async function MeuDesempenhoPage({
   );
   const campaignSnapshots = await loadPartnerCampaignSnapshots(partnerCampaigns);
   const greetingRole = profile.role === "atleta" ? "atleta" : "influenciador";
+  const windowDaysRemaining = getDaysRemaining(performance.data.rollingWindow.endDate);
+  const windowProgressPercent = getGoalProgressPercent(
+    performance.data.row.netRevenue,
+    performance.data.row.monthlyGoal,
+  );
+  const featuredCampaign =
+    campaignSnapshots
+      .slice()
+      .sort((left, right) => (right.endDate || "").localeCompare(left.endDate || ""))[0] || null;
+  const featuredEntry =
+    featuredCampaign?.leaderboard.find((item) => item.partnerId === profile.id) || null;
 
   return (
     <AppShell
@@ -143,7 +155,174 @@ export default async function MeuDesempenhoPage({
       subtitle={`${profile.name}, segue seu desempenho na janela de ${performance.data.rollingWindow.label}.`}
       currentPath="/meu-desempenho"
     >
-      <section className={styles.section}>
+      <div id="inicio" />
+
+      <section className={`${styles.section} ${styles.mobileOnly}`}>
+        <div className={styles.mobileCarousel}>
+          {featuredCampaign ? (
+            <article className={`${styles.heroCard} ${styles.mobileCarouselCard}`}>
+              <div className={styles.listTitleRow}>
+                <div>
+                  <div className={styles.sectionTitle}>🏆 {featuredCampaign.name}</div>
+                  <div className={styles.sectionSubtitle}>
+                    {formatDateOnly(featuredCampaign.startDate)} ate {formatDateOnly(featuredCampaign.endDate)}
+                  </div>
+                </div>
+                {featuredCampaign.showRanking ? (
+                  <span className={`${styles.pill} ${styles.pillMedium}`}>
+                    {featuredCampaign.rankingLocked ? "Ranking parcial" : "Ranking"}
+                  </span>
+                ) : (
+                  <span className={`${styles.pill} ${styles.pillMedium}`}>Sem ranking</span>
+                )}
+              </div>
+
+              <div className={styles.metaList} style={{ marginTop: 14 }}>
+                <div className={styles.metaItem}>
+                  <strong>Meta</strong>
+                  <span>{formatMoney(featuredCampaign.qualificationGoal)}</span>
+                </div>
+                <div className={styles.metaItem}>
+                  <strong>Bonus</strong>
+                  <span>{formatMoney(featuredCampaign.bonusAmount)} PIX</span>
+                </div>
+                {featuredCampaign.showRanking ? (
+                  <div className={styles.metaItem}>
+                    <strong>Sua posicao</strong>
+                    <span>
+                      {featuredEntry
+                        ? `${featuredCampaign.rankingLocked ? featuredEntry.displayRank : featuredEntry.actualRank}º lugar`
+                        : "-"}
+                    </span>
+                  </div>
+                ) : null}
+                <div className={styles.metaItem}>
+                  <strong>Faltam</strong>
+                  <span>{formatMoney(featuredEntry?.remainingToGoal || 0)}</span>
+                </div>
+              </div>
+
+              <div className={styles.filterActions} style={{ marginTop: 14 }}>
+                <a href="#campanhas" className={styles.primaryButton}>
+                  Ver detalhes
+                </a>
+              </div>
+            </article>
+          ) : null}
+
+          <article className={`${styles.heroCard} ${styles.mobileCarouselCard}`}>
+            <div className={styles.sectionTitle}>🎯 Meta atual</div>
+            <div className={styles.sectionSubtitle} style={{ marginTop: 6 }}>
+              {performance.data.row.monthlyCreditPercent}% em roupa
+              {profile.role === "atleta" ? ` + ${ATHLETE_SUPPORT_PERCENT}% em apoio` : ""}
+            </div>
+
+            <div style={{ marginTop: 14, fontWeight: 800, color: "#241535" }}>
+              {formatMoney(performance.data.row.netRevenue)} / {formatMoney(performance.data.row.monthlyGoal)}
+            </div>
+
+            <div className={styles.progressTrack} style={{ marginTop: 12 }}>
+              <div
+                className={styles.progressFill}
+                style={{ width: `${Math.min(Math.max(windowProgressPercent, 0), 100)}%` }}
+              />
+            </div>
+
+            <div className={styles.mobileListMeta} style={{ marginTop: 12 }}>
+              <span>Faltam {formatMoney(performance.data.row.monthlyAmountToGoal)}</span>
+              <span>
+                {windowDaysRemaining > 0 ? `${windowDaysRemaining} dias restantes` : "Encerrando hoje"}
+              </span>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section className={`${styles.section} ${styles.mobileOnly}`}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Resumo rapido</div>
+          </div>
+          <div>
+            <input
+              id="period-filter-sheet"
+              type="checkbox"
+              className={styles.sheetToggle}
+            />
+            <label htmlFor="period-filter-sheet" className={styles.sheetTrigger}>
+              Filtrar periodo
+            </label>
+            <label htmlFor="period-filter-sheet" className={styles.sheetOverlay} />
+            <div className={styles.sheetPanel}>
+              <div className={styles.sheetHeader}>
+                <div className={styles.sheetTitle}>Filtrar periodo</div>
+                <label htmlFor="period-filter-sheet" className={styles.sheetClose}>
+                  ✕
+                </label>
+              </div>
+              <form className={styles.filterGrid} method="get">
+                <input type="hidden" name="month" value={performance.data.selectedMonth} />
+                <label className={styles.filterField}>
+                  <span>Inicio</span>
+                  <input type="date" name="rangeStart" defaultValue={customRangeStart || ""} />
+                </label>
+                <label className={styles.filterField}>
+                  <span>Fim</span>
+                  <input type="date" name="rangeEnd" defaultValue={customRangeEnd || ""} />
+                </label>
+                <div className={styles.filterActions}>
+                  <button type="submit" className={styles.primaryButton}>
+                    Aplicar filtro
+                  </button>
+                </div>
+              </form>
+              {customPerformance && customPerformance.ok ? (
+                <div className={styles.mobileCardsGrid} style={{ marginTop: 14 }}>
+                  <div className={styles.mobileCard}>
+                    <div className={styles.mobileCardLabel}>Vendas no periodo</div>
+                    <div className={styles.mobileCardValue}>{customPerformance.data.row.orders}</div>
+                    <div className={styles.mobileCardHint}>{customPerformance.data.rollingWindow.label}</div>
+                  </div>
+                  <div className={styles.mobileCard}>
+                    <div className={styles.mobileCardLabel}>Voce ja vendeu</div>
+                    <div className={styles.mobileCardValue}>
+                      {formatMoney(customPerformance.data.row.netRevenue)}
+                    </div>
+                    <div className={styles.mobileCardHint}>No intervalo escolhido</div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className={styles.mobileCardsGrid}>
+          <div className={styles.mobileCard}>
+            <div className={styles.mobileCardLabel}>Vendas na janela</div>
+            <div className={styles.mobileCardValue}>{performance.data.row.orders}</div>
+            <div className={styles.mobileCardHint}>Pedidos com seu cupom</div>
+          </div>
+          <div className={styles.mobileCard}>
+            <div className={styles.mobileCardLabel}>Voce ja vendeu</div>
+            <div className={styles.mobileCardValue}>{formatMoney(performance.data.row.netRevenue)}</div>
+            <div className={styles.mobileCardHint}>Liquido na janela</div>
+          </div>
+          <div className={styles.mobileCard}>
+            <div className={styles.mobileCardLabel}>Meta atual</div>
+            <div className={styles.mobileCardValue}>{formatMoney(performance.data.row.monthlyGoal)}</div>
+            <div className={styles.mobileCardHint}>{performance.data.row.monthlyCreditPercent}% em roupa</div>
+          </div>
+          <div className={styles.mobileCard}>
+            <div className={styles.mobileCardLabel}>Termina em</div>
+            <div className={styles.mobileCardValue}>{formatDateOnly(performance.data.rollingWindow.endDate)}</div>
+            <div className={styles.mobileCardHint}>
+              {windowDaysRemaining > 0 ? `${windowDaysRemaining} dias restantes` : "Encerrando hoje"}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className={`${styles.section} ${styles.desktopOnly}`}>
         <form className={styles.filterGrid} method="get">
           <label className={styles.filterField}>
             <span>Mes final da janela</span>
@@ -174,7 +353,7 @@ export default async function MeuDesempenhoPage({
         ) : null}
       </section>
 
-      <section className={styles.section}>
+      <section className={`${styles.section} ${styles.desktopOnly}`}>
         <div className={styles.sectionHeader}>
           <div>
             <div className={styles.sectionTitle}>Filtrar periodo</div>
@@ -226,7 +405,7 @@ export default async function MeuDesempenhoPage({
         ) : null}
       </section>
 
-      <section className={styles.section}>
+      <section className={`${styles.section} ${styles.desktopOnly}`}>
         <div className={styles.metricGrid}>
           <article className={styles.metricCard}>
             <div className={styles.metricLabel}>Vendas na janela</div>
@@ -271,7 +450,7 @@ export default async function MeuDesempenhoPage({
         </div>
       </section>
 
-      <section className={styles.section}>
+      <section className={`${styles.section} ${styles.desktopOnly}`}>
         <div className={styles.definitionGrid}>
           <article className={styles.definitionCard}>
             <div className={styles.listTitle}>Corrida da janela</div>
@@ -306,7 +485,87 @@ export default async function MeuDesempenhoPage({
       </section>
 
       {campaignSnapshots.length > 0 ? (
-        <section className={styles.section}>
+        <>
+          <div id="campanhas" />
+
+          <section className={`${styles.section} ${styles.mobileOnly}`}>
+            <div className={styles.sectionHeader}>
+              <div>
+                <div className={styles.sectionTitle}>Campanhas</div>
+                <p className={styles.sectionSubtitle}>Corridas e metas extras ativas.</p>
+              </div>
+            </div>
+
+            <div className={styles.mobileCarousel}>
+              {campaignSnapshots.map((campaign) => {
+                const myEntry =
+                  campaign.leaderboard.find((item) => item.partnerId === profile.id) || null;
+
+                return (
+                  <article
+                    key={campaign.campaignId}
+                    className={`${styles.mobileListItem} ${styles.mobileCarouselCard}`}
+                  >
+                    <div className={styles.mobileListTitleRow}>
+                      <div className={styles.mobileListTitle}>{campaign.name}</div>
+                      <span className={`${styles.pill} ${styles.pillMedium}`}>
+                        {!campaign.showRanking
+                          ? "Sem ranking"
+                          : campaign.rankingLocked
+                            ? "Ranking parcial"
+                            : "Ranking"}
+                      </span>
+                    </div>
+                    <div className={styles.mobileListMeta}>
+                      <span>Meta {formatMoney(campaign.qualificationGoal)}</span>
+                      <span>Bonus {formatMoney(campaign.bonusAmount)} PIX</span>
+                      <span>
+                        {campaign.daysRemaining > 0
+                          ? `${campaign.daysRemaining} dias`
+                          : "Encerrando hoje"}
+                      </span>
+                    </div>
+                    <div className={styles.mobileListMeta} style={{ marginTop: 8 }}>
+                      {campaign.showRanking ? (
+                        <span>
+                          Sua posicao{" "}
+                          {myEntry
+                            ? `${campaign.rankingLocked ? myEntry.displayRank : myEntry.actualRank}º`
+                            : "-"}
+                        </span>
+                      ) : null}
+                      <span>Faltam {formatMoney(myEntry?.remainingToGoal || 0)}</span>
+                    </div>
+                    <details style={{ marginTop: 10 }}>
+                      <summary className={styles.mobileListSummary}>Ver detalhes</summary>
+                      <div className={styles.metaList} style={{ marginTop: 12 }}>
+                        <div className={styles.metaItem}>
+                          <strong>Periodo</strong>
+                          <span>
+                            {formatDateOnly(campaign.startDate)} ate {formatDateOnly(campaign.endDate)}
+                          </span>
+                        </div>
+                        {campaign.description ? (
+                          <div className={styles.metaItem}>
+                            <strong>Descricao</strong>
+                            <span>{campaign.description}</span>
+                          </div>
+                        ) : null}
+                      </div>
+                      {campaign.importantMessage ? (
+                        <div className={styles.callout} style={{ marginTop: 12 }}>
+                          <h3>Importante</h3>
+                          <p>{campaign.importantMessage}</p>
+                        </div>
+                      ) : null}
+                    </details>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className={`${styles.section} ${styles.desktopOnly}`}>
           <div className={styles.sectionHeader}>
             <div>
               <div className={styles.sectionTitle}>Campanhas ativas</div>
@@ -390,8 +649,10 @@ export default async function MeuDesempenhoPage({
             })}
           </div>
         </section>
+        </>
       ) : null}
 
+      <div id="resgate" />
       <PartnerPerformanceClient
         selectedMonth={performance.data.selectedMonth}
         canRequestClothes={balances.canRequestClothes}
@@ -401,7 +662,88 @@ export default async function MeuDesempenhoPage({
         partnerRole={profile.role}
       />
 
-      <section className={styles.section}>
+      <div id="pedidos" />
+
+      <section className={`${styles.section} ${styles.mobileOnly}`}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Ultimos pedidos</div>
+            <p className={styles.sectionSubtitle}>Vendas recentes com seu cupom na janela.</p>
+          </div>
+        </div>
+
+        <div className={styles.mobileList}>
+          {performance.data.orders.length > 0 ? (
+            performance.data.orders.slice(0, 5).map((order) => (
+              <details key={order.id} className={styles.mobileListItem}>
+                <summary className={styles.mobileListSummary}>
+                  <div className={styles.mobileListTitleRow}>
+                    <div className={styles.mobileListTitle}>Pedido #{order.number}</div>
+                    <span className={`${styles.pill} ${styles.pillMedium}`}>{order.status}</span>
+                  </div>
+                  <div className={styles.mobileListMeta}>
+                    <span>{order.createdAt ? formatDateTime(order.createdAt) : "-"}</span>
+                    <span>{formatMoney(order.netRevenue)} liquidos</span>
+                    <span>{order.products.length} produtos</span>
+                  </div>
+                </summary>
+                <div className={styles.metaList} style={{ marginTop: 12 }}>
+                  <div className={styles.metaItem}>
+                    <strong>Total</strong>
+                    <span>{formatMoney(order.total)}</span>
+                  </div>
+                  <div className={styles.metaItem}>
+                    <strong>Canal</strong>
+                    <span>{order.channel || "-"}</span>
+                  </div>
+                  <div className={styles.metaItem}>
+                    <strong>Status pagamento</strong>
+                    <span>{order.paymentStatus || "-"}</span>
+                  </div>
+                </div>
+                <div className={styles.callout} style={{ marginTop: 12 }}>
+                  <h3>Itens</h3>
+                  <p>{order.products.join(", ") || "-"}</p>
+                </div>
+              </details>
+            ))
+          ) : (
+            <div className={styles.warningPanel}>
+              <div className={styles.warningTitle}>Sem vendas</div>
+              <p className={styles.warningText}>Nenhuma venda com seu cupom nessa janela.</p>
+            </div>
+          )}
+        </div>
+
+        {performance.data.orders.length > 5 ? (
+          <details style={{ marginTop: 12 }}>
+            <summary className={styles.sheetTrigger}>Ver historico completo</summary>
+            <div className={styles.mobileList} style={{ marginTop: 12 }}>
+              {performance.data.orders.slice(5).map((order) => (
+                <details key={order.id} className={styles.mobileListItem}>
+                  <summary className={styles.mobileListSummary}>
+                    <div className={styles.mobileListTitleRow}>
+                      <div className={styles.mobileListTitle}>Pedido #{order.number}</div>
+                      <span className={`${styles.pill} ${styles.pillMedium}`}>{order.status}</span>
+                    </div>
+                    <div className={styles.mobileListMeta}>
+                      <span>{order.createdAt ? formatDateTime(order.createdAt) : "-"}</span>
+                      <span>{formatMoney(order.netRevenue)} liquidos</span>
+                      <span>{order.products.length} produtos</span>
+                    </div>
+                  </summary>
+                  <div className={styles.callout} style={{ marginTop: 12 }}>
+                    <h3>Itens</h3>
+                    <p>{order.products.join(", ") || "-"}</p>
+                  </div>
+                </details>
+              ))}
+            </div>
+          </details>
+        ) : null}
+      </section>
+
+      <section className={`${styles.section} ${styles.desktopOnly}`}>
         <div className={styles.sectionHeader}>
           <div>
             <div className={styles.sectionTitle}>Extrato de vendas</div>
@@ -444,7 +786,55 @@ export default async function MeuDesempenhoPage({
         </div>
       </section>
 
-      <section className={styles.section}>
+      <section className={`${styles.section} ${styles.mobileOnly}`}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Minhas solicitacoes</div>
+            <p className={styles.sectionSubtitle}>Acompanhe o que voce ja pediu.</p>
+          </div>
+        </div>
+
+        <div className={styles.mobileList}>
+          {rewardRequests.length > 0 ? (
+            rewardRequests.map((request) => (
+              <div key={request.id} className={styles.mobileListItem}>
+                <div className={styles.mobileListTitleRow}>
+                  <div className={styles.mobileListTitle}>
+                    {request.requestType === "apoio" ? "Apoio" : "Roupa"}
+                  </div>
+                  <span className={`${styles.pill} ${styles.pillMedium}`}>
+                    {labelForRequestStatus(request.status)}
+                  </span>
+                </div>
+                <div className={styles.mobileListMeta}>
+                  <span>{formatMoney(request.requestedAmount)}</span>
+                  <span>{request.supportGoal || "Cupom / roupa"}</span>
+                  <span>{formatDateTime(request.requestedAt)}</span>
+                </div>
+                {request.adminMessage ? (
+                  <div className={styles.callout} style={{ marginTop: 12 }}>
+                    <h3>Mensagem</h3>
+                    <p>{request.adminMessage}</p>
+                  </div>
+                ) : null}
+                {request.couponCode ? (
+                  <div className={styles.callout} style={{ marginTop: 12 }}>
+                    <h3>Cupom</h3>
+                    <p>{request.couponCode}</p>
+                  </div>
+                ) : null}
+              </div>
+            ))
+          ) : (
+            <div className={styles.warningPanel}>
+              <div className={styles.warningTitle}>Sem solicitacoes</div>
+              <p className={styles.warningText}>Nenhuma solicitacao feita ainda.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className={`${styles.section} ${styles.desktopOnly}`}>
         <div className={styles.sectionHeader}>
           <div>
             <div className={styles.sectionTitle}>Minhas solicitacoes</div>
@@ -489,7 +879,41 @@ export default async function MeuDesempenhoPage({
         </div>
       </section>
 
-      <section className={styles.section}>
+      <section className={`${styles.section} ${styles.mobileOnly}`}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Resgates entregues</div>
+            <p className={styles.sectionSubtitle}>O que ja foi registrado no seu nome.</p>
+          </div>
+        </div>
+
+        <div className={styles.mobileList}>
+          {redemptions.length > 0 ? (
+            redemptions.map((redemption) => (
+              <div key={redemption.id} className={styles.mobileListItem}>
+                <div className={styles.mobileListTitleRow}>
+                  <div className={styles.mobileListTitle}>
+                    {`${redemption.sku} ${redemption.color} ${redemption.size}`}
+                  </div>
+                  <span className={`${styles.pill} ${styles.pillMedium}`}>{redemption.status}</span>
+                </div>
+                <div className={styles.mobileListMeta}>
+                  <span>{redemption.grantedAt}</span>
+                  <span>{redemption.quantity} un</span>
+                  <span>{formatMoney(redemption.totalCost)}</span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className={styles.warningPanel}>
+              <div className={styles.warningTitle}>Sem resgates</div>
+              <p className={styles.warningText}>Nenhum resgate entregue ainda.</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className={`${styles.section} ${styles.desktopOnly}`}>
         <div className={styles.sectionHeader}>
           <div>
             <div className={styles.sectionTitle}>Resgates ja entregues</div>
@@ -541,6 +965,13 @@ function normalizeDateParam(value: unknown) {
   }
 
   return text;
+}
+
+function getDaysRemaining(endDate: string) {
+  const today = new Date();
+  const end = new Date(`${endDate}T23:59:59`);
+  const diff = end.getTime() - today.getTime();
+  return Math.ceil(diff / (1000 * 60 * 60 * 24));
 }
 
 function labelForRequestStatus(value: "pendente" | "aprovado" | "pago" | "recusado") {
