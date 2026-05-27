@@ -51,10 +51,13 @@ export default async function MeuDesempenhoPage({
   const customRangeStart = normalizeDateParam(params?.rangeStart);
   const customRangeEnd = normalizeDateParam(params?.rangeEnd);
   const needsRedemptionData = tab === "inicio" || tab === "resgates";
+  const needsRewardRequests = tab !== "campanhas";
   const [profilesData, campaignsData, rewardRequests, allRedemptions] = await Promise.all([
     loadCouponPartnerProfiles(),
     loadPartnerCampaigns(),
-    needsRedemptionData ? loadPartnerRewardRequests({ userProfileId: user.profileId }) : Promise.resolve([]),
+    needsRewardRequests
+      ? loadPartnerRewardRequests({ userProfileId: user.profileId })
+      : Promise.resolve([]),
     needsRedemptionData ? loadPartnerRedemptions() : Promise.resolve({ redemptions: [] }),
   ]);
   const profile = profilesData.profiles.find(
@@ -132,10 +135,11 @@ export default async function MeuDesempenhoPage({
     );
   }
 
-  const balances =
-    performance && needsRedemptionData
-      ? getPartnerAvailableBalances(performance.data.row, performance.data.rollingWindow, rewardRequests)
-      : null;
+  const balances = getPartnerAvailableBalances(
+    performance.data.row,
+    performance.data.rollingWindow,
+    rewardRequests,
+  );
   const redemptions = needsRedemptionData
     ? allRedemptions.redemptions.filter(
         (item) =>
