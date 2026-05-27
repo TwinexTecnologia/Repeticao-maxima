@@ -26,6 +26,12 @@ export async function AppShell({
 }: AppShellProps) {
   const { user, navigationItems } = await requirePageAccess(currentPath);
   const isPartner = user.userType === "parceiro";
+  const isPartnerHome =
+    currentPath.startsWith("/meu-desempenho") &&
+    (!currentPath.includes("tab=") || currentPath.includes("tab=inicio"));
+  const isPartnerCampaigns = currentPath.includes("tab=campanhas");
+  const isPartnerOrders = currentPath.includes("tab=pedidos");
+  const isPartnerRedemptions = currentPath.includes("tab=resgates");
 
   return (
     <div className={styles.appShell}>
@@ -97,7 +103,7 @@ export async function AppShell({
           <Link
             href="/meu-desempenho"
             className={`${styles.mobileTabBarLink} ${
-              currentPath.startsWith("/meu-desempenho") ? styles.mobileTabBarLinkActive : ""
+              isPartnerHome ? styles.mobileTabBarLinkActive : ""
             }`}
           >
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -111,9 +117,9 @@ export async function AppShell({
             <span>Inicio</span>
           </Link>
           <Link
-            href="/meu-desempenho#campanhas"
+            href="/meu-desempenho?tab=campanhas"
             className={`${styles.mobileTabBarLink} ${
-              currentPath.startsWith("/meu-desempenho") ? styles.mobileTabBarLinkActive : ""
+              isPartnerCampaigns ? styles.mobileTabBarLinkActive : ""
             }`}
           >
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -139,9 +145,9 @@ export async function AppShell({
             <span>Campanhas</span>
           </Link>
           <Link
-            href="/meu-desempenho#pedidos"
+            href="/meu-desempenho?tab=pedidos"
             className={`${styles.mobileTabBarLink} ${
-              currentPath.startsWith("/meu-desempenho") ? styles.mobileTabBarLinkActive : ""
+              isPartnerOrders ? styles.mobileTabBarLinkActive : ""
             }`}
           >
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -152,9 +158,9 @@ export async function AppShell({
             <span>Pedidos</span>
           </Link>
           <Link
-            href="/meu-desempenho#resgate"
+            href="/meu-desempenho?tab=resgates"
             className={`${styles.mobileTabBarLink} ${
-              currentPath.startsWith("/meu-desempenho") ? styles.mobileTabBarLinkActive : ""
+              isPartnerRedemptions ? styles.mobileTabBarLinkActive : ""
             }`}
           >
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
