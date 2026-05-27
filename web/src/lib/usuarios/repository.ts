@@ -58,6 +58,7 @@ export type PartnerAccessUser = {
   active: boolean;
   notes: string;
   hasLogin: boolean;
+  lastSeenAt: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 };
@@ -567,6 +568,7 @@ function rowToPartnerAccessUser(
   linkedPartner?: UserPartnerOption | null,
 ): PartnerAccessUser {
   const birthDate = normalizeDate(row.birth_date) || null;
+  const lastSeenAt = typeof row.last_seen_at === "string" ? row.last_seen_at : null;
 
   return {
     id: String(row.id ?? ""),
@@ -583,6 +585,7 @@ function rowToPartnerAccessUser(
     active: row.active === false ? false : true,
     notes: String(row.notes ?? "").trim(),
     hasLogin: Boolean(row.auth_user_id),
+    lastSeenAt,
     createdAt: typeof row.created_at === "string" ? row.created_at : null,
     updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
   };

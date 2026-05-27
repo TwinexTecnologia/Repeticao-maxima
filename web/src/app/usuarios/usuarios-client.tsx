@@ -799,6 +799,7 @@ export function UsuariosClient({
                 <th>Camiseta</th>
                 <th>Cupom</th>
                 <th>Login</th>
+                <th>Ultimo acesso</th>
                 <th>Acoes</th>
               </tr>
             </thead>
@@ -821,6 +822,7 @@ export function UsuariosClient({
                     <td>{partner.shirtSize || "-"}</td>
                     <td>{partner.linkedCouponCode || "-"}</td>
                     <td>{partner.hasLogin ? "Criado" : "Ainda nao"}</td>
+                    <td>{partner.lastSeenAt ? formatDateTime(partner.lastSeenAt) : "-"}</td>
                     <td>
                       <button
                         type="button"
@@ -834,7 +836,7 @@ export function UsuariosClient({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={8}>Nenhum parceiro cadastrado ainda.</td>
+                  <td colSpan={9}>Nenhum parceiro cadastrado ainda.</td>
                 </tr>
               )}
             </tbody>

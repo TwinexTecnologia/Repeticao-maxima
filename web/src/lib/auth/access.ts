@@ -246,6 +246,18 @@ export async function requirePageAccess(currentPath: string) {
     redirect("/acesso-negado");
   }
 
+  if (user.userType === "parceiro" && user.profileId) {
+    const supabase = createSupabaseServerClient();
+
+    if (supabase.ok) {
+      await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from("profiles_usuarios")
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq("id", user.profileId);
+    }
+  }
+
   if (
     user.userType === "parceiro" &&
     !currentPath.startsWith("/meu-desempenho") &&
