@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -295,6 +297,7 @@ export async function createPartnerAccessUser(input: unknown) {
   const row = normalizePartnerInput(input);
   let authUserId: string | null = null;
   let createdAuthUserId: string | null = null;
+  let generatedPassword: string | null = null;
 
   try {
     const existingProfile = await findExistingPartnerProfile(
@@ -305,19 +308,29 @@ export async function createPartnerAccessUser(input: unknown) {
 
     if (row.createAccess) {
       if (existingProfile?.auth_user_id) {
+        const updatePayload: {
+          email: string;
+          email_confirm: boolean;
+          password?: string;
+          user_metadata: Record<string, unknown>;
+        } = {
+          email: row.email,
+          email_confirm: true,
+          user_metadata: {
+            app_scope: OPERATIONS_SCHEMA,
+            user_type: "parceiro",
+            partner_type: row.partnerType,
+            full_name: row.fullName,
+          },
+        };
+
+        if (row.password.length >= 6) {
+          updatePayload.password = row.password;
+        }
+
         const updatedAuth = await supabase.client.auth.admin.updateUserById(
           String(existingProfile.auth_user_id),
-          {
-            email: row.email,
-            password: row.password,
-            email_confirm: true,
-            user_metadata: {
-              app_scope: OPERATIONS_SCHEMA,
-              user_type: "parceiro",
-              partner_type: row.partnerType,
-              full_name: row.fullName,
-            },
-          },
+          updatePayload,
         );
 
         if (updatedAuth.error || !updatedAuth.data.user) {
@@ -329,9 +342,16 @@ export async function createPartnerAccessUser(input: unknown) {
 
         authUserId = updatedAuth.data.user.id;
       } else {
+        const passwordToUse =
+          row.password.length >= 6 ? row.password : generateTemporaryPassword();
+
+        if (row.password.length < 6) {
+          generatedPassword = passwordToUse;
+        }
+
         const authResult = await supabase.client.auth.admin.createUser({
           email: row.email,
-          password: row.password,
+          password: passwordToUse,
           email_confirm: true,
           user_metadata: {
             app_scope: OPERATIONS_SCHEMA,
@@ -395,6 +415,7 @@ export async function createPartnerAccessUser(input: unknown) {
     return {
       ok: true as const,
       partner: rowToPartnerAccessUser(profileData, linkedPartner),
+      generatedPassword,
       persistence: {
         enabled: true,
         source: "supabase" as const,
@@ -561,7 +582,7 @@ function normalizePartnerInput(input: unknown) {
   const source = isRecord(input) ? input : {};
   const fullName = String(source.fullName ?? "").trim();
   const email = String(source.email ?? "").trim().toLowerCase();
-  const createAccess = source.createAccess === true;
+  const createAccess = source.createAccess === false ? false : true;
   const password = String(source.password ?? "").trim();
   const linkedPartnerId = String(source.linkedPartnerId ?? "").trim() || null;
   const partnerType = normalizePartnerUserType(source.partnerType);
@@ -575,7 +596,7 @@ function normalizePartnerInput(input: unknown) {
     throw new Error("Informe um e-mail valido para o parceiro.");
   }
 
-  if (createAccess && password.length < 6) {
+  if (createAccess && password.length > 0 && password.length < 6) {
     throw new Error("A senha do parceiro precisa ter pelo menos 6 caracteres.");
   }
 
@@ -591,6 +612,10 @@ function normalizePartnerInput(input: unknown) {
     createAccess,
     password,
   };
+}
+
+function generateTemporaryPassword() {
+  return crypto.randomBytes(9).toString("base64url");
 }
 
 function normalizePermissions(value: unknown): UserMenuPermissions {

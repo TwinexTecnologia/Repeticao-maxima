@@ -34,6 +34,7 @@ type PartnerApiResponse = {
   message?: string;
   persistence?: UserAccessPersistenceState;
   partner?: PartnerAccessUser;
+  generatedPassword?: string | null;
 };
 
 const MENU_OPTIONS: Array<{
@@ -77,8 +78,10 @@ export function UsuariosClient({
     useState<UserAccessPersistenceState>(initialPersistence);
   const [employeeFeedback, setEmployeeFeedback] = useState("");
   const [partnerFeedback, setPartnerFeedback] = useState("");
+  const [partnerGeneratedPassword, setPartnerGeneratedPassword] = useState("");
   const [isSavingEmployee, setIsSavingEmployee] = useState(false);
   const [isSavingPartner, setIsSavingPartner] = useState(false);
+  const [editingPartnerId, setEditingPartnerId] = useState<string | null>(null);
   const [employeeForm, setEmployeeForm] = useState({
     fullName: "",
     email: "",
@@ -94,7 +97,7 @@ export function UsuariosClient({
     birthDate: "",
     shirtSize: "",
     active: true,
-    createAccess: false,
+    createAccess: true,
     password: "",
     notes: "",
   });
@@ -226,13 +229,9 @@ export function UsuariosClient({
       return;
     }
 
-    if (partnerForm.createAccess && partnerForm.password.trim().length < 6) {
-      setPartnerFeedback("A senha do parceiro precisa ter pelo menos 6 caracteres.");
-      return;
-    }
-
     setIsSavingPartner(true);
     setPartnerFeedback("");
+    setPartnerGeneratedPassword("");
 
     try {
       const response = await fetch("/api/usuarios/parceiros", {
@@ -246,6 +245,10 @@ export function UsuariosClient({
 
       if (!response.ok || !result.ok || !result.partner) {
         throw new Error(result.message || "Nao foi possivel salvar o parceiro.");
+      }
+
+      if (result.generatedPassword) {
+        setPartnerGeneratedPassword(result.generatedPassword);
       }
 
       setPartners((current) =>
@@ -264,10 +267,11 @@ export function UsuariosClient({
         birthDate: "",
         shirtSize: "",
         active: true,
-        createAccess: false,
+        createAccess: true,
         password: "",
         notes: "",
       });
+      setEditingPartnerId(null);
       setPartnerFeedback(result.message || "Parceiro salvo com sucesso.");
     } catch (error) {
       setPartnerFeedback(
@@ -278,6 +282,55 @@ export function UsuariosClient({
     } finally {
       setIsSavingPartner(false);
     }
+  }
+
+  async function handleCopyPartnerPassword() {
+    if (!partnerGeneratedPassword) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(partnerGeneratedPassword);
+      setPartnerFeedback("Senha copiada.");
+    } catch {
+      setPartnerFeedback("Nao foi possivel copiar automaticamente. Selecione e copie manualmente.");
+    }
+  }
+
+  function handleEditPartner(partner: PartnerAccessUser) {
+    setEditingPartnerId(partner.id);
+    setPartnerGeneratedPassword("");
+    setPartnerFeedback("");
+    setPartnerForm({
+      linkedPartnerId: partner.linkedPartnerId || "",
+      partnerType: partner.partnerType,
+      fullName: partner.fullName,
+      email: partner.email,
+      birthDate: partner.birthDate || "",
+      shirtSize: partner.shirtSize,
+      active: partner.active,
+      createAccess: true,
+      password: "",
+      notes: partner.notes,
+    });
+  }
+
+  function handleCancelPartnerEdit() {
+    setEditingPartnerId(null);
+    setPartnerGeneratedPassword("");
+    setPartnerFeedback("");
+    setPartnerForm({
+      linkedPartnerId: "",
+      partnerType: "influenciador",
+      fullName: "",
+      email: "",
+      birthDate: "",
+      shirtSize: "",
+      active: true,
+      createAccess: true,
+      password: "",
+      notes: "",
+    });
   }
 
   function toggleEmployeePermission(key: UserMenuPermissionKey) {
@@ -526,7 +579,7 @@ export function UsuariosClient({
                 />
               </label>
               <div className={styles.metricHint}>
-                Esse e-mail identifica o parceiro e vira login quando voce liberar acesso.
+                Esse e-mail vira o login do parceiro.
               </div>
               <div className={styles.filterGrid}>
                 <label className={styles.filterField}>
@@ -562,39 +615,37 @@ export function UsuariosClient({
                 />
               </label>
 
-              <label
-                className={styles.secondaryButton}
-                style={{ gap: 10, cursor: "pointer", width: "fit-content" }}
-              >
+              <label className={styles.filterField}>
+                <span>Senha (opcional)</span>
                 <input
-                  type="checkbox"
-                  checked={partnerForm.createAccess}
+                  type="password"
+                  value={partnerForm.password}
                   onChange={(event) =>
                     setPartnerForm((current) => ({
                       ...current,
-                      createAccess: event.target.checked,
+                      password: event.target.value,
                     }))
                   }
+                  placeholder="Deixe vazio para gerar automaticamente"
                 />
-                Criar login para esse parceiro agora
               </label>
-
-              {partnerForm.createAccess ? (
-                <label className={styles.filterField}>
-                  <span>Senha de acesso</span>
-                  <input
-                    type="password"
-                    value={partnerForm.password}
-                    onChange={(event) =>
-                      setPartnerForm((current) => ({
-                        ...current,
-                        password: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-              ) : null}
             </div>
+
+            {partnerGeneratedPassword ? (
+              <div className={styles.callout} style={{ marginTop: 16 }}>
+                <h3>Senha gerada</h3>
+                <p style={{ wordBreak: "break-word" }}>{partnerGeneratedPassword}</p>
+                <div className={styles.filterActions} style={{ marginTop: 10 }}>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    onClick={handleCopyPartnerPassword}
+                  >
+                    Copiar
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
             {partnerFeedback ? (
               <div className={styles.callout} style={{ marginTop: 16 }}>
@@ -610,8 +661,22 @@ export function UsuariosClient({
                 onClick={handleCreatePartner}
                 disabled={!persistence.enabled || isSavingPartner}
               >
-                {isSavingPartner ? "Salvando..." : "Salvar parceiro"}
+                {isSavingPartner
+                  ? "Salvando..."
+                  : editingPartnerId
+                    ? "Salvar alteracoes"
+                    : "Salvar parceiro"}
               </button>
+              {editingPartnerId ? (
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  onClick={handleCancelPartnerEdit}
+                  disabled={isSavingPartner}
+                >
+                  Cancelar
+                </button>
+              ) : null}
             </div>
 
             <div className={styles.callout} style={{ marginTop: 16 }}>
@@ -734,6 +799,7 @@ export function UsuariosClient({
                 <th>Camiseta</th>
                 <th>Cupom</th>
                 <th>Login</th>
+                <th>Acoes</th>
               </tr>
             </thead>
             <tbody>
@@ -755,11 +821,20 @@ export function UsuariosClient({
                     <td>{partner.shirtSize || "-"}</td>
                     <td>{partner.linkedCouponCode || "-"}</td>
                     <td>{partner.hasLogin ? "Criado" : "Ainda nao"}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        onClick={() => handleEditPartner(partner)}
+                      >
+                        Editar
+                      </button>
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7}>Nenhum parceiro cadastrado ainda.</td>
+                  <td colSpan={8}>Nenhum parceiro cadastrado ainda.</td>
                 </tr>
               )}
             </tbody>

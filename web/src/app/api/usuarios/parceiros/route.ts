@@ -30,6 +30,7 @@ export async function POST(request: Request) {
       message: result.persistence.message,
       persistence: result.persistence,
       partner: result.partner,
+      generatedPassword: result.generatedPassword,
     });
   } catch (error) {
     const message =
