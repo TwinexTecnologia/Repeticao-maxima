@@ -149,6 +149,7 @@ export class NuvemshopClient {
       baseUrl?: string;
     } = {},
   ) {
+    const method = options.method || "GET";
     const base = (options.baseUrl || this.credentials.baseUrl).replace(/\/$/, "");
     const url = new URL(
       `${base}/${this.credentials.storeId}${path.startsWith("/") ? path : `/${path}`}`,
@@ -158,8 +159,9 @@ export class NuvemshopClient {
       url.search = options.searchParams.toString();
     }
 
+    const shouldCache = method === "GET" && !options.body;
     const response = await fetch(url, {
-      method: options.method || "GET",
+      method,
       headers: {
         Authentication: `bearer ${this.credentials.accessToken}`,
         "User-Agent": this.credentials.userAgent,
@@ -167,7 +169,8 @@ export class NuvemshopClient {
         ...(options.body ? { "Content-Type": "application/json" } : {}),
       },
       body: options.body ? JSON.stringify(options.body) : undefined,
-      cache: "no-store",
+      cache: shouldCache ? "force-cache" : "no-store",
+      ...(shouldCache ? { next: { revalidate: 30 } } : {}),
     });
 
     if (!response.ok) {

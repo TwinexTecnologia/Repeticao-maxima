@@ -88,6 +88,18 @@ export async function AppShell({
 
       <div className={styles.content}>
         <header className={styles.topbar}>
+          {isPartner ? (
+            <div className={styles.mobileTopBrand}>
+              <Image
+                src="/logo-repeticao-maxima.png"
+                alt="Logo Repeticao Maxima"
+                width={38}
+                height={38}
+                className={styles.mobileTopLogo}
+              />
+              <div className={styles.mobileTopBrandName}>Repeticao Maxima</div>
+            </div>
+          ) : null}
           <div className={styles.titleBlock}>
             <h1>{title}</h1>
             <p>{subtitle}</p>

@@ -50,11 +50,12 @@ export default async function MeuDesempenhoPage({
   const selectedMonth = params?.month || getCurrentMonthInput();
   const customRangeStart = normalizeDateParam(params?.rangeStart);
   const customRangeEnd = normalizeDateParam(params?.rangeEnd);
-  const [profilesData, allRedemptions, rewardRequests, campaignsData] = await Promise.all([
+  const needsRedemptionData = tab === "inicio" || tab === "resgates";
+  const [profilesData, campaignsData, rewardRequests, allRedemptions] = await Promise.all([
     loadCouponPartnerProfiles(),
-    loadPartnerRedemptions(),
-    loadPartnerRewardRequests({ userProfileId: user.profileId }),
     loadPartnerCampaigns(),
+    needsRedemptionData ? loadPartnerRewardRequests({ userProfileId: user.profileId }) : Promise.resolve([]),
+    needsRedemptionData ? loadPartnerRedemptions() : Promise.resolve({ redemptions: [] }),
   ]);
   const profile = profilesData.profiles.find(
     (item) => item.id === user.linkedPartnerId && item.active,
@@ -90,18 +91,21 @@ export default async function MeuDesempenhoPage({
       .slice()
       .sort((left, right) => (right.endDate || "").localeCompare(left.endDate || ""))[0] || null;
   const effectiveMonth = windowCampaign?.endDate ? windowCampaign.endDate.slice(0, 7) : selectedMonth;
-  const performance = await loadPartnerPerformanceSnapshot(profile, effectiveMonth, {
-    window: windowCampaign
-      ? {
-          startDate: windowCampaign.startDate,
-          endDate: windowCampaign.endDate,
-          label: `${formatDateOnly(windowCampaign.startDate)} a ${formatDateOnly(windowCampaign.endDate)}`,
-        }
-      : undefined,
-    monthlyGoal: windowCampaign?.qualificationGoal,
-  });
+  const needsPerformance = tab !== "campanhas";
+  const performance = needsPerformance
+    ? await loadPartnerPerformanceSnapshot(profile, effectiveMonth, {
+        window: windowCampaign
+          ? {
+              startDate: windowCampaign.startDate,
+              endDate: windowCampaign.endDate,
+              label: `${formatDateOnly(windowCampaign.startDate)} a ${formatDateOnly(windowCampaign.endDate)}`,
+            }
+          : undefined,
+        monthlyGoal: windowCampaign?.qualificationGoal,
+      })
+    : null;
   const customPerformance =
-    customRangeStart && customRangeEnd
+    needsPerformance && customRangeStart && customRangeEnd
       ? await loadPartnerPerformanceSnapshot(profile, effectiveMonth, {
           window: {
             startDate: customRangeStart,
@@ -111,7 +115,7 @@ export default async function MeuDesempenhoPage({
         })
       : null;
 
-  if (!performance.ok) {
+  if (performance && !performance.ok) {
     return (
       <AppShell
         title="Meu desempenho"
@@ -128,28 +132,210 @@ export default async function MeuDesempenhoPage({
     );
   }
 
-  const balances = getPartnerAvailableBalances(
-    performance.data.row,
-    performance.data.rollingWindow,
-    rewardRequests,
-  );
-  const redemptions = allRedemptions.redemptions.filter(
-    (item) =>
-      item.partnerId === user.linkedPartnerId || item.couponCode === profile.couponCode,
-  );
-  const campaignSnapshots = await loadPartnerCampaignSnapshots(partnerCampaigns);
+  const balances =
+    performance && needsRedemptionData
+      ? getPartnerAvailableBalances(performance.data.row, performance.data.rollingWindow, rewardRequests)
+      : null;
+  const redemptions = needsRedemptionData
+    ? allRedemptions.redemptions.filter(
+        (item) =>
+          item.partnerId === user.linkedPartnerId || item.couponCode === profile.couponCode,
+      )
+    : [];
+  const needsCampaignSnapshots = tab === "inicio" || tab === "campanhas";
+  const campaignSnapshots = needsCampaignSnapshots
+    ? await loadPartnerCampaignSnapshots(partnerCampaigns)
+    : [];
   const greetingRole = profile.role === "atleta" ? "atleta" : "influenciador";
-  const windowDaysRemaining = getDaysRemaining(performance.data.rollingWindow.endDate);
-  const windowProgressPercent = getGoalProgressPercent(
-    performance.data.row.netRevenue,
-    performance.data.row.monthlyGoal,
-  );
+  const windowDaysRemaining =
+    performance ? getDaysRemaining(performance.data.rollingWindow.endDate) : 0;
+  const windowProgressPercent =
+    performance
+      ? getGoalProgressPercent(performance.data.row.netRevenue, performance.data.row.monthlyGoal)
+      : 0;
   const featuredCampaign =
     campaignSnapshots
       .slice()
       .sort((left, right) => (right.endDate || "").localeCompare(left.endDate || ""))[0] || null;
   const featuredEntry =
     featuredCampaign?.leaderboard.find((item) => item.partnerId === profile.id) || null;
+
+  if (!performance) {
+    return (
+      <AppShell
+        title={`Ola, ${greetingRole}`}
+        subtitle={`${profile.name}, veja as campanhas ativas para voce.`}
+        currentPath="/meu-desempenho?tab=campanhas"
+      >
+        {campaignSnapshots.length > 0 ? (
+          <>
+            <section className={`${styles.section} ${styles.mobileOnly}`}>
+              <div className={styles.sectionHeader}>
+                <div>
+                  <div className={styles.sectionTitle}>Campanhas</div>
+                  <p className={styles.sectionSubtitle}>Corridas e metas extras ativas.</p>
+                </div>
+              </div>
+              <div className={styles.mobileList}>
+                {campaignSnapshots.map((campaign) => {
+                  const myEntry =
+                    campaign.leaderboard.find((item) => item.partnerId === profile.id) || null;
+
+                  return (
+                    <details key={campaign.campaignId} className={styles.mobileListItem}>
+                      <summary className={styles.mobileListSummary}>
+                        <div className={styles.mobileListTitleRow}>
+                          <div className={styles.mobileListTitle}>{campaign.name}</div>
+                          <span className={`${styles.pill} ${styles.pillMedium}`}>
+                            {!campaign.showRanking
+                              ? "Sem ranking"
+                              : campaign.rankingLocked
+                                ? "Ranking parcial"
+                                : "Ranking"}
+                          </span>
+                        </div>
+                        <div className={styles.mobileListMeta}>
+                          <span>Meta {formatMoney(campaign.qualificationGoal)}</span>
+                          <span>Bonus {formatMoney(campaign.bonusAmount)} PIX</span>
+                          <span>
+                            {campaign.daysRemaining > 0
+                              ? `${campaign.daysRemaining} dias`
+                              : "Encerrando hoje"}
+                          </span>
+                        </div>
+                        <div className={styles.mobileListMeta}>
+                          {campaign.showRanking ? (
+                            <span>
+                              Sua posicao{" "}
+                              {myEntry
+                                ? `${campaign.rankingLocked ? myEntry.displayRank : myEntry.actualRank}º`
+                                : "-"}
+                            </span>
+                          ) : null}
+                          <span>Faltam {formatMoney(myEntry?.remainingToGoal || 0)}</span>
+                        </div>
+                      </summary>
+
+                      <div className={styles.metaList} style={{ marginTop: 12 }}>
+                        <div className={styles.metaItem}>
+                          <strong>Periodo</strong>
+                          <span>
+                            {formatDateOnly(campaign.startDate)} ate {formatDateOnly(campaign.endDate)}
+                          </span>
+                        </div>
+                        {campaign.description ? (
+                          <div className={styles.metaItem}>
+                            <strong>Descricao</strong>
+                            <span>{campaign.description}</span>
+                          </div>
+                        ) : null}
+                      </div>
+                      {campaign.importantMessage ? (
+                        <div className={styles.callout} style={{ marginTop: 12 }}>
+                          <h3>Importante</h3>
+                          <p>{campaign.importantMessage}</p>
+                        </div>
+                      ) : null}
+                    </details>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className={`${styles.section} ${styles.desktopOnly}`}>
+              <div className={styles.sectionHeader}>
+                <div>
+                  <div className={styles.sectionTitle}>Campanhas ativas</div>
+                  <p className={styles.sectionSubtitle}>
+                    Essas campanhas sao extras e separadas da sua meta normal de 3 meses.
+                  </p>
+                </div>
+              </div>
+              <div className={styles.catalogGrid}>
+                {campaignSnapshots.map((campaign) => {
+                  const myEntry =
+                    campaign.leaderboard.find((item) => item.partnerId === profile.id) || null;
+
+                  return (
+                    <article key={campaign.campaignId} className={styles.catalogCard}>
+                      <div className={styles.listTitleRow}>
+                        <div className={styles.sectionTitle}>{campaign.name}</div>
+                        <span className={`${styles.pill} ${styles.pillMedium}`}>
+                          {!campaign.showRanking
+                            ? "Sem ranking"
+                            : campaign.rankingLocked
+                              ? "Ranking parcial"
+                              : "Ranking liberado"}
+                        </span>
+                      </div>
+                      <p className={styles.sectionSubtitle}>
+                        {campaign.description || "Campanha extra com bonus separado do contrato."}
+                      </p>
+                      <div className={styles.metaList}>
+                        <div className={styles.metaItem}>
+                          <strong>Periodo travado</strong>
+                          <span>
+                            {formatDateOnly(campaign.startDate)} ate {formatDateOnly(campaign.endDate)}
+                          </span>
+                        </div>
+                        <div className={styles.metaItem}>
+                          <strong>Meta para entrar</strong>
+                          <span>{formatMoney(campaign.qualificationGoal)}</span>
+                        </div>
+                        <div className={styles.metaItem}>
+                          <strong>Bonus extra</strong>
+                          <span>{formatMoney(campaign.bonusAmount)} no Pix</span>
+                        </div>
+                        <div className={styles.metaItem}>
+                          <strong>Prazo restante</strong>
+                          <span>
+                            {campaign.daysRemaining > 0
+                              ? `${campaign.daysRemaining} dia(s)`
+                              : "Encerrando hoje"}
+                          </span>
+                        </div>
+                        {campaign.showRanking ? (
+                          <div className={styles.metaItem}>
+                            <strong>Sua posicao</strong>
+                            <span>
+                              {myEntry
+                                ? `${campaign.rankingLocked ? myEntry.displayRank : myEntry.actualRank}º lugar`
+                                : "-"}
+                            </span>
+                          </div>
+                        ) : null}
+                        <div className={styles.metaItem}>
+                          <strong>Sua corrida</strong>
+                          <span>
+                            {myEntry?.qualified
+                              ? "Voce ja entrou na disputa do bonus."
+                              : `Faltam ${formatMoney(myEntry?.remainingToGoal || 0)} para entrar.`}
+                          </span>
+                        </div>
+                      </div>
+                      {campaign.importantMessage ? (
+                        <div className={styles.callout} style={{ marginTop: 16 }}>
+                          <h3>Importante</h3>
+                          <p>{campaign.importantMessage}</p>
+                        </div>
+                      ) : null}
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          </>
+        ) : (
+          <section className={styles.section}>
+            <div className={styles.warningPanel}>
+              <div className={styles.warningTitle}>Sem campanhas</div>
+              <p className={styles.warningText}>Nenhuma campanha ativa para voce agora.</p>
+            </div>
+          </section>
+        )}
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell
