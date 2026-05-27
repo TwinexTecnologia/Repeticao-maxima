@@ -118,28 +118,6 @@ export default async function MeuDesempenhoPage({
         })
       : null;
 
-  if (performance && !performance.ok) {
-    return (
-      <AppShell
-        title="Meu desempenho"
-        subtitle="Nao foi possivel carregar seus dados agora."
-        currentPath="/meu-desempenho"
-      >
-        <section className={styles.section}>
-          <div className={styles.warningPanel}>
-            <div className={styles.warningTitle}>Erro ao carregar</div>
-            <p className={styles.warningText}>{performance.message}</p>
-          </div>
-        </section>
-      </AppShell>
-    );
-  }
-
-  const balances = getPartnerAvailableBalances(
-    performance.data.row,
-    performance.data.rollingWindow,
-    rewardRequests,
-  );
   const redemptions = needsRedemptionData
     ? allRedemptions.redemptions.filter(
         (item) =>
@@ -151,12 +129,6 @@ export default async function MeuDesempenhoPage({
     ? await loadPartnerCampaignSnapshots(partnerCampaigns)
     : [];
   const greetingRole = profile.role === "atleta" ? "atleta" : "influenciador";
-  const windowDaysRemaining =
-    performance ? getDaysRemaining(performance.data.rollingWindow.endDate) : 0;
-  const windowProgressPercent =
-    performance
-      ? getGoalProgressPercent(performance.data.row.netRevenue, performance.data.row.monthlyGoal)
-      : 0;
   const featuredCampaign =
     campaignSnapshots
       .slice()
@@ -340,6 +312,34 @@ export default async function MeuDesempenhoPage({
       </AppShell>
     );
   }
+
+  if (!performance.ok) {
+    return (
+      <AppShell
+        title="Meu desempenho"
+        subtitle="Nao foi possivel carregar seus dados agora."
+        currentPath="/meu-desempenho"
+      >
+        <section className={styles.section}>
+          <div className={styles.warningPanel}>
+            <div className={styles.warningTitle}>Erro ao carregar</div>
+            <p className={styles.warningText}>{performance.message}</p>
+          </div>
+        </section>
+      </AppShell>
+    );
+  }
+
+  const balances = getPartnerAvailableBalances(
+    performance.data.row,
+    performance.data.rollingWindow,
+    rewardRequests,
+  );
+  const windowDaysRemaining = getDaysRemaining(performance.data.rollingWindow.endDate);
+  const windowProgressPercent = getGoalProgressPercent(
+    performance.data.row.netRevenue,
+    performance.data.row.monthlyGoal,
+  );
 
   return (
     <AppShell
