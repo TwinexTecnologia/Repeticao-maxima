@@ -25,6 +25,7 @@ export async function AppShell({
   children,
 }: AppShellProps) {
   const { user, navigationItems } = await requirePageAccess(currentPath);
+  const isPartner = user.userType === "parceiro";
 
   return (
     <div className={styles.appShell}>
@@ -90,6 +91,113 @@ export async function AppShell({
 
         {children}
       </div>
+
+      {isPartner ? (
+        <nav className={styles.mobileTabBar} aria-label="Navegacao">
+          <Link
+            href="/meu-desempenho"
+            className={`${styles.mobileTabBarLink} ${
+              currentPath.startsWith("/meu-desempenho") ? styles.mobileTabBarLinkActive : ""
+            }`}
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M4 10.5L12 4.5L20 10.5V20H15V14H9V20H4V10.5Z"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span>Inicio</span>
+          </Link>
+          <Link
+            href="/meu-desempenho#campanhas"
+            className={`${styles.mobileTabBarLink} ${
+              currentPath.startsWith("/meu-desempenho") ? styles.mobileTabBarLinkActive : ""
+            }`}
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M7 5.5H17V9.5C17 11.7 15.2 13.5 13 13.5H11C8.8 13.5 7 11.7 7 9.5V5.5Z"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M9 20H15"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+              <path
+                d="M12 13.5V20"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+            </svg>
+            <span>Campanhas</span>
+          </Link>
+          <Link
+            href="/meu-desempenho#pedidos"
+            className={`${styles.mobileTabBarLink} ${
+              currentPath.startsWith("/meu-desempenho") ? styles.mobileTabBarLinkActive : ""
+            }`}
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="6" y="3.5" width="12" height="17" rx="2.5" stroke="currentColor" strokeWidth="1.8" />
+              <path d="M9 8.5H15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              <path d="M9 12.5H15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+            <span>Pedidos</span>
+          </Link>
+          <Link
+            href="/meu-desempenho#resgate"
+            className={`${styles.mobileTabBarLink} ${
+              currentPath.startsWith("/meu-desempenho") ? styles.mobileTabBarLinkActive : ""
+            }`}
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M6.5 9.5H17.5V20H6.5V9.5Z"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M6.5 9.5L9 4.5H15L17.5 9.5"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M12 9.5V20"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+            </svg>
+            <span>Resgates</span>
+          </Link>
+          <Link
+            href="/perfil"
+            className={`${styles.mobileTabBarLink} ${
+              currentPath.startsWith("/perfil") ? styles.mobileTabBarLinkActive : ""
+            }`}
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="8.5" r="3.2" stroke="currentColor" strokeWidth="1.8" />
+              <path
+                d="M5.2 19C6.5 16.3 9 15 12 15C15 15 17.5 16.3 18.8 19"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+            </svg>
+            <span>Perfil</span>
+          </Link>
+        </nav>
+      ) : null}
     </div>
   );
 }
