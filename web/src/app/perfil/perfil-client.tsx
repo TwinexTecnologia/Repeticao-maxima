@@ -32,6 +32,10 @@ export function PerfilClient() {
   const [loadError, setLoadError] = useState("");
   const [profile, setProfile] = useState<PerfilApiResponse | null>(null);
 
+  const [birthDateDraft, setBirthDateDraft] = useState("");
+  const [birthDateFeedback, setBirthDateFeedback] = useState("");
+  const [isUpdatingBirthDate, setIsUpdatingBirthDate] = useState(false);
+
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoFeedback, setPhotoFeedback] = useState("");
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
@@ -48,6 +52,12 @@ export function PerfilClient() {
     }
     return profile.profile;
   }, [profile]);
+
+  useEffect(() => {
+    if (loadedProfile?.userType === "parceiro") {
+      setBirthDateDraft(loadedProfile.birthDate || "");
+    }
+  }, [loadedProfile]);
 
   useEffect(() => {
     let cancelled = false;
@@ -131,6 +141,51 @@ export function PerfilClient() {
       setPhotoFeedback(error instanceof Error ? error.message : "Nao foi possivel enviar a foto.");
     } finally {
       setIsUploadingPhoto(false);
+    }
+  }
+
+  async function handleUpdateBirthDate() {
+    setBirthDateFeedback("");
+    setPasswordFeedback("");
+    setGeneratedPassword("");
+    setPhotoFeedback("");
+
+    setIsUpdatingBirthDate(true);
+
+    try {
+      const response = await fetch("/api/perfil", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          birthDate: birthDateDraft || null,
+        }),
+      });
+
+      const data = (await response.json()) as
+        | { ok: true; birthDate: string | null }
+        | { ok: false; message: string };
+
+      if (!response.ok || !data.ok) {
+        throw new Error("message" in data ? data.message : "Nao foi possivel atualizar seu perfil.");
+      }
+
+      if (loadedProfile) {
+        setProfile({
+          ok: true,
+          profile: {
+            ...loadedProfile,
+            birthDate: data.birthDate,
+          },
+        });
+      }
+
+      setBirthDateFeedback("Data de nascimento atualizada.");
+    } catch (error) {
+      setBirthDateFeedback(
+        error instanceof Error ? error.message : "Nao foi possivel atualizar seu perfil.",
+      );
+    } finally {
+      setIsUpdatingBirthDate(false);
     }
   }
 
@@ -319,6 +374,48 @@ export function PerfilClient() {
           </article>
         </div>
       </div>
+
+      {loadedProfile.userType === "parceiro" ? (
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <div className={styles.sectionTitle}>Atualizar nascimento</div>
+              <p className={styles.sectionSubtitle}>
+                Voce pode ajustar sua data de nascimento para manter seus dados atualizados.
+              </p>
+            </div>
+          </div>
+
+          <div className={styles.filterGrid}>
+            <label className={styles.filterField}>
+              <span>Data de nascimento</span>
+              <input
+                type="date"
+                value={birthDateDraft}
+                onChange={(event) => setBirthDateDraft(event.target.value)}
+                disabled={isUpdatingBirthDate}
+              />
+            </label>
+            <div className={styles.filterActions}>
+              <button
+                type="button"
+                className={styles.primaryButton}
+                onClick={handleUpdateBirthDate}
+                disabled={isUpdatingBirthDate}
+              >
+                {isUpdatingBirthDate ? "Salvando..." : "Salvar"}
+              </button>
+            </div>
+          </div>
+
+          {birthDateFeedback ? (
+            <div className={styles.callout} style={{ marginTop: 16 }}>
+              <h3>Status</h3>
+              <p>{birthDateFeedback}</p>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className={styles.section}>
         <div className={styles.sectionHeader}>

@@ -152,3 +152,104 @@ export async function GET() {
     { status: 200 },
   );
 }
+
+export async function PATCH(request: Request) {
+  const authClient = await createSupabaseServerAuthClient();
+
+  if (!authClient.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: `Supabase Auth indisponivel. Configure ${authClient.missing.join(" e ")}.`,
+      },
+      { status: 500 },
+    );
+  }
+
+  const {
+    data: { user },
+    error: authError,
+  } = await authClient.client.auth.getUser();
+
+  if (authError || !user) {
+    return NextResponse.json(
+      { ok: false, message: "Voce precisa estar logado para atualizar seu perfil." },
+      { status: 401 },
+    );
+  }
+
+  const adminClient = createSupabaseServerClient();
+
+  if (!adminClient.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        message: `Persistencia indisponivel. Configure ${adminClient.missing.join(" e ")}.`,
+      },
+      { status: 500 },
+    );
+  }
+
+  let body: unknown = null;
+
+  try {
+    body = await request.json();
+  } catch {
+    body = null;
+  }
+
+  const payload = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  const birthDateRaw = String(payload.birthDate ?? "").trim();
+  const birthDate = birthDateRaw ? birthDateRaw : null;
+
+  if (birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
+    return NextResponse.json(
+      { ok: false, message: "Informe uma data de nascimento valida." },
+      { status: 400 },
+    );
+  }
+
+  const { data: existingProfile, error: profileError } = await adminClient.client
+    .schema(OPERATIONS_SCHEMA)
+    .from("profiles_usuarios")
+    .select("id,user_type")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+
+  if (profileError || !existingProfile) {
+    return NextResponse.json(
+      { ok: false, message: "Nao foi possivel localizar seu perfil para atualizar." },
+      { status: 404 },
+    );
+  }
+
+  if (normalizeUserType(existingProfile.user_type) !== "parceiro") {
+    return NextResponse.json(
+      { ok: false, message: "Apenas parceiros podem atualizar esses dados no perfil." },
+      { status: 403 },
+    );
+  }
+
+  const { data: updated, error: updateError } = await adminClient.client
+    .schema(OPERATIONS_SCHEMA)
+    .from("profiles_usuarios")
+    .update({ birth_date: birthDate, updated_at: new Date().toISOString() })
+    .eq("id", existingProfile.id)
+    .select("birth_date")
+    .single();
+
+  if (updateError) {
+    return NextResponse.json(
+      { ok: false, message: "Nao foi possivel atualizar sua data de nascimento." },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json(
+    {
+      ok: true,
+      birthDate: typeof updated.birth_date === "string" ? updated.birth_date : null,
+    },
+    { status: 200 },
+  );
+}
