@@ -68,16 +68,9 @@ export const APP_NAVIGATION_ITEMS: AppNavigationItem[] = [
   {
     href: "/pedidos",
     label: "Pedidos",
-    hint: "Venda e producao",
+    hint: "Fluxo do mes",
     icon: "pedidos",
     permission: "pedidos",
-  },
-  {
-    href: "/financeiro",
-    label: "Financeiro",
-    hint: "Margem liquida",
-    icon: "financeiro",
-    permission: "financeiro",
   },
   {
     href: "/integracoes/nuvemshop",
@@ -329,11 +322,11 @@ export function resolveRequiredPermission(path: string): UserMenuPermissionKey |
     return "estoque";
   }
 
-  if (path.startsWith("/pedidos")) {
+  if (path.startsWith("/pedidos") || path.startsWith("/financeiro")) {
     return "pedidos";
   }
 
-  if (path.startsWith("/financeiro") || path.startsWith("/simulador")) {
+  if (path.startsWith("/simulador")) {
     return "financeiro";
   }
 
