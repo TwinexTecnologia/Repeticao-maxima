@@ -430,6 +430,9 @@ export default async function PedidosPage({ searchParams }: PageProps) {
     };
 
     const cashFlow = buildMonthlyCashFlow(config, flow);
+    const grossRevenue = cashFlow.nuvemRows.reduce((sum, row) => sum + row.total, 0);
+    const netRevenue = cashFlow.nuvemRows.reduce((sum, row) => sum + row.netReceived, 0);
+    const totalFees = cashFlow.nuvemRows.reduce((sum, row) => sum + row.feeCost, 0);
     const averageDailyEntry = cashFlow.entradasTotais / Math.max(dayStats.elapsedDays, 1);
     const projectedMonthEntry = dayStats.isCurrentMonth
       ? averageDailyEntry * dayStats.totalDays
@@ -438,8 +441,8 @@ export default async function PedidosPage({ searchParams }: PageProps) {
 
     return (
       <AppShell
-        title="Pedidos"
-        subtitle="Sua leitura financeira do mes: entradas, saidas, projecao de fechamento e pedidos com nome do cliente."
+        title="Financeiro"
+        subtitle="Sua leitura financeira do mes: faturamento, faturamento liquido, saidas e projecao liquida."
         currentPath="/pedidos"
       >
         <section className={styles.section}>
@@ -560,7 +563,7 @@ export default async function PedidosPage({ searchParams }: PageProps) {
             <div>
               <div className={styles.sectionTitle}>Resumo financeiro</div>
               <p className={styles.sectionSubtitle}>
-                O lucro estimado saiu daqui e entrou a projecao de fechamento do mes com base na media diaria.
+                O lucro estimado saiu daqui e a leitura agora destaca faturamento, faturamento liquido e projecao liquida do mes.
               </p>
             </div>
           </div>
@@ -570,6 +573,18 @@ export default async function PedidosPage({ searchParams }: PageProps) {
               <div className={styles.metricLabel}>Entradas do mes</div>
               <div className={styles.metricValue}>{formatMoney(cashFlow.entradasTotais)}</div>
               <div className={styles.metricHint}>Liquido estimado da Nuvemshop mais entradas manuais</div>
+            </article>
+
+            <article className={styles.metricCard}>
+              <div className={styles.metricLabel}>Faturamento</div>
+              <div className={styles.metricValue}>{formatMoney(grossRevenue)}</div>
+              <div className={styles.metricHint}>Valor bruto vendido na Nuvemshop no mes</div>
+            </article>
+
+            <article className={styles.metricCard}>
+              <div className={styles.metricLabel}>Faturamento liquido</div>
+              <div className={styles.metricValue}>{formatMoney(netRevenue)}</div>
+              <div className={styles.metricHint}>Faturamento menos {formatMoney(totalFees)} de taxa</div>
             </article>
 
             <article className={styles.metricCard}>
@@ -585,11 +600,11 @@ export default async function PedidosPage({ searchParams }: PageProps) {
             </article>
 
             <article className={styles.metricCard}>
-              <div className={styles.metricLabel}>Projecao de fechamento</div>
+              <div className={styles.metricLabel}>Projecao liquida</div>
               <div className={styles.metricValue}>{formatMoney(projectedMonthEntry)}</div>
               <div className={styles.metricHint}>
                 {dayStats.isCurrentMonth
-                  ? `Media diaria de ${formatMoney(averageDailyEntry)} para fechar o mes. Saldo projetado: ${formatMoney(projectedMonthBalance)}`
+                  ? `Media diaria liquida de ${formatMoney(averageDailyEntry)} para fechar o mes. Saldo projetado: ${formatMoney(projectedMonthBalance)}`
                   : "Mes encerrado. A projecao bate com o valor final da competencia."}
               </div>
             </article>
@@ -723,7 +738,7 @@ export default async function PedidosPage({ searchParams }: PageProps) {
 
     return (
       <AppShell
-        title="Pedidos"
+        title="Financeiro"
         subtitle="Sua leitura financeira do mes."
         currentPath="/pedidos"
       >
