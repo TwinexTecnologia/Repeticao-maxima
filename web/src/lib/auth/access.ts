@@ -67,7 +67,7 @@ export const APP_NAVIGATION_ITEMS: AppNavigationItem[] = [
   },
   {
     href: "/pedidos",
-    label: "Pedidos",
+    label: "Financeiro",
     hint: "Fluxo do mes",
     icon: "pedidos",
     permission: "pedidos",
