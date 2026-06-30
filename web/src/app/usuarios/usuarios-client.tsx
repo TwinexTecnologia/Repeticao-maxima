@@ -349,7 +349,9 @@ export function UsuariosClient({
     setPartnerForm((current) => ({
       ...current,
       linkedPartnerId: value,
-      fullName: current.fullName || option?.name || "",
+      fullName:
+        current.fullName ||
+        (option?.source === "cadastro" ? option.name : ""),
       partnerType: option?.role || current.partnerType,
     }));
   }
@@ -518,6 +520,7 @@ export function UsuariosClient({
                   {initialPartnerOptions.map((option) => (
                     <option key={option.id} value={option.id}>
                       {option.name} · {option.couponCode}
+                      {option.source === "nuvemshop" ? " · cupom sem cadastro interno" : ""}
                     </option>
                   ))}
                 </select>
@@ -683,7 +686,9 @@ export function UsuariosClient({
               <h3>Leitura do parceiro</h3>
               <p>
                 {selectedPartnerOption
-                  ? `${selectedPartnerOption.name} esta vinculado ao cupom ${selectedPartnerOption.couponCode}.`
+                  ? selectedPartnerOption.source === "cadastro"
+                    ? `${selectedPartnerOption.name} esta vinculado ao cupom ${selectedPartnerOption.couponCode}.`
+                    : `O cupom ${selectedPartnerOption.couponCode} foi encontrado na loja e o cadastro interno sera criado ao salvar esse acesso.`
                   : "Voce pode cadastrar um parceiro novo sem vinculo de cupom agora."}
               </p>
             </div>
