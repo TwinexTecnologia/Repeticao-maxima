@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 
+import { loadKnownCouponsFromStore } from "@/lib/parceiros/repository";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -68,6 +69,7 @@ export type UserPartnerOption = {
   name: string;
   couponCode: string;
   role: "influenciador" | "atleta";
+  source: "cadastro" | "nuvemshop";
 };
 
 const DEFAULT_PERMISSIONS: UserMenuPermissions = {
@@ -97,7 +99,7 @@ export async function loadUserAccessModuleData() {
   }
 
   try {
-    const [profilesResult, permissionsResult, partnerResult] = await Promise.all([
+    const [profilesResult, permissionsResult, partnerResult, knownCouponsResult] = await Promise.all([
       supabase.client
         .schema(OPERATIONS_SCHEMA)
         .from(USERS_TABLE)
@@ -113,6 +115,7 @@ export async function loadUserAccessModuleData() {
         .from(PARTNER_TABLE)
         .select("id, name, coupon_code, role")
         .order("name", { ascending: true }),
+      loadKnownCouponsFromStore(),
     ]);
 
     if (profilesResult.error) {
@@ -139,12 +142,46 @@ export async function loadUserAccessModuleData() {
       permissionsMap.set(profileId, rowToPermissions(row));
     }
 
-    const partnerOptions = (partnerResult.data ?? []).map((row) => ({
-      id: String(row.id ?? ""),
-      name: String(row.name ?? "").trim(),
-      couponCode: String(row.coupon_code ?? "").trim().toUpperCase(),
-      role: normalizeExistingPartnerRole(row.role),
-    }));
+    const partnerOptionsMap = new Map<string, UserPartnerOption>();
+
+    for (const row of partnerResult.data ?? []) {
+      const option = {
+        id: String(row.id ?? ""),
+        name: String(row.name ?? "").trim(),
+        couponCode: String(row.coupon_code ?? "").trim().toUpperCase(),
+        role: normalizeExistingPartnerRole(row.role),
+        source: "cadastro" as const,
+      };
+
+      if (!option.id || !option.couponCode) {
+        continue;
+      }
+
+      partnerOptionsMap.set(option.couponCode, option);
+    }
+
+    for (const coupon of knownCouponsResult.coupons) {
+      const couponCode = String(coupon.code ?? "").trim().toUpperCase();
+
+      if (!couponCode || partnerOptionsMap.has(couponCode)) {
+        continue;
+      }
+
+      partnerOptionsMap.set(couponCode, {
+        id: buildDiscoveredPartnerOptionId(couponCode),
+        name: couponCode,
+        couponCode,
+        role: "influenciador",
+        source: "nuvemshop",
+      });
+    }
+
+    const partnerOptions = Array.from(partnerOptionsMap.values()).sort((left, right) => {
+      const nameComparison = left.name.localeCompare(right.name);
+      return nameComparison !== 0
+        ? nameComparison
+        : left.couponCode.localeCompare(right.couponCode);
+    });
 
     const partnerOptionMap = new Map(partnerOptions.map((item) => [item.id, item] as const));
     const employees: EmployeeAccessUser[] = [];
@@ -301,9 +338,17 @@ export async function createPartnerAccessUser(input: unknown) {
   let generatedPassword: string | null = null;
 
   try {
-    const existingProfile = await findExistingPartnerProfile(
+    const linkedPartnerId = await ensureLinkedPartnerProfile(
       supabase.client,
       row.linkedPartnerId,
+      row.fullName,
+      row.partnerType,
+      row.active,
+      row.notes,
+    );
+    const existingProfile = await findExistingPartnerProfile(
+      supabase.client,
+      linkedPartnerId,
       row.email,
     );
 
@@ -426,7 +471,7 @@ export async function createPartnerAccessUser(input: unknown) {
       authUserId || (existingProfile?.auth_user_id ? String(existingProfile.auth_user_id) : null);
     const savePayload = {
       auth_user_id: nextAuthUserId,
-      coupon_partner_id: row.linkedPartnerId,
+      coupon_partner_id: linkedPartnerId,
       user_type: "parceiro",
       partner_type: row.partnerType,
       full_name: row.fullName,
@@ -460,8 +505,8 @@ export async function createPartnerAccessUser(input: unknown) {
       throw profileError || new Error("Nao foi possivel salvar o parceiro.");
     }
 
-    const linkedPartner = row.linkedPartnerId
-      ? await loadSinglePartnerOption(supabase.client, row.linkedPartnerId)
+    const linkedPartner = linkedPartnerId
+      ? await loadSinglePartnerOption(supabase.client, linkedPartnerId)
       : null;
 
     return {
@@ -510,7 +555,66 @@ async function loadSinglePartnerOption(
     name: String(data.name ?? "").trim(),
     couponCode: String(data.coupon_code ?? "").trim().toUpperCase(),
     role: normalizeExistingPartnerRole(data.role),
+    source: "cadastro",
   } satisfies UserPartnerOption;
+}
+
+async function ensureLinkedPartnerProfile(
+  client: SupabaseClient,
+  linkedPartnerId: string | null,
+  fullName: string,
+  partnerType: PartnerUserType,
+  active: boolean,
+  notes: string,
+) {
+  if (!linkedPartnerId) {
+    return null;
+  }
+
+  if (!isDiscoveredPartnerOptionId(linkedPartnerId)) {
+    return linkedPartnerId;
+  }
+
+  const couponCode = extractCouponCodeFromOptionId(linkedPartnerId);
+
+  if (!couponCode) {
+    return null;
+  }
+
+  const { data: existingData, error: existingError } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(PARTNER_TABLE)
+    .select("id")
+    .eq("coupon_code", couponCode)
+    .maybeSingle();
+
+  if (existingError) {
+    throw existingError;
+  }
+
+  if (existingData?.id) {
+    return String(existingData.id);
+  }
+
+  const { data, error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(PARTNER_TABLE)
+    .insert({
+      name: fullName || couponCode,
+      coupon_code: couponCode,
+      role: mapPartnerTypeToCouponRole(partnerType),
+      active,
+      notes,
+      updated_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+
+  if (error || !data?.id) {
+    throw error || new Error("Nao foi possivel criar o parceiro do cupom para vincular o acesso.");
+  }
+
+  return String(data.id);
 }
 
 async function findExistingPartnerProfile(
@@ -731,6 +835,22 @@ function normalizeExistingPartnerRole(value: unknown): "influenciador" | "atleta
   return String(value ?? "").trim().toLowerCase() === "atleta"
     ? "atleta"
     : "influenciador";
+}
+
+function mapPartnerTypeToCouponRole(value: PartnerUserType): "influenciador" | "atleta" {
+  return value === "atleta" ? "atleta" : "influenciador";
+}
+
+function buildDiscoveredPartnerOptionId(couponCode: string) {
+  return `coupon:${couponCode}`;
+}
+
+function isDiscoveredPartnerOptionId(value: string) {
+  return value.startsWith("coupon:");
+}
+
+function extractCouponCodeFromOptionId(value: string) {
+  return value.slice("coupon:".length).trim().toUpperCase();
 }
 
 function normalizePartnerUserType(value: unknown): PartnerUserType {

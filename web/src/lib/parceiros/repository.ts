@@ -892,7 +892,7 @@ export async function updatePartnerRedemption(id: string, input: unknown) {
   }
 }
 
-async function loadKnownCouponsFromStore() {
+export async function loadKnownCouponsFromStore() {
   const credentials = getNuvemshopCredentials();
 
   if (!credentials.ok) {
