@@ -37,6 +37,38 @@ ALTER TABLE repeticao_maxima.dividas_internas
   ADD COLUMN IF NOT EXISTS installment_number INTEGER NOT NULL DEFAULT 1,
   ADD COLUMN IF NOT EXISTS group_id UUID NOT NULL DEFAULT gen_random_uuid();
 
+CREATE TABLE IF NOT EXISTS repeticao_maxima.financeiro_saldos_mensais (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  month_ref DATE NOT NULL,
+  opening_balance NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (opening_balance >= 0),
+  CHECK (EXTRACT(DAY FROM month_ref) = 1),
+  UNIQUE (month_ref)
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.financeiro_saldos_mensais TO anon, authenticated, service_role;
+
+CREATE TABLE IF NOT EXISTS repeticao_maxima.financeiro_movimentacoes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  movement_date DATE NOT NULL,
+  movement_type TEXT NOT NULL DEFAULT 'saida',
+  title TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL DEFAULT 'Operacional',
+  amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  payment_method TEXT NOT NULL DEFAULT 'outro',
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (movement_type IN ('entrada', 'saida')),
+  CHECK (amount >= 0),
+  CHECK (payment_method IN ('pix', 'boleto', 'cartao', 'transferencia', 'dinheiro', 'outro'))
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.financeiro_movimentacoes TO anon, authenticated, service_role;
+
 CREATE TABLE IF NOT EXISTS repeticao_maxima.estoque_base (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   sku TEXT NOT NULL,
