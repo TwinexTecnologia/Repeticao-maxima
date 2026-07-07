@@ -13,6 +13,8 @@ import type {
 
 const OPERATIONS_SCHEMA = "repeticao_maxima";
 const DEBTS_TABLE = "dividas_internas";
+const FINANCE_BALANCES_TABLE = "financeiro_saldos_mensais";
+const FINANCE_MOVEMENTS_TABLE = "financeiro_movimentacoes";
 const STOCK_TABLE = "estoque_base";
 const STOCK_MOVEMENTS_TABLE = "estoque_movimentacoes";
 const DTF_TABLE = "estoque_dtf";
@@ -50,6 +52,30 @@ export type InternalDebt = {
   installmentNumber: number;
   groupId: string;
   monthLabel: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type FinancialMovementType = "entrada" | "saida";
+
+export type MonthlyOpeningBalance = {
+  id: string;
+  monthRef: string;
+  openingBalance: number;
+  notes: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type ManualFinanceMovement = {
+  id: string;
+  movementDate: string;
+  type: FinancialMovementType;
+  title: string;
+  category: string;
+  amount: number;
+  paymentMethod: DebtPaymentMethod;
+  notes: string;
   createdAt: string | null;
   updatedAt: string | null;
 };
@@ -194,6 +220,187 @@ export async function loadDebtModuleData() {
   } catch (error) {
     return {
       debts: getFallbackDebts(),
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function loadManualFinanceModuleData(selectedMonth: string) {
+  const supabase = createSupabaseServerClient();
+  const monthRef = normalizeMonthReference(selectedMonth) || getCurrentMonthReference();
+  const monthStart = `${monthRef}-01`;
+  const monthEnd = getMonthEndDate(monthRef);
+
+  if (!supabase.ok) {
+    return {
+      balance: null as MonthlyOpeningBalance | null,
+      movements: [] as ManualFinanceMovement[],
+      persistence: buildDisabledState(
+        `Persistencia desativada. Configure ${supabase.missing.join(" e ")} para salvar o financeiro manual no Supabase.`,
+      ),
+    };
+  }
+
+  try {
+    const [{ data: balanceData, error: balanceError }, { data: movementData, error: movementError }] =
+      await Promise.all([
+        supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(FINANCE_BALANCES_TABLE)
+          .select("*")
+          .eq("month_ref", monthStart)
+          .maybeSingle(),
+        supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(FINANCE_MOVEMENTS_TABLE)
+          .select("*")
+          .gte("movement_date", monthStart)
+          .lte("movement_date", monthEnd)
+          .order("movement_date", { ascending: true })
+          .order("created_at", { ascending: true }),
+      ]);
+
+    if (balanceError) {
+      throw balanceError;
+    }
+
+    if (movementError) {
+      throw movementError;
+    }
+
+    const movements = (movementData ?? []).map(rowToManualFinanceMovement);
+    const latestUpdatedAt = getLatestUpdatedAt([
+      ...(balanceData ? [balanceData as Record<string, unknown>] : []),
+      ...((movementData ?? []) as Array<Record<string, unknown>>),
+    ]);
+
+    return {
+      balance: balanceData ? rowToMonthlyOpeningBalance(balanceData) : null,
+      movements,
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          balanceData || movements.length > 0
+            ? "Financeiro manual carregado do Supabase."
+            : "Supabase conectado. Ainda nao existem saldo inicial nem movimentacoes para este mes.",
+        updatedAt: latestUpdatedAt,
+      },
+    };
+  } catch (error) {
+    return {
+      balance: null as MonthlyOpeningBalance | null,
+      movements: [] as ManualFinanceMovement[],
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function saveMonthlyOpeningBalance(input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeMonthlyOpeningBalanceInput(input);
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_BALANCES_TABLE)
+      .upsert(
+        {
+          month_ref: `${row.monthRef}-01`,
+          opening_balance: row.openingBalance,
+          notes: row.notes,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: "month_ref",
+        },
+      )
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel salvar o saldo inicial do mes.");
+    }
+
+    return {
+      ok: true as const,
+      balance: rowToMonthlyOpeningBalance(data),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message: "Saldo inicial do mes salvo com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function createManualFinanceMovement(input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeManualFinanceMovementInput(input);
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_MOVEMENTS_TABLE)
+      .insert({
+        movement_date: row.movementDate,
+        movement_type: row.type,
+        title: row.title,
+        category: row.category,
+        amount: row.amount,
+        payment_method: row.paymentMethod,
+        notes: row.notes,
+        updated_at: new Date().toISOString(),
+      })
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel salvar a movimentacao financeira.");
+    }
+
+    return {
+      ok: true as const,
+      movement: rowToManualFinanceMovement(data),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          row.type === "entrada"
+            ? "Entrada manual registrada com sucesso."
+            : "Saida manual registrada com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
       persistence: buildDisabledState(getErrorMessage(error)),
     };
   }
@@ -840,6 +1047,32 @@ function rowToDebt(row: Record<string, unknown>): InternalDebt {
   };
 }
 
+function rowToMonthlyOpeningBalance(row: Record<string, unknown>): MonthlyOpeningBalance {
+  return {
+    id: String(row.id ?? ""),
+    monthRef: String(row.month_ref ?? "").slice(0, 7),
+    openingBalance: getNumberValue(row.opening_balance),
+    notes: String(row.notes ?? "").trim(),
+    createdAt: typeof row.created_at === "string" ? row.created_at : null,
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+  };
+}
+
+function rowToManualFinanceMovement(row: Record<string, unknown>): ManualFinanceMovement {
+  return {
+    id: String(row.id ?? ""),
+    movementDate: normalizeDate(row.movement_date) || getTodayDate(),
+    type: normalizeFinancialMovementType(row.movement_type),
+    title: String(row.title ?? "").trim(),
+    category: String(row.category ?? "").trim(),
+    amount: Math.max(getNumberValue(row.amount), 0),
+    paymentMethod: normalizeDebtPaymentMethod(row.payment_method),
+    notes: String(row.notes ?? "").trim(),
+    createdAt: typeof row.created_at === "string" ? row.created_at : null,
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+  };
+}
+
 function rowToStockItem(
   row: Record<string, unknown>,
   publishedByBaseColorSize: Map<string, number>,
@@ -947,6 +1180,31 @@ function normalizeDebtInput(input: unknown) {
   };
 }
 
+function normalizeMonthlyOpeningBalanceInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+  const monthRef = normalizeMonthReference(source.monthRef) || getCurrentMonthReference();
+
+  return {
+    monthRef,
+    openingBalance: getNumberValue(source.openingBalance),
+    notes: String(source.notes ?? "").trim(),
+  };
+}
+
+function normalizeManualFinanceMovementInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+
+  return {
+    movementDate: normalizeDate(source.movementDate) || getTodayDate(),
+    type: normalizeFinancialMovementType(source.type),
+    title: String(source.title ?? "").trim() || "Movimentacao manual",
+    category: String(source.category ?? "").trim() || "Operacional",
+    amount: Math.max(getNumberValue(source.amount), 0),
+    paymentMethod: normalizeDebtPaymentMethod(source.paymentMethod),
+    notes: String(source.notes ?? "").trim(),
+  };
+}
+
 function normalizeStockInput(input: unknown) {
   const source = isRecord(input) ? input : {};
   const total = Math.max(getIntegerValue(source.total), 0);
@@ -999,6 +1257,10 @@ function normalizeDebtStatus(value: unknown): DebtStatus {
   }
 
   return "aberta";
+}
+
+function normalizeFinancialMovementType(value: unknown): FinancialMovementType {
+  return String(value ?? "").trim().toLowerCase() === "entrada" ? "entrada" : "saida";
 }
 
 function normalizeDebtPaymentMethod(value: unknown): DebtPaymentMethod {
@@ -1860,6 +2122,15 @@ function normalizeDate(value: unknown) {
   return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : "";
 }
 
+function normalizeMonthReference(value: unknown) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const trimmed = value.trim();
+  return /^\d{4}-\d{2}$/.test(trimmed) ? trimmed : "";
+}
+
 function formatDebtMonth(value: string) {
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) {
@@ -1950,6 +2221,19 @@ function formatDateForDb(date: Date) {
 
 function getTodayDate() {
   return formatDateForDb(new Date());
+}
+
+function getCurrentMonthReference() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function getMonthEndDate(monthRef: string) {
+  const [yearText, monthText] = monthRef.split("-");
+  const year = Number.parseInt(yearText || "", 10);
+  const monthIndex = Number.parseInt(monthText || "", 10) - 1;
+  const endDate = new Date(year, monthIndex + 1, 0);
+  return formatDateForDb(endDate);
 }
 
 function getLatestUpdatedAt(rows: Array<Record<string, unknown>>) {
