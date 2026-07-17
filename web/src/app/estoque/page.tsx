@@ -397,35 +397,23 @@ export default async function EstoquePage({ searchParams }: PageProps) {
               </div>
             </form>
           </article>
-        </div>
 
-        <div className={styles.configGrid}>
           <article className={styles.configCard}>
             <div className={styles.listTitle}>Registrar entrada</div>
             <p className={styles.sectionSubtitle}>
               Informe o modelo, a cor, o tamanho, a quantidade, a origem e a data da entrada das camisetas.
-              Informe a quantidade, a cor, o tamanho, a origem e a data da entrada das camisetas.
             </p>
 
             <form action={registerStockEntryAction} className={styles.formStack}>
               <input type="hidden" name="redirectTo" value={redirectTo} />
 
               <label className={styles.filterField}>
-
                 <span>Modelo</span>
                 <select name="sku" required defaultValue={modelOptions[0] ?? ""}>
                   {modelOptions.length > 0 ? (
                     modelOptions.map((option) => (
                       <option key={option} value={option}>
                         {option}
-
-                <span>Cor, tamanho e base</span>
-                <select name="stockBaseKey" required defaultValue={combinedBaseOptions[0]?.key ?? ""}>
-                  {combinedBaseOptions.length > 0 ? (
-                    combinedBaseOptions.map((option) => (
-                      <option key={option.key} value={option.key}>
-                        {option.color} · {option.size} · {option.sku}
-                        {option.source === "nuvemshop" ? " · novo" : ""}
                       </option>
                     ))
                   ) : (
@@ -512,7 +500,6 @@ export default async function EstoquePage({ searchParams }: PageProps) {
             <div className={styles.listTitle}>Registrar saida</div>
             <p className={styles.sectionSubtitle}>
               Informe o modelo, a cor, o tamanho, a quantidade, a origem e selecione o nome da arte. A baixa acontece na lisa.
-              Informe a cor, o tamanho, a quantidade, a origem e selecione o nome da arte que saiu.
             </p>
 
             <form action={registerStockExitAction} className={styles.formStack}>
@@ -555,12 +542,6 @@ export default async function EstoquePage({ searchParams }: PageProps) {
                     sizeOptions.map((option) => (
                       <option key={option} value={option}>
                         {option}
-                <span>Cor, tamanho e base</span>
-                <select name="stockBaseKey" required defaultValue={combinedBaseOptions[0]?.key ?? ""}>
-                  {combinedBaseOptions.length > 0 ? (
-                    combinedBaseOptions.map((option) => (
-                      <option key={option.key} value={option.key}>
-                        {option.color} · {option.size} · {option.sku} · saldo {option.plain}
                       </option>
                     ))
                   ) : (
@@ -615,7 +596,7 @@ export default async function EstoquePage({ searchParams }: PageProps) {
               <label className={styles.checkboxCard}>
                 <input type="checkbox" name="alreadyPrinted" value="true" />
                 <span>
-                  <strong>Ja estava estampado</strong>
+                  <strong>Ja estava estampada</strong>
                   <span>Registra a saida e a arte, mas nao baixa a lisa porque essa peca veio de outro lote ja estampado.</span>
                 </span>
               </label>
