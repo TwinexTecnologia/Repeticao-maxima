@@ -595,51 +595,62 @@ async function saveManualStockMovement(
     const previousTotal = getIntegerValue(existingRow?.total_qty);
     const previousPrinted = Math.min(getIntegerValue(existingRow?.printed_qty), previousTotal);
     const previousPlain = Math.max(previousTotal - previousPrinted, 0);
+    const keepPlainStock = movementType === "saida" && row.alreadyPrinted;
 
-    if (movementType === "saida" && previousPlain < row.quantity) {
+    if (movementType === "saida" && !keepPlainStock && previousPlain < row.quantity) {
       throw new Error(
         `Nao ha lisa suficiente em estoque. Restam ${previousPlain} unidades para ${row.sku} ${row.color} ${row.size}.`,
       );
     }
 
-    const nextTotal =
-      movementType === "entrada" ? previousTotal + row.quantity : previousTotal - row.quantity;
+    const nextTotal = keepPlainStock
+      ? previousTotal
+      : movementType === "entrada"
+        ? previousTotal + row.quantity
+        : previousTotal - row.quantity;
 
-    const operation = existingRow?.id
-      ? supabase.client
-          .schema(OPERATIONS_SCHEMA)
-          .from(STOCK_TABLE)
-          .update({
-            total_qty: nextTotal,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", existingRow.id)
-      : supabase.client
-          .schema(OPERATIONS_SCHEMA)
-          .from(STOCK_TABLE)
-          .insert({
-            sku: row.sku,
-            color: row.color,
-            size: row.size,
-            total_qty: nextTotal,
-            printed_qty: 0,
-            reorder_point: 0,
-            lead_time_days: 10,
-            notes: "",
-          });
+    let persistedRow = existingRow ?? null;
 
-    const { data, error } = await operation.select("*").single();
+    if (!keepPlainStock) {
+      const operation = existingRow?.id
+        ? supabase.client
+            .schema(OPERATIONS_SCHEMA)
+            .from(STOCK_TABLE)
+            .update({
+              total_qty: nextTotal,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", existingRow.id)
+        : supabase.client
+            .schema(OPERATIONS_SCHEMA)
+            .from(STOCK_TABLE)
+            .insert({
+              sku: row.sku,
+              color: row.color,
+              size: row.size,
+              total_qty: nextTotal,
+              printed_qty: 0,
+              reorder_point: 0,
+              lead_time_days: 10,
+              notes: "",
+            });
 
-    if (error || !data) {
-      throw error || new Error("Nao foi possivel atualizar o saldo de camisetas.");
+      const { data, error } = await operation.select("*").single();
+
+      if (error || !data) {
+        throw error || new Error("Nao foi possivel atualizar o saldo de camisetas.");
+      }
+
+      persistedRow = data;
     }
 
-    const nextTotalValue = getIntegerValue(data.total_qty);
-    const nextPrinted = Math.min(getIntegerValue(data.printed_qty), nextTotalValue);
+    const nextTotalValue = getIntegerValue(persistedRow?.total_qty);
+    const nextPrinted = Math.min(getIntegerValue(persistedRow?.printed_qty), nextTotalValue);
     const nextPlain = Math.max(nextTotalValue - nextPrinted, 0);
+    const stockItemId = String(persistedRow?.id ?? existingRow?.id ?? "");
 
     await createStockMovement(supabase.client, {
-      stockItemId: String(data.id ?? existingRow?.id ?? ""),
+      stockItemId,
       sku: row.sku,
       color: row.color,
       size: row.size,
@@ -653,22 +664,30 @@ async function saveManualStockMovement(
       originType: row.originType,
       originReference: row.originReference,
       reasonCategory:
-        movementType === "entrada" ? "entrada_manual_camiseta" : "saida_manual_camiseta",
-      reasonText: row.notes,
+        movementType === "entrada"
+          ? "entrada_manual_camiseta"
+          : keepPlainStock
+            ? "saida_ja_estampada_sem_baixa"
+            : "saida_manual_camiseta",
+      reasonText: keepPlainStock
+        ? [row.notes, "Ja estava estampada em outro lote; sem baixa da lisa."]
+            .filter(Boolean)
+            .join(" ")
+        : row.notes,
       sourceModule: "estoque_manual",
     });
 
     return {
       ok: true as const,
       item: {
-        id: String(data.id ?? ""),
+        id: stockItemId,
         sku: row.sku,
         color: row.color,
         size: row.size,
         total: nextTotalValue,
         printedReal: nextPrinted,
         plain: nextPlain,
-        notes: String(data.notes ?? "").trim(),
+        notes: String(persistedRow?.notes ?? "").trim(),
       } satisfies StockSelectionOption,
       persistence: {
         enabled: true,
@@ -676,8 +695,10 @@ async function saveManualStockMovement(
         message:
           movementType === "entrada"
             ? "Entrada de camisetas registrada com sucesso."
+            : keepPlainStock
+              ? "Saida registrada como ja estampada, sem baixar a lisa."
             : "Saida de camisetas registrada com sucesso.",
-        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+        updatedAt: typeof persistedRow?.updated_at === "string" ? persistedRow.updated_at : null,
       },
     };
   } catch (error) {
@@ -1509,6 +1530,7 @@ function normalizeManualStockMovementInput(
   input: unknown,
 ) {
   const source = isRecord(input) ? input : {};
+  const alreadyPrintedValue = String(source.alreadyPrinted ?? "").trim().toLowerCase();
 
   return {
     sku: String(source.sku ?? "").trim(),
@@ -1521,6 +1543,12 @@ function normalizeManualStockMovementInput(
     artSelectionId: String(source.artSelectionId ?? "").trim(),
     artName: String(source.artName ?? "").trim(),
     artProductId: String(source.artProductId ?? "").trim(),
+    alreadyPrinted:
+      movementType === "saida" &&
+      (alreadyPrintedValue === "true" ||
+        alreadyPrintedValue === "1" ||
+        alreadyPrintedValue === "on" ||
+        alreadyPrintedValue === "yes"),
     notes: String(source.notes ?? "").trim(),
     movementType,
   };

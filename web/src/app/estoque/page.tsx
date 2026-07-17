@@ -219,6 +219,7 @@ async function registerStockExitAction(formData: FormData) {
   const movementDate = String(formData.get("movementDate") ?? "").trim();
   const originType = String(formData.get("originType") ?? "venda").trim();
   const originReference = String(formData.get("originReference") ?? "").trim();
+  const alreadyPrinted = String(formData.get("alreadyPrinted") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
   const base = parseStockBaseKey(stockBaseKey);
 
@@ -233,6 +234,7 @@ async function registerStockExitAction(formData: FormData) {
     originType,
     originReference,
     artSelectionId,
+    alreadyPrinted,
     notes,
   });
 
@@ -438,7 +440,7 @@ export default async function EstoquePage({ searchParams }: PageProps) {
           <article className={styles.configCard}>
             <div className={styles.listTitle}>Registrar saida</div>
             <p className={styles.sectionSubtitle}>
-              Use quando uma camiseta sair do estoque. Na venda, selecione tambem a arte estampada do site.
+              Use quando uma camiseta sair do estoque. Se ela ja tinha sido estampada em outro lote, marque isso para manter o saldo da lisa intacto.
             </p>
 
             <form action={registerStockExitAction} className={styles.formStack}>
@@ -500,6 +502,14 @@ export default async function EstoquePage({ searchParams }: PageProps) {
               <label className={styles.filterField}>
                 <span>Numero / referencia</span>
                 <input type="text" name="originReference" placeholder="Ex.: #201" />
+              </label>
+
+              <label className={styles.checkboxCard}>
+                <input type="checkbox" name="alreadyPrinted" value="true" />
+                <span>
+                  <strong>Ja estava estampada</strong>
+                  <span>Registra a saida e a arte, mas nao baixa a lisa porque essa peca veio de outro lote ja estampado.</span>
+                </span>
               </label>
 
               <label className={styles.filterField}>
