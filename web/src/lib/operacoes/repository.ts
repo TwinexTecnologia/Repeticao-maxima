@@ -582,7 +582,9 @@ async function saveManualStockMovement(
     const { data: existingRow, error: existingError } = await supabase.client
       .schema(OPERATIONS_SCHEMA)
       .from(STOCK_TABLE)
-      .select("id, sku, color, size, total_qty, printed_qty, notes, reorder_point, lead_time_days")
+      .select(
+        "id, sku, color, size, total_qty, printed_qty, notes, reorder_point, lead_time_days, updated_at",
+      )
       .eq("sku", row.sku)
       .eq("color", row.color)
       .eq("size", row.size)
