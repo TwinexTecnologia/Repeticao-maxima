@@ -123,10 +123,15 @@ CREATE TABLE IF NOT EXISTS repeticao_maxima.estoque_movimentacoes (
   sku TEXT NOT NULL DEFAULT '',
   color TEXT NOT NULL DEFAULT '',
   size TEXT NOT NULL DEFAULT '',
+  movement_date DATE NOT NULL DEFAULT CURRENT_DATE,
   movement_type TEXT NOT NULL DEFAULT 'ajuste',
   quantity INTEGER NOT NULL DEFAULT 0,
   plain_before INTEGER NOT NULL DEFAULT 0,
   plain_after INTEGER NOT NULL DEFAULT 0,
+  art_name TEXT NOT NULL DEFAULT '',
+  art_product_id TEXT NOT NULL DEFAULT '',
+  origin_type TEXT NOT NULL DEFAULT 'manual',
+  origin_reference TEXT NOT NULL DEFAULT '',
   reason_category TEXT NOT NULL DEFAULT 'ajuste_manual',
   reason_text TEXT NOT NULL DEFAULT '',
   source_module TEXT NOT NULL DEFAULT 'estoque',
@@ -138,6 +143,13 @@ CREATE TABLE IF NOT EXISTS repeticao_maxima.estoque_movimentacoes (
 );
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.estoque_movimentacoes TO anon, authenticated, service_role;
+
+ALTER TABLE repeticao_maxima.estoque_movimentacoes
+  ADD COLUMN IF NOT EXISTS movement_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  ADD COLUMN IF NOT EXISTS art_name TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS art_product_id TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS origin_type TEXT NOT NULL DEFAULT 'manual',
+  ADD COLUMN IF NOT EXISTS origin_reference TEXT NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS repeticao_maxima.promocoes_carrinho (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
