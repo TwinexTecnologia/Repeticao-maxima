@@ -730,14 +730,6 @@ async function resolveStockArtSelection(
     throw new Error("Nao foi possivel localizar a arte selecionada da Nuvem Shop.");
   }
 
-  if (
-    normalizeProductBase(selected.sku) !== normalizeProductBase(row.sku) ||
-    normalizeColor(selected.color) !== normalizeColor(row.color) ||
-    normalizeSize(selected.size) !== normalizeSize(row.size)
-  ) {
-    throw new Error("A arte selecionada nao bate com a base, cor e tamanho informados.");
-  }
-
   return {
     artName: selected.artName,
     artProductId: selected.productId,

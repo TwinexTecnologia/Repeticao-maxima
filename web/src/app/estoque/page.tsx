@@ -41,6 +41,11 @@ type CombinedStockBaseOption = {
   source: "estoque" | "nuvemshop";
 };
 
+type NamedArtOption = {
+  id: string;
+  artName: string;
+};
+
 function getSearchValue(
   searchParams: Record<string, string | string[] | undefined>,
   key: string,
@@ -108,13 +113,10 @@ function buildStockBaseKey(sku: string, color: string, size: string) {
   return [sku, color, size].join("||");
 }
 
-function parseStockBaseKey(value: string) {
-  const [sku = "", color = "", size = ""] = value.split("||");
-  return {
-    sku: sku.trim(),
-    color: color.trim(),
-    size: size.trim(),
-  };
+function getUniqueValues(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b),
+  );
 }
 
 function buildCombinedStockBaseOptions(
@@ -158,6 +160,24 @@ function buildCombinedStockBaseOptions(
   });
 }
 
+function buildNamedArtOptions(artOptions: SiteArtSelectionOption[]) {
+  const optionMap = new Map<string, NamedArtOption>();
+
+  for (const option of artOptions) {
+    const key = `${option.productId}::${option.artName}`;
+    if (!optionMap.has(key)) {
+      optionMap.set(key, {
+        id: option.id,
+        artName: option.artName,
+      });
+    }
+  }
+
+  return Array.from(optionMap.values()).sort((left, right) =>
+    left.artName.localeCompare(right.artName),
+  );
+}
+
 function appendFlashToRedirect(
   basePath: string,
   status: "success" | "error",
@@ -174,20 +194,23 @@ async function registerStockEntryAction(formData: FormData) {
   "use server";
 
   const redirectTo = String(formData.get("redirectTo") ?? "/estoque").trim() || "/estoque";
-  const stockBaseKey = String(formData.get("stockBaseKey") ?? "").trim();
+  const sku = String(formData.get("sku") ?? "").trim();
+  const color = String(formData.get("color") ?? "").trim();
+  const size = String(formData.get("size") ?? "").trim();
   const quantity = Number.parseInt(String(formData.get("quantity") ?? "0"), 10) || 0;
   const movementDate = String(formData.get("movementDate") ?? "").trim();
   const originType = String(formData.get("originType") ?? "compra").trim();
   const originReference = String(formData.get("originReference") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
-  const base = parseStockBaseKey(stockBaseKey);
 
-  if (!base.sku || !base.color || !base.size) {
+  if (!sku || !color || !size) {
     redirect(appendFlashToRedirect(redirectTo, "error", "Selecione a camiseta base da entrada."));
   }
 
   const result = await createManualStockEntry({
-    ...base,
+    sku,
+    color,
+    size,
     quantity,
     movementDate,
     originType,
@@ -213,7 +236,9 @@ async function registerStockExitAction(formData: FormData) {
   "use server";
 
   const redirectTo = String(formData.get("redirectTo") ?? "/estoque").trim() || "/estoque";
-  const stockBaseKey = String(formData.get("stockBaseKey") ?? "").trim();
+  const sku = String(formData.get("sku") ?? "").trim();
+  const color = String(formData.get("color") ?? "").trim();
+  const size = String(formData.get("size") ?? "").trim();
   const artSelectionId = String(formData.get("artSelectionId") ?? "").trim();
   const quantity = Number.parseInt(String(formData.get("quantity") ?? "0"), 10) || 0;
   const movementDate = String(formData.get("movementDate") ?? "").trim();
@@ -221,14 +246,15 @@ async function registerStockExitAction(formData: FormData) {
   const originReference = String(formData.get("originReference") ?? "").trim();
   const alreadyPrinted = String(formData.get("alreadyPrinted") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
-  const base = parseStockBaseKey(stockBaseKey);
 
-  if (!base.sku || !base.color || !base.size) {
+  if (!sku || !color || !size) {
     redirect(appendFlashToRedirect(redirectTo, "error", "Selecione a camiseta base da saida."));
   }
 
   const result = await createManualStockExit({
-    ...base,
+    sku,
+    color,
+    size,
     quantity,
     movementDate,
     originType,
@@ -286,6 +312,10 @@ export default async function EstoquePage({ searchParams }: PageProps) {
     stockData.stockOptions,
     stockData.artOptions,
   );
+  const modelOptions = getUniqueValues(combinedBaseOptions.map((option) => option.sku));
+  const colorOptions = getUniqueValues(combinedBaseOptions.map((option) => option.color));
+  const sizeOptions = getUniqueValues(combinedBaseOptions.map((option) => option.size));
+  const namedArtOptions = buildNamedArtOptions(stockData.artOptions);
   const totalPlainStock = stockData.stockOptions.reduce((sum, item) => sum + item.plain, 0);
   const totalEntries = stockData.movements.reduce(
     (sum, movement) => sum + (movement.movementType === "entrada" ? movement.quantity : 0),
@@ -373,6 +403,7 @@ export default async function EstoquePage({ searchParams }: PageProps) {
           <article className={styles.configCard}>
             <div className={styles.listTitle}>Registrar entrada</div>
             <p className={styles.sectionSubtitle}>
+              Informe o modelo, a cor, o tamanho, a quantidade, a origem e a data da entrada das camisetas.
               Informe a quantidade, a cor, o tamanho, a origem e a data da entrada das camisetas.
             </p>
 
@@ -380,6 +411,14 @@ export default async function EstoquePage({ searchParams }: PageProps) {
               <input type="hidden" name="redirectTo" value={redirectTo} />
 
               <label className={styles.filterField}>
+
+                <span>Modelo</span>
+                <select name="sku" required defaultValue={modelOptions[0] ?? ""}>
+                  {modelOptions.length > 0 ? (
+                    modelOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+
                 <span>Cor, tamanho e base</span>
                 <select name="stockBaseKey" required defaultValue={combinedBaseOptions[0]?.key ?? ""}>
                   {combinedBaseOptions.length > 0 ? (
@@ -390,7 +429,37 @@ export default async function EstoquePage({ searchParams }: PageProps) {
                       </option>
                     ))
                   ) : (
-                    <option value="">Nenhuma base mapeada</option>
+                    <option value="">Nenhum modelo mapeado</option>
+                  )}
+                </select>
+              </label>
+
+              <label className={styles.filterField}>
+                <span>Cor</span>
+                <select name="color" required defaultValue={colorOptions[0] ?? ""}>
+                  {colorOptions.length > 0 ? (
+                    colorOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">Nenhuma cor mapeada</option>
+                  )}
+                </select>
+              </label>
+
+              <label className={styles.filterField}>
+                <span>Tamanho</span>
+                <select name="size" required defaultValue={sizeOptions[0] ?? ""}>
+                  {sizeOptions.length > 0 ? (
+                    sizeOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">Nenhum tamanho mapeado</option>
                   )}
                 </select>
               </label>
@@ -398,16 +467,6 @@ export default async function EstoquePage({ searchParams }: PageProps) {
               <label className={styles.filterField}>
                 <span>Quantidade</span>
                 <input type="number" name="quantity" min="1" step="1" defaultValue="1" required />
-              </label>
-
-              <label className={styles.filterField}>
-                <span>Data</span>
-                <input
-                  type="date"
-                  name="movementDate"
-                  defaultValue={getDefaultMovementDateForMonth(selectedMonth)}
-                  required
-                />
               </label>
 
               <label className={styles.filterField}>
@@ -419,6 +478,16 @@ export default async function EstoquePage({ searchParams }: PageProps) {
                     </option>
                   ))}
                 </select>
+              </label>
+
+              <label className={styles.filterField}>
+                <span>Data</span>
+                <input
+                  type="date"
+                  name="movementDate"
+                  defaultValue={getDefaultMovementDateForMonth(selectedMonth)}
+                  required
+                />
               </label>
 
               <label className={styles.filterField}>
@@ -442,6 +511,7 @@ export default async function EstoquePage({ searchParams }: PageProps) {
           <article className={styles.configCard}>
             <div className={styles.listTitle}>Registrar saida</div>
             <p className={styles.sectionSubtitle}>
+              Informe o modelo, a cor, o tamanho, a quantidade, a origem e selecione o nome da arte. A baixa acontece na lisa.
               Informe a cor, o tamanho, a quantidade, a origem e selecione o nome da arte que saiu.
             </p>
 
@@ -449,6 +519,42 @@ export default async function EstoquePage({ searchParams }: PageProps) {
               <input type="hidden" name="redirectTo" value={redirectTo} />
 
               <label className={styles.filterField}>
+                <span>Modelo</span>
+                <select name="sku" required defaultValue={modelOptions[0] ?? ""}>
+                  {modelOptions.length > 0 ? (
+                    modelOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">Nenhum modelo mapeado</option>
+                  )}
+                </select>
+              </label>
+
+              <label className={styles.filterField}>
+                <span>Cor</span>
+                <select name="color" required defaultValue={colorOptions[0] ?? ""}>
+                  {colorOptions.length > 0 ? (
+                    colorOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">Nenhuma cor mapeada</option>
+                  )}
+                </select>
+              </label>
+
+              <label className={styles.filterField}>
+                <span>Tamanho</span>
+                <select name="size" required defaultValue={sizeOptions[0] ?? ""}>
+                  {sizeOptions.length > 0 ? (
+                    sizeOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
                 <span>Cor, tamanho e base</span>
                 <select name="stockBaseKey" required defaultValue={combinedBaseOptions[0]?.key ?? ""}>
                   {combinedBaseOptions.length > 0 ? (
@@ -458,7 +564,7 @@ export default async function EstoquePage({ searchParams }: PageProps) {
                       </option>
                     ))
                   ) : (
-                    <option value="">Nenhuma base mapeada</option>
+                    <option value="">Nenhum tamanho mapeado</option>
                   )}
                 </select>
               </label>
@@ -467,7 +573,7 @@ export default async function EstoquePage({ searchParams }: PageProps) {
                 <span>Nome da arte</span>
                 <select name="artSelectionId" defaultValue="">
                   <option value="">Sem arte vinculada</option>
-                  {stockData.artOptions.map((option) => (
+                  {namedArtOptions.map((option) => (
                     <option key={option.id} value={option.id}>
                       {option.artName}
                     </option>
@@ -481,16 +587,6 @@ export default async function EstoquePage({ searchParams }: PageProps) {
               </label>
 
               <label className={styles.filterField}>
-                <span>Data</span>
-                <input
-                  type="date"
-                  name="movementDate"
-                  defaultValue={getDefaultMovementDateForMonth(selectedMonth)}
-                  required
-                />
-              </label>
-
-              <label className={styles.filterField}>
                 <span>Origem</span>
                 <select name="originType" defaultValue="venda">
                   {EXIT_ORIGINS.map((origin) => (
@@ -499,6 +595,16 @@ export default async function EstoquePage({ searchParams }: PageProps) {
                     </option>
                   ))}
                 </select>
+              </label>
+
+              <label className={styles.filterField}>
+                <span>Data</span>
+                <input
+                  type="date"
+                  name="movementDate"
+                  defaultValue={getDefaultMovementDateForMonth(selectedMonth)}
+                  required
+                />
               </label>
 
               <label className={styles.filterField}>
