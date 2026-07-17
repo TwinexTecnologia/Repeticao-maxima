@@ -367,23 +367,25 @@ export default async function EstoquePage({ searchParams }: PageProps) {
               </div>
             </form>
           </article>
+        </div>
 
+        <div className={styles.configGrid}>
           <article className={styles.configCard}>
             <div className={styles.listTitle}>Registrar entrada</div>
             <p className={styles.sectionSubtitle}>
-              Use quando chegar lote novo, devolucao ou ajuste positivo de camisetas lisas.
+              Informe a quantidade, a cor, o tamanho, a origem e a data da entrada das camisetas.
             </p>
 
             <form action={registerStockEntryAction} className={styles.formStack}>
               <input type="hidden" name="redirectTo" value={redirectTo} />
 
               <label className={styles.filterField}>
-                <span>Base, cor e tamanho</span>
+                <span>Cor, tamanho e base</span>
                 <select name="stockBaseKey" required defaultValue={combinedBaseOptions[0]?.key ?? ""}>
                   {combinedBaseOptions.length > 0 ? (
                     combinedBaseOptions.map((option) => (
                       <option key={option.key} value={option.key}>
-                        {option.sku} · {option.color} · {option.size}
+                        {option.color} · {option.size} · {option.sku}
                         {option.source === "nuvemshop" ? " · novo" : ""}
                       </option>
                     ))
@@ -420,7 +422,7 @@ export default async function EstoquePage({ searchParams }: PageProps) {
               </label>
 
               <label className={styles.filterField}>
-                <span>Numero / referencia</span>
+                <span>Origem / referencia</span>
                 <input type="text" name="originReference" placeholder="Ex.: NF 302 ou lote 07" />
               </label>
 
@@ -440,19 +442,19 @@ export default async function EstoquePage({ searchParams }: PageProps) {
           <article className={styles.configCard}>
             <div className={styles.listTitle}>Registrar saida</div>
             <p className={styles.sectionSubtitle}>
-              Use quando uma camiseta sair do estoque. Se ela ja tinha sido estampada em outro lote, marque isso para manter o saldo da lisa intacto.
+              Informe a cor, o tamanho, a quantidade, a origem e selecione o nome da arte que saiu.
             </p>
 
             <form action={registerStockExitAction} className={styles.formStack}>
               <input type="hidden" name="redirectTo" value={redirectTo} />
 
               <label className={styles.filterField}>
-                <span>Base, cor e tamanho</span>
+                <span>Cor, tamanho e base</span>
                 <select name="stockBaseKey" required defaultValue={combinedBaseOptions[0]?.key ?? ""}>
                   {combinedBaseOptions.length > 0 ? (
                     combinedBaseOptions.map((option) => (
                       <option key={option.key} value={option.key}>
-                        {option.sku} · {option.color} · {option.size} · saldo {option.plain}
+                        {option.color} · {option.size} · {option.sku} · saldo {option.plain}
                       </option>
                     ))
                   ) : (
@@ -462,12 +464,12 @@ export default async function EstoquePage({ searchParams }: PageProps) {
               </label>
 
               <label className={styles.filterField}>
-                <span>Arte estampada</span>
+                <span>Nome da arte</span>
                 <select name="artSelectionId" defaultValue="">
                   <option value="">Sem arte vinculada</option>
                   {stockData.artOptions.map((option) => (
                     <option key={option.id} value={option.id}>
-                      {option.artName} · {option.sku} · {option.color} · {option.size}
+                      {option.artName}
                     </option>
                   ))}
                 </select>
@@ -500,14 +502,14 @@ export default async function EstoquePage({ searchParams }: PageProps) {
               </label>
 
               <label className={styles.filterField}>
-                <span>Numero / referencia</span>
+                <span>Origem / referencia</span>
                 <input type="text" name="originReference" placeholder="Ex.: #201" />
               </label>
 
               <label className={styles.checkboxCard}>
                 <input type="checkbox" name="alreadyPrinted" value="true" />
                 <span>
-                  <strong>Ja estava estampada</strong>
+                  <strong>Ja estava estampado</strong>
                   <span>Registra a saida e a arte, mas nao baixa a lisa porque essa peca veio de outro lote ja estampado.</span>
                 </span>
               </label>
