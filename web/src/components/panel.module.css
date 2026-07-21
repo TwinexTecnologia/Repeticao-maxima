@@ -541,10 +541,8 @@
   margin-top: 18px;
   padding: 12px;
   border-radius: 20px;
-  background:
-    radial-gradient(circle at top left, rgba(123, 44, 191, 0.06), transparent 42%),
-    linear-gradient(180deg, rgba(123, 44, 191, 0.03), rgba(176, 90, 0, 0.03));
-  border: 1px solid rgba(123, 44, 191, 0.08);
+  background: linear-gradient(180deg, rgba(171, 195, 231, 0.45), rgba(171, 195, 231, 0.28));
+  border: 1px solid rgba(127, 154, 196, 0.22);
 }
 
 .geoMap {
@@ -553,23 +551,41 @@
   display: block;
 }
 
+.geoMapOcean {
+  fill: #a8bfdf;
+}
+
 .geoMapSilhouette {
-  fill: rgba(123, 44, 191, 0.06);
-  stroke: rgba(91, 23, 149, 0.34);
-  stroke-width: 8px;
+  fill: #f6f0e6;
+  stroke: rgba(84, 74, 60, 0.3);
+  stroke-width: 7px;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
 
+.geoMapCountryLabel {
+  fill: rgba(31, 41, 55, 0.72);
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.2rem;
+}
+
+.geoMapNeighborLabel {
+  fill: rgba(31, 41, 55, 0.48);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.06rem;
+}
+
 .geoMapStateCode {
   fill: #2d1941;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 700;
 }
 
 .geoMapStateCount {
   fill: #ffffff;
-  font-size: 0.72rem;
+  font-size: 0.96rem;
   font-weight: 700;
 }
 

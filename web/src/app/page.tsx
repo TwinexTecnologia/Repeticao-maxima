@@ -13,6 +13,10 @@ const FULL_UNIT_COST = 52;
 const MINIMAL_UNIT_COST = 32;
 const DEFAULT_BANK_BALANCE = 331.34;
 
+type PageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
 type DashboardMetric = {
   label: string;
   value: string;
@@ -155,18 +159,31 @@ const BRAZIL_SILHOUETTE_PATH = `
   Z
 `;
 
-export default async function Home() {
+function getSearchValue(
+  searchParams: Record<string, string | string[] | undefined>,
+  key: string,
+) {
+  const value = searchParams[key];
+  return Array.isArray(value) ? value[0] || "" : value || "";
+}
+
+export default async function Home({ searchParams }: PageProps) {
+  const resolvedSearchParams = (await searchParams) || {};
+  const startDate = getSearchValue(resolvedSearchParams, "startDate");
+  const endDate = getSearchValue(resolvedSearchParams, "endDate");
   const currentMonth = getCurrentMonthReference();
   const [{ config }, flow, companyModule, manualFinance] = await Promise.all([
     loadFinanceConfig(),
-    loadMonthlyFinanceFlow(),
+    loadMonthlyFinanceFlow({
+      startDate,
+      endDate,
+    }),
     loadCompanyDiscountModuleData(),
     loadManualFinanceModuleData(currentMonth),
   ]);
 
   const snapshot = buildHomeSnapshot({
     orders: flow.orders,
-    allOrders: flow.allOrders,
     comboRules: companyModule.rules,
     unitPrice: config.unitPrice,
     config,
@@ -187,6 +204,43 @@ export default async function Home() {
       subtitle="Uma leitura limpa do mes com caixa manual, vendas da Nuvem Shop e combos ativos."
       currentPath="/"
     >
+      <section className={styles.section}>
+        <div className={styles.configCard}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <div className={styles.sectionTitle}>Filtro de periodo</div>
+              <p className={styles.sectionSubtitle}>
+                Filtra os dados da Nuvem Shop e do mapa de clientes pelo intervalo escolhido.
+              </p>
+            </div>
+            <div className={styles.chipRow}>
+              <span className={styles.chip}>Periodo: {flow.period.label}</span>
+            </div>
+          </div>
+
+          <form method="get" className={styles.filterGrid}>
+            <label className={styles.filterField}>
+              <span>Data inicial</span>
+              <input type="date" name="startDate" defaultValue={flow.period.startDate ?? ""} />
+            </label>
+
+            <label className={styles.filterField}>
+              <span>Data final</span>
+              <input type="date" name="endDate" defaultValue={flow.period.endDate ?? ""} />
+            </label>
+
+            <div className={styles.filterActions}>
+              <button type="submit" className={styles.primaryButton}>
+                Filtrar
+              </button>
+              <a href="/" className={styles.secondaryButton}>
+                Limpar periodo
+              </a>
+            </div>
+          </form>
+        </div>
+      </section>
+
       <section className={styles.section}>
         <div className={styles.metricGrid}>
           {snapshot.topMetrics.map((metric) => (
@@ -223,7 +277,7 @@ export default async function Home() {
               <div>
                 <div className={styles.sectionTitle}>Resumo da Nuvem Shop</div>
                 <p className={styles.sectionSubtitle}>
-                  So o essencial para entender o mes sem poluicao visual.
+                  So o essencial para entender o periodo filtrado sem poluicao visual.
                 </p>
               </div>
             </div>
@@ -248,7 +302,7 @@ export default async function Home() {
           <div>
             <div className={styles.sectionTitle}>Clientes por estado</div>
             <p className={styles.sectionSubtitle}>
-              Leitura dos clientes unicos atendidos no mes atual, com mapa por UF e resumo dos
+              Leitura dos clientes unicos do periodo filtrado, com mapa por UF e resumo dos
               estados mais fortes.
             </p>
           </div>
@@ -289,7 +343,7 @@ export default async function Home() {
                   </div>
                   <p className={styles.listDetail}>
                     {String(row.orderCount)} pedidos, {String(row.piecesSold)} pecas e{" "}
-                    {formatPercent(row.sharePercent)} da base de clientes do mes.
+                    {formatPercent(row.sharePercent)} da base de clientes do periodo.
                   </p>
                 </article>
               ))
@@ -343,7 +397,6 @@ export default async function Home() {
 
 function buildHomeSnapshot(params: {
   orders: FinanceFlowOrder[];
-  allOrders: FinanceFlowOrder[];
   comboRules: CompanyCartDiscountRule[];
   unitPrice: number;
   config: Awaited<ReturnType<typeof loadFinanceConfig>>["config"];
@@ -355,7 +408,6 @@ function buildHomeSnapshot(params: {
 }) {
   const {
     orders,
-    allOrders,
     comboRules,
     unitPrice,
     config,
@@ -369,12 +421,12 @@ function buildHomeSnapshot(params: {
   const monthlyOrders = orders.length;
   const monthlyGrossSales = orders.reduce((sum, order) => sum + order.total, 0);
   const averageTicketValue = monthlyOrders > 0 ? monthlyGrossSales / monthlyOrders : 0;
-  const uniqueCustomers = new Set(allOrders.map((order) => order.customerKey).filter(Boolean)).size;
+  const uniqueCustomers = new Set(orders.map((order) => order.customerKey).filter(Boolean)).size;
   const piecesSold = orders.reduce((sum, order) => sum + order.itemQuantity, 0);
   const couponOrders = orders.filter((order) => order.hasCoupon).length;
   const pixOrders = orders.filter((order) => isPixOrder(order)).length;
   const currentBalance = openingBalance + manualEntries - manualExpenses;
-  const stateData = buildCustomerStateData(allOrders, uniqueCustomers);
+  const stateData = buildCustomerStateData(orders, uniqueCustomers);
   const statesServed = stateData.rows.length;
   const leadState = stateData.rows[0] ?? null;
 
@@ -439,8 +491,8 @@ function buildHomeSnapshot(params: {
         : `Ainda nao ha movimentacoes manuais neste mes. O saldo base considerado agora e ${formatMoney(openingBalance)}.`,
     salesSummary:
       monthlyOrders > 0
-        ? `${monthlyOrders} pedidos puxaram ${formatMoney(monthlyGrossSales)} no mes. A base carregada da Nuvem Shop soma ${String(uniqueCustomers)} clientes unicos, mesmo sem UF.`
-        : "Ainda nao ha vendas carregadas da Nuvem Shop para o mes atual.",
+        ? `${monthlyOrders} pedidos puxaram ${formatMoney(monthlyGrossSales)} no periodo filtrado, com ${String(uniqueCustomers)} clientes unicos, mesmo quando parte deles esta sem UF.`
+        : "Ainda nao ha vendas carregadas da Nuvem Shop para o periodo filtrado.",
     persistenceMessage,
     persistenceEnabled,
     salesRows: buildSalesRows({
@@ -458,8 +510,8 @@ function buildHomeSnapshot(params: {
     customersWithoutState: stateData.customersWithoutState,
     customerStateRows: stateData.rows,
     stateSummary: leadState
-      ? `${leadState.stateCode} lidera a base carregada com ${String(leadState.customerCount)} clientes unicos identificados por UF.`
-      : "O total de clientes ja considera quem esta sem UF; o mapa mostra apenas os que foi possivel localizar.",
+      ? `${leadState.stateCode} lidera o periodo com ${String(leadState.customerCount)} clientes unicos identificados por UF.`
+      : "O total de clientes ja considera quem esta sem UF; o mapa mostra apenas os que foi possivel localizar no periodo.",
     comboMetrics: buildComboMetrics(bestCombo, tightestCombo),
     comboRows: buildComboRows(comboScenarios),
   };
@@ -682,11 +734,24 @@ function BrazilCustomerMap({ rows }: { rows: DashboardStateRow[] }) {
   return (
     <div className={styles.geoMapWrap}>
       <svg viewBox="0 0 900 850" className={styles.geoMap} role="img" aria-label="Mapa do Brasil">
+        <rect x="0" y="0" width="900" height="850" className={styles.geoMapOcean} />
         <path
           d={BRAZIL_SILHOUETTE_PATH}
           className={styles.geoMapSilhouette}
           transform="translate(0 0)"
         />
+        <text x="420" y="300" className={styles.geoMapCountryLabel}>
+          BRASIL
+        </text>
+        <text x="96" y="360" className={styles.geoMapNeighborLabel}>
+          BOLIVIA
+        </text>
+        <text x="268" y="762" className={styles.geoMapNeighborLabel}>
+          PARAGUAI
+        </text>
+        <text x="246" y="118" className={styles.geoMapNeighborLabel}>
+          VENEZUELA
+        </text>
         {points.map((point) => (
           <g key={point.stateCode} transform={`translate(${point.x} ${point.y})`}>
             <title>{`${point.stateName}: ${String(point.customerCount)} clientes`}</title>
@@ -696,10 +761,10 @@ function BrazilCustomerMap({ rows }: { rows: DashboardStateRow[] }) {
               stroke={point.customerCount > 0 ? "#5b1795" : "rgba(123, 44, 191, 0.16)"}
               strokeWidth={point.customerCount > 0 ? 2.5 : 1.5}
             />
-            <text className={styles.geoMapStateCode} textAnchor="middle" y="-2">
-              {point.stateCode}
+            <text className={styles.geoMapStateCode} textAnchor="middle" y="-7">
+              {point.customerCount > 0 ? point.stateCode : ""}
             </text>
-            <text className={styles.geoMapStateCount} textAnchor="middle" y="14">
+            <text className={styles.geoMapStateCount} textAnchor="middle" y="11">
               {String(point.customerCount)}
             </text>
           </g>
