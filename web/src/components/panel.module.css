@@ -491,6 +491,80 @@
   grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
 }
 
+.geoGrid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
+}
+
+.geoCard {
+  padding: 20px;
+  border-radius: 22px;
+  background: #ffffff;
+  border: 1px solid rgba(123, 44, 191, 0.08);
+  box-shadow: 0 8px 22px rgba(88, 28, 135, 0.05);
+}
+
+.geoCardTop {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.geoLegend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #6f5b82;
+  font-size: 0.86rem;
+}
+
+.geoLegendDotLow,
+.geoLegendDotHigh {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.geoLegendDotLow {
+  background: #d8b4fe;
+}
+
+.geoLegendDotHigh {
+  background: #7b2cbf;
+}
+
+.geoMapWrap {
+  margin-top: 18px;
+  padding: 12px;
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at top left, rgba(123, 44, 191, 0.06), transparent 42%),
+    linear-gradient(180deg, rgba(123, 44, 191, 0.03), rgba(176, 90, 0, 0.03));
+  border: 1px solid rgba(123, 44, 191, 0.08);
+}
+
+.geoMap {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.geoMapStateCode {
+  fill: #2d1941;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.geoMapStateCount {
+  fill: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .list {
   display: grid;
   gap: 14px;
@@ -1750,6 +1824,7 @@
   .hero,
   .heroCompact,
   .twoColumn,
+  .geoGrid,
   .integrationHero,
   .orderLayout {
     grid-template-columns: 1fr;
@@ -1872,8 +1947,19 @@
 
   .section,
   .heroCard,
-  .metricCard {
+  .metricCard,
+  .geoCard {
     padding: 12px;
+  }
+
+  .geoLegend {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .geoMapWrap {
+    padding: 8px;
   }
 
   .filterActions button,
