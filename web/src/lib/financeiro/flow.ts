@@ -44,6 +44,11 @@ export type MonthlyFinanceFlowData = {
   monthLabel: string;
   orders: FinanceFlowOrder[];
   allOrders: FinanceFlowOrder[];
+  period: {
+    startDate: string | null;
+    endDate: string | null;
+    label: string;
+  };
   debts: FinanceFlowDebt[];
   nuvemshop: {
     ok: boolean;
@@ -56,17 +61,23 @@ export type MonthlyFinanceFlowData = {
 };
 
 export async function loadMonthlyFinanceFlow(
-  selectedMonth?: string,
+  filters?: {
+    selectedMonth?: string;
+    startDate?: string;
+    endDate?: string;
+  },
 ): Promise<MonthlyFinanceFlowData> {
+  const selectedMonth = filters?.selectedMonth;
   const [monthStart, monthEnd, normalizedMonth] =
     getMonthRangeFromInput(selectedMonth);
   const monthLabel = new Intl.DateTimeFormat("pt-BR", {
     month: "long",
     year: "numeric",
   }).format(monthStart);
+  const dateRange = getDateRangeFilter(filters?.startDate, filters?.endDate);
 
   const [ordersResult, debtsResult] = await Promise.all([
-    loadMonthlyNuvemshopOrders(monthStart, monthEnd),
+    loadMonthlyNuvemshopOrders(monthStart, monthEnd, dateRange.startDate, dateRange.endDate),
     loadMonthlyDebts(monthStart, monthEnd),
   ]);
 
@@ -75,6 +86,11 @@ export async function loadMonthlyFinanceFlow(
     monthLabel,
     orders: ordersResult.orders,
     allOrders: ordersResult.allOrders,
+    period: {
+      startDate: dateRange.startDate,
+      endDate: dateRange.endDate,
+      label: buildPeriodLabel(dateRange.startDate, dateRange.endDate),
+    },
     debts: debtsResult.debts,
     nuvemshop: {
       ok: ordersResult.ok,
@@ -87,7 +103,12 @@ export async function loadMonthlyFinanceFlow(
   };
 }
 
-async function loadMonthlyNuvemshopOrders(monthStart: Date, monthEnd: Date) {
+async function loadMonthlyNuvemshopOrders(
+  monthStart: Date,
+  monthEnd: Date,
+  startDate?: string | null,
+  endDate?: string | null,
+) {
   const credentials = getNuvemshopCredentials();
 
   if (!credentials.ok) {
@@ -103,10 +124,10 @@ async function loadMonthlyNuvemshopOrders(monthStart: Date, monthEnd: Date) {
     const client = new NuvemshopClient(credentials.credentials);
     const orders = await fetchAllOrders(client);
     const mappedOrders = orders.map((order) => mapOrderToFlow(order)).filter((order) => order.total > 0);
-    const currentMonthOrders = orders
-      .filter((order) => orderHasCashEffectInMonth(order, monthStart, monthEnd))
-      .map((order) => mapOrderToFlow(order))
-      .filter((order) => order.total > 0);
+    const currentMonthOrders =
+      startDate || endDate
+        ? mappedOrders.filter((order) => orderMatchesDateRange(order, startDate, endDate))
+        : mappedOrders;
 
     return {
       ok: true,
@@ -114,8 +135,12 @@ async function loadMonthlyNuvemshopOrders(monthStart: Date, monthEnd: Date) {
       allOrders: mappedOrders,
       message:
         currentMonthOrders.length > 0
-          ? "Entradas da Nuvemshop carregadas para o mes atual."
-          : "Nuvemshop conectada. Nenhum pedido encontrado para o mes atual.",
+          ? startDate || endDate
+            ? "Pedidos da Nuvemshop carregados para o periodo filtrado."
+            : "Base completa da Nuvemshop carregada com sucesso."
+          : startDate || endDate
+            ? "Nuvemshop conectada. Nenhum pedido encontrado para o periodo filtrado."
+            : "Nuvemshop conectada. Nenhum pedido encontrado na base carregada.",
     };
   } catch (error) {
     const message =
@@ -171,6 +196,31 @@ function getOrderReferenceDate(order: NuvemshopOrder) {
 
   const date = new Date(raw);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function orderMatchesDateRange(
+  order: FinanceFlowOrder,
+  startDate?: string | null,
+  endDate?: string | null,
+) {
+  const reference = getReferenceDateFromValue(order.referenceDate);
+
+  if (!reference) {
+    return false;
+  }
+
+  const start = startDate ? getReferenceDateFromValue(`${startDate}T00:00:00`) : null;
+  const end = endDate ? getReferenceDateFromValue(`${endDate}T23:59:59`) : null;
+
+  if (start && reference < start) {
+    return false;
+  }
+
+  if (end && reference > end) {
+    return false;
+  }
+
+  return true;
 }
 
 function mapOrderToFlow(order: NuvemshopOrder): FinanceFlowOrder {
@@ -365,6 +415,68 @@ function parseMoney(value?: string | null) {
 
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getDateRangeFilter(startDate?: string, endDate?: string) {
+  const normalizedStart = normalizeDateInput(startDate);
+  const normalizedEnd = normalizeDateInput(endDate);
+
+  if (normalizedStart && normalizedEnd && normalizedStart > normalizedEnd) {
+    return {
+      startDate: normalizedEnd,
+      endDate: normalizedStart,
+    };
+  }
+
+  return {
+    startDate: normalizedStart,
+    endDate: normalizedEnd,
+  };
+}
+
+function normalizeDateInput(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  return /^\d{4}-\d{2}-\d{2}$/.test(value.trim()) ? value.trim() : null;
+}
+
+function buildPeriodLabel(startDate: string | null, endDate: string | null) {
+  if (startDate && endDate) {
+    return `${formatDateLabel(startDate)} ate ${formatDateLabel(endDate)}`;
+  }
+
+  if (startDate) {
+    return `Desde ${formatDateLabel(startDate)}`;
+  }
+
+  if (endDate) {
+    return `Ate ${formatDateLabel(endDate)}`;
+  }
+
+  return "Base completa";
+}
+
+function formatDateLabel(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+  }).format(date);
+}
+
+function getReferenceDateFromValue(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 const BRAZIL_STATE_CODES = new Set([
