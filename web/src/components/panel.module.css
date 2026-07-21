@@ -553,6 +553,14 @@
   display: block;
 }
 
+.geoMapSilhouette {
+  fill: rgba(123, 44, 191, 0.06);
+  stroke: rgba(91, 23, 149, 0.34);
+  stroke-width: 8px;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
 .geoMapStateCode {
   fill: #2d1941;
   font-size: 0.7rem;

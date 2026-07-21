@@ -109,6 +109,52 @@ const BRAZIL_STATE_POSITIONS: Record<
   TO: { name: "Tocantins", x: 486, y: 304 },
 };
 
+const BRAZIL_SILHOUETTE_PATH = `
+  M126 367
+  L111 334
+  L120 292
+  L146 252
+  L179 223
+  L206 179
+  L246 132
+  L293 102
+  L338 110
+  L389 95
+  L434 110
+  L484 99
+  L540 130
+  L595 161
+  L653 179
+  L704 171
+  L760 202
+  L790 238
+  L804 282
+  L793 317
+  L764 347
+  L757 393
+  L724 456
+  L709 528
+  L681 563
+  L650 594
+  L623 650
+  L610 719
+  L585 792
+  L543 810
+  L511 793
+  L498 726
+  L486 674
+  L455 633
+  L423 589
+  L399 555
+  L367 535
+  L334 492
+  L280 468
+  L248 437
+  L201 414
+  L166 392
+  Z
+`;
+
 export default async function Home() {
   const currentMonth = getCurrentMonthReference();
   const [{ config }, flow, companyModule, manualFinance] = await Promise.all([
@@ -633,6 +679,11 @@ function BrazilCustomerMap({ rows }: { rows: DashboardStateRow[] }) {
   return (
     <div className={styles.geoMapWrap}>
       <svg viewBox="0 0 900 850" className={styles.geoMap} role="img" aria-label="Mapa do Brasil">
+        <path
+          d={BRAZIL_SILHOUETTE_PATH}
+          className={styles.geoMapSilhouette}
+          transform="translate(0 0)"
+        />
         {points.map((point) => (
           <g key={point.stateCode} transform={`translate(${point.x} ${point.y})`}>
             <title>{`${point.stateName}: ${String(point.customerCount)} clientes`}</title>
