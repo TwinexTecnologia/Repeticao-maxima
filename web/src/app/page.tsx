@@ -53,6 +53,62 @@ type DashboardComboDefinition = {
   mixLabel: string;
 };
 
+type DashboardStateRow = {
+  stateCode: string;
+  stateName: string;
+  customerCount: number;
+  orderCount: number;
+  piecesSold: number;
+  sharePercent: number;
+  intensity: number;
+};
+
+type BrazilMapPoint = {
+  stateCode: string;
+  stateName: string;
+  x: number;
+  y: number;
+  customerCount: number;
+  intensity: number;
+};
+
+const BRAZIL_STATE_POSITIONS: Record<
+  string,
+  {
+    name: string;
+    x: number;
+    y: number;
+  }
+> = {
+  AC: { name: "Acre", x: 112, y: 356 },
+  AL: { name: "Alagoas", x: 718, y: 296 },
+  AP: { name: "Amapa", x: 452, y: 100 },
+  AM: { name: "Amazonas", x: 232, y: 210 },
+  BA: { name: "Bahia", x: 674, y: 370 },
+  CE: { name: "Ceara", x: 692, y: 214 },
+  DF: { name: "Distrito Federal", x: 532, y: 430 },
+  ES: { name: "Espirito Santo", x: 698, y: 484 },
+  GO: { name: "Goias", x: 504, y: 426 },
+  MA: { name: "Maranhao", x: 572, y: 246 },
+  MT: { name: "Mato Grosso", x: 380, y: 372 },
+  MS: { name: "Mato Grosso do Sul", x: 390, y: 510 },
+  MG: { name: "Minas Gerais", x: 616, y: 452 },
+  PA: { name: "Para", x: 424, y: 202 },
+  PB: { name: "Paraiba", x: 762, y: 224 },
+  PR: { name: "Parana", x: 544, y: 640 },
+  PE: { name: "Pernambuco", x: 738, y: 252 },
+  PI: { name: "Piaui", x: 622, y: 244 },
+  RJ: { name: "Rio de Janeiro", x: 692, y: 532 },
+  RN: { name: "Rio Grande do Norte", x: 784, y: 192 },
+  RS: { name: "Rio Grande do Sul", x: 522, y: 792 },
+  RO: { name: "Rondonia", x: 182, y: 352 },
+  RR: { name: "Roraima", x: 256, y: 82 },
+  SC: { name: "Santa Catarina", x: 556, y: 716 },
+  SP: { name: "Sao Paulo", x: 604, y: 566 },
+  SE: { name: "Sergipe", x: 744, y: 326 },
+  TO: { name: "Tocantins", x: 486, y: 304 },
+};
+
 export default async function Home() {
   const currentMonth = getCurrentMonthReference();
   const [{ config }, flow, companyModule, manualFinance] = await Promise.all([
@@ -143,6 +199,68 @@ export default async function Home() {
       <section className={styles.section}>
         <div className={styles.sectionHeader}>
           <div>
+            <div className={styles.sectionTitle}>Clientes por estado</div>
+            <p className={styles.sectionSubtitle}>
+              Leitura dos clientes unicos atendidos no mes atual, com mapa por UF e resumo dos
+              estados mais fortes.
+            </p>
+          </div>
+          <div className={styles.chipRow}>
+            <span className={styles.chip}>Clientes: {String(snapshot.uniqueCustomers)}</span>
+            <span className={styles.chip}>Estados: {String(snapshot.statesServed)}</span>
+            <span className={styles.chip}>Sem UF: {String(snapshot.customersWithoutState)}</span>
+          </div>
+        </div>
+
+        <div className={styles.geoGrid}>
+          <article className={styles.geoCard}>
+            <div className={styles.geoCardTop}>
+              <div>
+                <div className={styles.listTitle}>Mapa de clientes</div>
+                <p className={styles.listDetail}>{snapshot.stateSummary}</p>
+              </div>
+              <div className={styles.geoLegend}>
+                <span className={styles.geoLegendDotLow} />
+                <span>Menor volume</span>
+                <span className={styles.geoLegendDotHigh} />
+                <span>Maior volume</span>
+              </div>
+            </div>
+
+            <BrazilCustomerMap rows={snapshot.customerStateRows} />
+          </article>
+
+          <div className={styles.list}>
+            {snapshot.customerStateRows.length > 0 ? (
+              snapshot.customerStateRows.slice(0, 8).map((row) => (
+                <article key={row.stateCode} className={styles.listItem}>
+                  <div className={styles.listTitleRow}>
+                    <div className={styles.listTitle}>
+                      {row.stateCode} · {row.stateName}
+                    </div>
+                    <strong>{String(row.customerCount)} clientes</strong>
+                  </div>
+                  <p className={styles.listDetail}>
+                    {String(row.orderCount)} pedidos, {String(row.piecesSold)} pecas e{" "}
+                    {formatPercent(row.sharePercent)} da base de clientes do mes.
+                  </p>
+                </article>
+              ))
+            ) : (
+              <article className={styles.listItem}>
+                <div className={styles.listTitle}>Sem UF identificada</div>
+                <p className={styles.listDetail}>
+                  Os pedidos do mes ainda nao trouxeram estado suficiente para montar o mapa.
+                </p>
+              </article>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <div>
             <div className={styles.sectionTitle}>Combos</div>
             <p className={styles.sectionSubtitle}>
               Mantive uma leitura enxuta dos combos ativos e do que eles deixam no melhor e no pior cenario.
@@ -202,9 +320,14 @@ function buildHomeSnapshot(params: {
   const monthlyOrders = orders.length;
   const monthlyGrossSales = orders.reduce((sum, order) => sum + order.total, 0);
   const averageTicketValue = monthlyOrders > 0 ? monthlyGrossSales / monthlyOrders : 0;
+  const uniqueCustomers = new Set(orders.map((order) => order.customerKey).filter(Boolean)).size;
+  const piecesSold = orders.reduce((sum, order) => sum + order.itemQuantity, 0);
   const couponOrders = orders.filter((order) => order.hasCoupon).length;
   const pixOrders = orders.filter((order) => isPixOrder(order)).length;
   const currentBalance = openingBalance + manualEntries - manualExpenses;
+  const stateData = buildCustomerStateData(orders, uniqueCustomers);
+  const statesServed = stateData.rows.length;
+  const leadState = stateData.rows[0] ?? null;
 
   const comboDefinitions = buildRealComboDefinitions(comboRules, unitPrice);
   const comboScenarios = comboDefinitions.map((definition) => {
@@ -257,7 +380,9 @@ function buildHomeSnapshot(params: {
       currentBalance,
       monthlyOrders,
       monthlyGrossSales,
-      comboCount: comboDefinitions.length,
+      uniqueCustomers,
+      piecesSold,
+      statesServed,
     }),
     cashSummary:
       manualEntries > 0 || manualExpenses > 0
@@ -265,17 +390,27 @@ function buildHomeSnapshot(params: {
         : `Ainda nao ha movimentacoes manuais neste mes. O saldo base considerado agora e ${formatMoney(openingBalance)}.`,
     salesSummary:
       monthlyOrders > 0
-        ? `${monthlyOrders} pedidos puxaram ${formatMoney(monthlyGrossSales)} de faturamento bruto na Nuvem Shop, com ticket medio de ${formatMoney(averageTicketValue)}.`
+        ? `${monthlyOrders} pedidos puxaram ${formatMoney(monthlyGrossSales)} de faturamento bruto na Nuvem Shop, com ${String(uniqueCustomers)} clientes unicos e ${String(piecesSold)} pecas vendidas.`
         : "Ainda nao ha vendas carregadas da Nuvem Shop para o mes atual.",
     persistenceMessage,
     persistenceEnabled,
     salesRows: buildSalesRows({
       monthlyOrders,
       monthlyGrossSales,
+      uniqueCustomers,
+      piecesSold,
       averageTicketValue,
       couponOrders,
       pixOrders,
     }),
+    uniqueCustomers,
+    piecesSold,
+    statesServed,
+    customersWithoutState: stateData.customersWithoutState,
+    customerStateRows: stateData.rows,
+    stateSummary: leadState
+      ? `${leadState.stateCode} lidera o mes com ${String(leadState.customerCount)} clientes unicos.`
+      : "Assim que os pedidos trouxerem UF, o mapa mostra a concentracao de clientes por estado.",
     comboMetrics: buildComboMetrics(bestCombo, tightestCombo),
     comboRows: buildComboRows(comboScenarios),
   };
@@ -288,7 +423,9 @@ function buildTopMetrics(params: {
   currentBalance: number;
   monthlyOrders: number;
   monthlyGrossSales: number;
-  comboCount: number;
+  uniqueCustomers: number;
+  piecesSold: number;
+  statesServed: number;
 }) {
   return [
     {
@@ -313,17 +450,27 @@ function buildTopMetrics(params: {
         params.monthlyOrders > 0 ? "Pedidos capturados no mes atual." : "Sem pedidos no mes atual.",
     },
     {
+      label: "Clientes",
+      value: String(params.uniqueCustomers),
+      detail: "Clientes unicos com compra registrada no mes.",
+    },
+    {
+      label: "Pecas vendidas",
+      value: String(params.piecesSold),
+      detail: "Soma das quantidades vendidas nos pedidos do mes.",
+    },
+    {
       label: "Faturamento Nuvem Shop",
       value: formatMoney(params.monthlyGrossSales),
       detail: "Total bruto vendido na Nuvem Shop neste mes.",
     },
     {
-      label: "Combos ativos",
-      value: String(params.comboCount),
+      label: "Estados atendidos",
+      value: String(params.statesServed),
       detail:
-        params.comboCount > 0
-          ? "Regras de combo ativas consideradas nesta leitura."
-          : "Nenhum combo ativo encontrado agora.",
+        params.statesServed > 0
+          ? "UFs com clientes identificados no mes."
+          : "Ainda sem UF identificada nos pedidos do mes.",
     },
   ] satisfies DashboardMetric[];
 }
@@ -331,6 +478,8 @@ function buildTopMetrics(params: {
 function buildSalesRows(params: {
   monthlyOrders: number;
   monthlyGrossSales: number;
+  uniqueCustomers: number;
+  piecesSold: number;
   averageTicketValue: number;
   couponOrders: number;
   pixOrders: number;
@@ -345,6 +494,16 @@ function buildSalesRows(params: {
       title: "Faturamento bruto",
       value: formatMoney(params.monthlyGrossSales),
       detail: "Antes de taxas e ajustes financeiros.",
+    },
+    {
+      title: "Clientes unicos",
+      value: String(params.uniqueCustomers),
+      detail: "Base de clientes distintos atendidos no mes.",
+    },
+    {
+      title: "Pecas vendidas",
+      value: String(params.piecesSold),
+      detail: "Quantidade total de pecas somadas nos pedidos.",
     },
     {
       title: "Ticket medio",
@@ -368,6 +527,132 @@ function buildSalesRows(params: {
       detail: `${params.pixOrders} pedidos vieram no Pix.`,
     },
   ] satisfies DashboardListRow[];
+}
+
+function buildCustomerStateData(orders: FinanceFlowOrder[], totalCustomers: number) {
+  const distribution = new Map<
+    string,
+    {
+      customerKeys: Set<string>;
+      orderCount: number;
+      piecesSold: number;
+    }
+  >();
+  const customersWithState = new Set<string>();
+  const customersWithoutState = new Set<string>();
+
+  for (const order of orders) {
+    if (order.destinationState) {
+      const current = distribution.get(order.destinationState) ?? {
+        customerKeys: new Set<string>(),
+        orderCount: 0,
+        piecesSold: 0,
+      };
+
+      current.customerKeys.add(order.customerKey);
+      current.orderCount += 1;
+      current.piecesSold += order.itemQuantity;
+      distribution.set(order.destinationState, current);
+      customersWithState.add(order.customerKey);
+      continue;
+    }
+
+    customersWithoutState.add(order.customerKey);
+  }
+
+  const rows = Array.from(distribution.entries())
+    .map(([stateCode, data]) => ({
+      stateCode,
+      stateName: BRAZIL_STATE_POSITIONS[stateCode]?.name || stateCode,
+      customerCount: data.customerKeys.size,
+      orderCount: data.orderCount,
+      piecesSold: data.piecesSold,
+      sharePercent: totalCustomers > 0 ? (data.customerKeys.size / totalCustomers) * 100 : 0,
+      intensity: 0,
+    }))
+    .sort(
+      (left, right) =>
+        right.customerCount - left.customerCount ||
+        right.orderCount - left.orderCount ||
+        left.stateCode.localeCompare(right.stateCode),
+    );
+
+  const maxCustomers = rows[0]?.customerCount ?? 0;
+
+  return {
+    rows: rows.map((row) => ({
+      ...row,
+      intensity: maxCustomers > 0 ? row.customerCount / maxCustomers : 0,
+    })),
+    customersWithoutState: Array.from(customersWithoutState).filter(
+      (customerKey) => !customersWithState.has(customerKey),
+    ).length,
+  };
+}
+
+function buildBrazilMapPoints(rows: DashboardStateRow[]) {
+  const rowMap = new Map(rows.map((row) => [row.stateCode, row]));
+
+  return Object.entries(BRAZIL_STATE_POSITIONS).map(([stateCode, metadata]) => {
+    const row = rowMap.get(stateCode);
+
+    return {
+      stateCode,
+      stateName: metadata.name,
+      x: metadata.x,
+      y: metadata.y,
+      customerCount: row?.customerCount ?? 0,
+      intensity: row?.intensity ?? 0,
+    } satisfies BrazilMapPoint;
+  });
+}
+
+function getMapPointRadius(point: BrazilMapPoint) {
+  return point.customerCount > 0 ? 17 + point.intensity * 17 : 12;
+}
+
+function getMapPointFill(point: BrazilMapPoint) {
+  if (point.customerCount <= 0) {
+    return "rgba(123, 44, 191, 0.10)";
+  }
+
+  if (point.intensity >= 0.75) {
+    return "#7b2cbf";
+  }
+
+  if (point.intensity >= 0.45) {
+    return "#a855f7";
+  }
+
+  return "#d8b4fe";
+}
+
+function BrazilCustomerMap({ rows }: { rows: DashboardStateRow[] }) {
+  const points = buildBrazilMapPoints(rows);
+
+  return (
+    <div className={styles.geoMapWrap}>
+      <svg viewBox="0 0 900 850" className={styles.geoMap} role="img" aria-label="Mapa do Brasil">
+        {points.map((point) => (
+          <g key={point.stateCode} transform={`translate(${point.x} ${point.y})`}>
+            <title>{`${point.stateName}: ${String(point.customerCount)} clientes`}</title>
+            <circle
+              r={getMapPointRadius(point)}
+              fill={getMapPointFill(point)}
+              stroke={point.customerCount > 0 ? "#5b1795" : "rgba(123, 44, 191, 0.16)"}
+              strokeWidth={point.customerCount > 0 ? 2.5 : 1.5}
+            />
+            <text className={styles.geoMapStateCode} textAnchor="middle" y="-2">
+              {point.stateCode}
+            </text>
+            <text className={styles.geoMapStateCount} textAnchor="middle" y="14">
+              {String(point.customerCount)}
+            </text>
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
 }
 
 function buildComboMetrics(

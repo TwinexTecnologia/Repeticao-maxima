@@ -23,6 +23,8 @@ export type FinanceFlowOrder = {
   hasCoupon: boolean;
   couponCode: string | null;
   discountTotal: number;
+  itemQuantity: number;
+  destinationState: string | null;
 };
 
 export type FinanceFlowDebt = {
@@ -195,7 +197,100 @@ function mapOrderToFlow(order: NuvemshopOrder): FinanceFlowOrder {
     hasCoupon: Boolean(couponCode),
     couponCode,
     discountTotal: parseMoney(order.discount),
+    itemQuantity: getOrderItemQuantity(order),
+    destinationState: resolveOrderDestinationState(order),
   };
+}
+
+function getOrderItemQuantity(order: NuvemshopOrder) {
+  return (order.products ?? []).reduce((sum, product) => {
+    const quantity = Number.parseInt(String(product.quantity ?? "1"), 10);
+    return sum + (Number.isFinite(quantity) ? Math.max(quantity, 0) : 0);
+  }, 0);
+}
+
+function resolveOrderDestinationState(order: NuvemshopOrder) {
+  const candidatePaths = [
+    ["shipping_address", "province"],
+    ["shipping_address", "state"],
+    ["shipping_address", "province_code"],
+    ["shipping_address", "state_code"],
+    ["shipping", "address", "province"],
+    ["shipping", "address", "state"],
+    ["billing_address", "province"],
+    ["billing_address", "state"],
+    ["customer", "default_address", "province"],
+    ["customer", "default_address", "state"],
+  ] as const;
+
+  for (const path of candidatePaths) {
+    const value = getNestedString(order, path);
+    const stateCode = normalizeBrazilStateCode(value);
+
+    if (stateCode) {
+      return stateCode;
+    }
+  }
+
+  return null;
+}
+
+function getNestedString(source: unknown, path: readonly string[]) {
+  let current: unknown = source;
+
+  for (const segment of path) {
+    if (!isRecord(current)) {
+      return "";
+    }
+
+    current = current[segment];
+  }
+
+  return typeof current === "string" ? current : "";
+}
+
+function normalizeBrazilStateCode(rawValue: string) {
+  const value = rawValue.trim();
+
+  if (!value) {
+    return null;
+  }
+
+  const rawParts = value
+    .split(/[,\-/|]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const parts = rawParts.length > 0 ? rawParts : [value];
+
+  for (const part of parts) {
+    const upper = part.toUpperCase();
+
+    if (BRAZIL_STATE_CODES.has(upper)) {
+      return upper;
+    }
+
+    const normalized = normalizeText(part).replace(/\s+/g, " ").trim();
+    const directMatch = BRAZIL_STATE_NAME_TO_CODE[normalized];
+
+    if (directMatch) {
+      return directMatch;
+    }
+  }
+
+  return null;
+}
+
+function normalizeText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 async function loadMonthlyDebts(monthStart: Date, monthEnd: Date) {
@@ -265,3 +360,64 @@ function parseMoney(value?: string | null) {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : 0;
 }
+
+const BRAZIL_STATE_CODES = new Set([
+  "AC",
+  "AL",
+  "AP",
+  "AM",
+  "BA",
+  "CE",
+  "DF",
+  "ES",
+  "GO",
+  "MA",
+  "MT",
+  "MS",
+  "MG",
+  "PA",
+  "PB",
+  "PR",
+  "PE",
+  "PI",
+  "RJ",
+  "RN",
+  "RS",
+  "RO",
+  "RR",
+  "SC",
+  "SP",
+  "SE",
+  "TO",
+]);
+
+const BRAZIL_STATE_NAME_TO_CODE: Record<string, string> = {
+  acre: "AC",
+  alagoas: "AL",
+  amapa: "AP",
+  amazonas: "AM",
+  bahia: "BA",
+  ceara: "CE",
+  "distrito federal": "DF",
+  espirito: "ES",
+  "espirito santo": "ES",
+  goias: "GO",
+  maranhao: "MA",
+  "mato grosso": "MT",
+  "mato grosso do sul": "MS",
+  "minas gerais": "MG",
+  para: "PA",
+  paraiba: "PB",
+  parana: "PR",
+  pernambuco: "PE",
+  piaui: "PI",
+  "rio de janeiro": "RJ",
+  "rio grande do norte": "RN",
+  "rio grande do sul": "RS",
+  rondonia: "RO",
+  roraima: "RR",
+  "santa catarina": "SC",
+  "sao paulo": "SP",
+  sergipe: "SE",
+  tocantins: "TO",
+};
