@@ -166,6 +166,7 @@ export default async function Home() {
 
   const snapshot = buildHomeSnapshot({
     orders: flow.orders,
+    allOrders: flow.allOrders,
     comboRules: companyModule.rules,
     unitPrice: config.unitPrice,
     config,
@@ -342,6 +343,7 @@ export default async function Home() {
 
 function buildHomeSnapshot(params: {
   orders: FinanceFlowOrder[];
+  allOrders: FinanceFlowOrder[];
   comboRules: CompanyCartDiscountRule[];
   unitPrice: number;
   config: Awaited<ReturnType<typeof loadFinanceConfig>>["config"];
@@ -353,6 +355,7 @@ function buildHomeSnapshot(params: {
 }) {
   const {
     orders,
+    allOrders,
     comboRules,
     unitPrice,
     config,
@@ -366,12 +369,12 @@ function buildHomeSnapshot(params: {
   const monthlyOrders = orders.length;
   const monthlyGrossSales = orders.reduce((sum, order) => sum + order.total, 0);
   const averageTicketValue = monthlyOrders > 0 ? monthlyGrossSales / monthlyOrders : 0;
-  const uniqueCustomers = new Set(orders.map((order) => order.customerKey).filter(Boolean)).size;
+  const uniqueCustomers = new Set(allOrders.map((order) => order.customerKey).filter(Boolean)).size;
   const piecesSold = orders.reduce((sum, order) => sum + order.itemQuantity, 0);
   const couponOrders = orders.filter((order) => order.hasCoupon).length;
   const pixOrders = orders.filter((order) => isPixOrder(order)).length;
   const currentBalance = openingBalance + manualEntries - manualExpenses;
-  const stateData = buildCustomerStateData(orders, uniqueCustomers);
+  const stateData = buildCustomerStateData(allOrders, uniqueCustomers);
   const statesServed = stateData.rows.length;
   const leadState = stateData.rows[0] ?? null;
 
@@ -436,7 +439,7 @@ function buildHomeSnapshot(params: {
         : `Ainda nao ha movimentacoes manuais neste mes. O saldo base considerado agora e ${formatMoney(openingBalance)}.`,
     salesSummary:
       monthlyOrders > 0
-        ? `${monthlyOrders} pedidos puxaram ${formatMoney(monthlyGrossSales)} de faturamento bruto na Nuvem Shop, com ${String(uniqueCustomers)} clientes unicos e ${String(piecesSold)} pecas vendidas.`
+        ? `${monthlyOrders} pedidos puxaram ${formatMoney(monthlyGrossSales)} no mes. A base carregada da Nuvem Shop soma ${String(uniqueCustomers)} clientes unicos, mesmo sem UF.`
         : "Ainda nao ha vendas carregadas da Nuvem Shop para o mes atual.",
     persistenceMessage,
     persistenceEnabled,
@@ -455,8 +458,8 @@ function buildHomeSnapshot(params: {
     customersWithoutState: stateData.customersWithoutState,
     customerStateRows: stateData.rows,
     stateSummary: leadState
-      ? `${leadState.stateCode} lidera o mes com ${String(leadState.customerCount)} clientes unicos.`
-      : "Assim que os pedidos trouxerem UF, o mapa mostra a concentracao de clientes por estado.",
+      ? `${leadState.stateCode} lidera a base carregada com ${String(leadState.customerCount)} clientes unicos identificados por UF.`
+      : "O total de clientes ja considera quem esta sem UF; o mapa mostra apenas os que foi possivel localizar.",
     comboMetrics: buildComboMetrics(bestCombo, tightestCombo),
     comboRows: buildComboRows(comboScenarios),
   };
@@ -498,7 +501,7 @@ function buildTopMetrics(params: {
     {
       label: "Clientes",
       value: String(params.uniqueCustomers),
-      detail: "Clientes unicos com compra registrada no mes.",
+      detail: "Clientes unicos da base carregada da Nuvem Shop, com ou sem UF.",
     },
     {
       label: "Pecas vendidas",
@@ -544,7 +547,7 @@ function buildSalesRows(params: {
     {
       title: "Clientes unicos",
       value: String(params.uniqueCustomers),
-      detail: "Base de clientes distintos atendidos no mes.",
+      detail: "Base unica carregada da Nuvem Shop, incluindo clientes sem UF.",
     },
     {
       title: "Pecas vendidas",

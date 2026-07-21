@@ -7,7 +7,7 @@ import type { NuvemshopOrder } from "@/lib/nuvemshop/types";
 import { loadDebtModuleData, type InternalDebt } from "@/lib/operacoes/repository";
 
 const PAGE_SIZE = 100;
-const MAX_PAGES = 12;
+const MAX_PAGES = 50;
 
 export type FinanceFlowOrder = {
   id: string;
@@ -43,6 +43,7 @@ export type MonthlyFinanceFlowData = {
   selectedMonth: string;
   monthLabel: string;
   orders: FinanceFlowOrder[];
+  allOrders: FinanceFlowOrder[];
   debts: FinanceFlowDebt[];
   nuvemshop: {
     ok: boolean;
@@ -73,6 +74,7 @@ export async function loadMonthlyFinanceFlow(
     selectedMonth: normalizedMonth,
     monthLabel,
     orders: ordersResult.orders,
+    allOrders: ordersResult.allOrders,
     debts: debtsResult.debts,
     nuvemshop: {
       ok: ordersResult.ok,
@@ -92,6 +94,7 @@ async function loadMonthlyNuvemshopOrders(monthStart: Date, monthEnd: Date) {
     return {
       ok: false,
       orders: [] as FinanceFlowOrder[],
+      allOrders: [] as FinanceFlowOrder[],
       message: `Nuvemshop sem credenciais completas: ${credentials.missing.join(", ")}.`,
     };
   }
@@ -99,6 +102,7 @@ async function loadMonthlyNuvemshopOrders(monthStart: Date, monthEnd: Date) {
   try {
     const client = new NuvemshopClient(credentials.credentials);
     const orders = await fetchAllOrders(client);
+    const mappedOrders = orders.map((order) => mapOrderToFlow(order)).filter((order) => order.total > 0);
     const currentMonthOrders = orders
       .filter((order) => orderHasCashEffectInMonth(order, monthStart, monthEnd))
       .map((order) => mapOrderToFlow(order))
@@ -107,6 +111,7 @@ async function loadMonthlyNuvemshopOrders(monthStart: Date, monthEnd: Date) {
     return {
       ok: true,
       orders: currentMonthOrders,
+      allOrders: mappedOrders,
       message:
         currentMonthOrders.length > 0
           ? "Entradas da Nuvemshop carregadas para o mes atual."
@@ -121,6 +126,7 @@ async function loadMonthlyNuvemshopOrders(monthStart: Date, monthEnd: Date) {
     return {
       ok: false,
       orders: [] as FinanceFlowOrder[],
+      allOrders: [] as FinanceFlowOrder[],
       message,
     };
   }
