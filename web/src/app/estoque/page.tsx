@@ -6,10 +6,12 @@ import styles from "@/components/panel.module.css";
 import {
   createManualStockEntry,
   createManualStockExit,
+  deleteManualStockMovement,
   loadStockLedgerModuleData,
   type SiteArtSelectionOption,
   type StockMovement,
   type StockSelectionOption,
+  updateManualStockMovement,
 } from "@/lib/operacoes/repository";
 
 const ENTRY_ORIGINS = [
@@ -45,6 +47,8 @@ type NamedArtOption = {
   id: string;
   artName: string;
 };
+
+const MOVEMENT_TYPE_OPTIONS = ["entrada", "saida"] as const;
 
 function getSearchValue(
   searchParams: Record<string, string | string[] | undefined>,
@@ -182,12 +186,54 @@ function appendFlashToRedirect(
   basePath: string,
   status: "success" | "error",
   message: string,
+  options?: {
+    editMovementId?: string;
+  },
 ) {
   const [path, query = ""] = basePath.split("?");
   const params = new URLSearchParams(query);
   params.set("stockStatus", status);
   params.set("stockMessage", message);
+  if (options?.editMovementId) {
+    params.set("editMovementId", options.editMovementId);
+  } else {
+    params.delete("editMovementId");
+  }
   return `${path || "/estoque"}?${params.toString()}`;
+}
+
+function buildEditMovementHref(basePath: string, movementId: string) {
+  const [path, query = ""] = basePath.split("?");
+  const params = new URLSearchParams(query);
+  params.set("editMovementId", movementId);
+  return `${path || "/estoque"}?${params.toString()}`;
+}
+
+function buildOriginOptions(
+  movementType: "entrada" | "saida",
+  currentValue?: string,
+) {
+  const baseOptions = movementType === "entrada" ? ENTRY_ORIGINS : EXIT_ORIGINS;
+  const values = new Set(baseOptions);
+  const trimmedCurrent = String(currentValue ?? "").trim();
+
+  if (trimmedCurrent) {
+    values.add(trimmedCurrent as (typeof baseOptions)[number]);
+  }
+
+  return Array.from(values.values());
+}
+
+function findNamedArtSelectionId(options: NamedArtOption[], artName: string) {
+  const normalizedName = artName.trim().toLowerCase();
+
+  if (!normalizedName) {
+    return "";
+  }
+
+  return (
+    options.find((option) => option.artName.trim().toLowerCase() === normalizedName)?.id ?? ""
+  );
 }
 
 async function registerStockEntryAction(formData: FormData) {
@@ -278,6 +324,85 @@ async function registerStockExitAction(formData: FormData) {
   redirect(appendFlashToRedirect(redirectTo, "success", "Saida registrada com sucesso."));
 }
 
+async function updateStockMovementAction(formData: FormData) {
+  "use server";
+
+  const redirectTo = String(formData.get("redirectTo") ?? "/estoque").trim() || "/estoque";
+  const movementId = String(formData.get("movementId") ?? "").trim();
+  const movementTypeRaw = String(formData.get("movementType") ?? "saida").trim().toLowerCase();
+  const movementType = movementTypeRaw === "entrada" ? "entrada" : "saida";
+  const sku = String(formData.get("sku") ?? "").trim();
+  const color = String(formData.get("color") ?? "").trim();
+  const size = String(formData.get("size") ?? "").trim();
+  const artSelectionId = String(formData.get("artSelectionId") ?? "").trim();
+  const quantity = Number.parseInt(String(formData.get("quantity") ?? "0"), 10) || 0;
+  const movementDate = String(formData.get("movementDate") ?? "").trim();
+  const originType = String(formData.get("originType") ?? "manual").trim();
+  const originReference = String(formData.get("originReference") ?? "").trim();
+  const alreadyPrinted = String(formData.get("alreadyPrinted") ?? "").trim();
+  const notes = String(formData.get("notes") ?? "").trim();
+
+  if (!movementId) {
+    redirect(appendFlashToRedirect(redirectTo, "error", "Nao foi possivel identificar a movimentacao."));
+  }
+
+  const result = await updateManualStockMovement(movementId, {
+    movementType,
+    sku,
+    color,
+    size,
+    artSelectionId,
+    quantity,
+    movementDate,
+    originType,
+    originReference,
+    alreadyPrinted,
+    notes,
+  });
+
+  if (!result.ok) {
+    redirect(
+      appendFlashToRedirect(
+        redirectTo,
+        "error",
+        result.persistence.message || "Nao foi possivel atualizar a movimentacao.",
+        {
+          editMovementId: movementId,
+        },
+      ),
+    );
+  }
+
+  revalidatePath("/estoque");
+  redirect(appendFlashToRedirect(redirectTo, "success", "Movimentacao atualizada com sucesso."));
+}
+
+async function deleteStockMovementAction(formData: FormData) {
+  "use server";
+
+  const redirectTo = String(formData.get("redirectTo") ?? "/estoque").trim() || "/estoque";
+  const movementId = String(formData.get("movementId") ?? "").trim();
+
+  if (!movementId) {
+    redirect(appendFlashToRedirect(redirectTo, "error", "Nao foi possivel identificar a movimentacao."));
+  }
+
+  const result = await deleteManualStockMovement(movementId);
+
+  if (!result.ok) {
+    redirect(
+      appendFlashToRedirect(
+        redirectTo,
+        "error",
+        result.persistence.message || "Nao foi possivel excluir a movimentacao.",
+      ),
+    );
+  }
+
+  revalidatePath("/estoque");
+  redirect(appendFlashToRedirect(redirectTo, "success", "Movimentacao excluida com sucesso."));
+}
+
 function labelMovementType(value: StockMovement["movementType"]) {
   if (value === "entrada") {
     return "Entrada";
@@ -306,6 +431,7 @@ export default async function EstoquePage({ searchParams }: PageProps) {
   const redirectTo = `/estoque?month=${selectedMonth}`;
   const stockStatus = getSearchValue(resolvedSearchParams, "stockStatus");
   const stockMessage = getSearchValue(resolvedSearchParams, "stockMessage");
+  const editMovementId = getSearchValue(resolvedSearchParams, "editMovementId");
 
   const stockData = await loadStockLedgerModuleData(selectedMonth);
   const combinedBaseOptions = buildCombinedStockBaseOptions(
@@ -316,6 +442,16 @@ export default async function EstoquePage({ searchParams }: PageProps) {
   const colorOptions = getUniqueValues(combinedBaseOptions.map((option) => option.color));
   const sizeOptions = getUniqueValues(combinedBaseOptions.map((option) => option.size));
   const namedArtOptions = buildNamedArtOptions(stockData.artOptions);
+  const movementBeingEdited = stockData.movements.find((movement) => movement.id === editMovementId) ?? null;
+  const editArtSelectionId = movementBeingEdited
+    ? findNamedArtSelectionId(namedArtOptions, movementBeingEdited.artName)
+    : "";
+  const editOriginOptions = movementBeingEdited
+    ? buildOriginOptions(
+        movementBeingEdited.movementType === "entrada" ? "entrada" : "saida",
+        movementBeingEdited.originType,
+      )
+    : [];
   const totalPlainStock = stockData.stockOptions.reduce((sum, item) => sum + item.plain, 0);
   const totalEntries = stockData.movements.reduce(
     (sum, movement) => sum + (movement.movementType === "entrada" ? movement.quantity : 0),
@@ -622,6 +758,171 @@ export default async function EstoquePage({ searchParams }: PageProps) {
           </div>
         ) : null}
 
+        {movementBeingEdited ? (
+          <article className={styles.configCard}>
+            <div className={styles.listTitle}>Editar movimentacao</div>
+            <p className={styles.sectionSubtitle}>
+              Ajuste os dados desse lancamento ou exclua direto no extrato logo abaixo.
+            </p>
+
+            <form action={updateStockMovementAction} className={styles.formStack}>
+              <input type="hidden" name="redirectTo" value={redirectTo} />
+              <input type="hidden" name="movementId" value={movementBeingEdited.id} />
+
+              <label className={styles.filterField}>
+                <span>Tipo</span>
+                <select
+                  name="movementType"
+                  required
+                  defaultValue={
+                    movementBeingEdited.movementType === "entrada" ? "entrada" : "saida"
+                  }
+                >
+                  {MOVEMENT_TYPE_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {labelMovementType(option)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className={styles.filterField}>
+                <span>Modelo</span>
+                <select name="sku" required defaultValue={movementBeingEdited.sku}>
+                  {modelOptions.length > 0 ? (
+                    modelOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">Nenhum modelo mapeado</option>
+                  )}
+                </select>
+              </label>
+
+              <label className={styles.filterField}>
+                <span>Cor</span>
+                <select name="color" required defaultValue={movementBeingEdited.color}>
+                  {colorOptions.length > 0 ? (
+                    colorOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">Nenhuma cor mapeada</option>
+                  )}
+                </select>
+              </label>
+
+              <label className={styles.filterField}>
+                <span>Tamanho</span>
+                <select name="size" required defaultValue={movementBeingEdited.size}>
+                  {sizeOptions.length > 0 ? (
+                    sizeOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">Nenhum tamanho mapeado</option>
+                  )}
+                </select>
+              </label>
+
+              <label className={styles.filterField}>
+                <span>Nome da arte</span>
+                <select name="artSelectionId" defaultValue={editArtSelectionId}>
+                  <option value="">Sem arte vinculada</option>
+                  {namedArtOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.artName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className={styles.filterField}>
+                <span>Quantidade</span>
+                <input
+                  type="number"
+                  name="quantity"
+                  min="1"
+                  step="1"
+                  defaultValue={String(movementBeingEdited.quantity)}
+                  required
+                />
+              </label>
+
+              <label className={styles.filterField}>
+                <span>Origem</span>
+                <select name="originType" defaultValue={movementBeingEdited.originType || "manual"}>
+                  {editOriginOptions.map((origin) => (
+                    <option key={origin} value={origin}>
+                      {labelOrigin(origin)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className={styles.filterField}>
+                <span>Data</span>
+                <input
+                  type="date"
+                  name="movementDate"
+                  defaultValue={movementBeingEdited.movementDate}
+                  required
+                />
+              </label>
+
+              <label className={styles.filterField}>
+                <span>Origem / referencia</span>
+                <input
+                  type="text"
+                  name="originReference"
+                  defaultValue={movementBeingEdited.originReference}
+                  placeholder="Ex.: venda #212"
+                />
+              </label>
+
+              <label className={styles.checkboxCard}>
+                <input
+                  type="checkbox"
+                  name="alreadyPrinted"
+                  value="true"
+                  defaultChecked={
+                    movementBeingEdited.reasonCategory === "saida_ja_estampada_sem_baixa"
+                  }
+                />
+                <span>
+                  <strong>Ja estava estampada</strong>
+                  <span>Quando marcado, mantem o registro da arte sem baixar a lisa.</span>
+                </span>
+              </label>
+
+              <label className={styles.filterField}>
+                <span>Observacao</span>
+                <input
+                  type="text"
+                  name="notes"
+                  defaultValue={movementBeingEdited.reasonText}
+                  placeholder="Opcional"
+                />
+              </label>
+
+              <div className={styles.filterActions}>
+                <button type="submit" className={styles.primaryButton}>
+                  Salvar edicao
+                </button>
+                <a href={redirectTo} className={styles.secondaryButton}>
+                  Cancelar
+                </a>
+              </div>
+            </form>
+          </article>
+        ) : null}
+
         <div className={stockData.persistence.enabled ? styles.callout : styles.warningPanel}>
           <h3>Leitura do estoque</h3>
           <p>{stockData.persistence.message}</p>
@@ -692,6 +993,7 @@ export default async function EstoquePage({ searchParams }: PageProps) {
                 <th>Numero</th>
                 <th>Qtd</th>
                 <th>Saldo apos</th>
+                <th>Acoes</th>
               </tr>
             </thead>
             <tbody>
@@ -718,11 +1020,29 @@ export default async function EstoquePage({ searchParams }: PageProps) {
                     <td>{movement.originReference || "-"}</td>
                     <td>{String(movement.quantity)}</td>
                     <td>{String(movement.plainAfter)}</td>
+                    <td>
+                      <div className={styles.tableActionRow}>
+                        <a
+                          href={buildEditMovementHref(redirectTo, movement.id)}
+                          className={styles.tableActionButton}
+                        >
+                          Editar
+                        </a>
+
+                        <form action={deleteStockMovementAction}>
+                          <input type="hidden" name="redirectTo" value={redirectTo} />
+                          <input type="hidden" name="movementId" value={movement.id} />
+                          <button type="submit" className={styles.tableActionDanger}>
+                            Excluir
+                          </button>
+                        </form>
+                      </div>
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={10}>Nenhuma movimentacao de camisetas registrada neste mes.</td>
+                  <td colSpan={11}>Nenhuma movimentacao de camisetas registrada neste mes.</td>
                 </tr>
               )}
             </tbody>
