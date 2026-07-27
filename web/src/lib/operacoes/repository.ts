@@ -986,7 +986,13 @@ function getPrintedQtyFromStockRow(row: Record<string, unknown> | null) {
 }
 
 function getStockMovementDelta(
-  movement: Pick<StockMovement, "movementType" | "quantity" | "plainBefore" | "plainAfter" | "reasonCategory">,
+  movement: {
+    movementType: StockMovement["movementType"];
+    quantity: number;
+    reasonCategory?: string;
+    plainBefore?: number;
+    plainAfter?: number;
+  },
 ) {
   if (movement.movementType === "entrada") {
     return movement.quantity;
@@ -996,7 +1002,7 @@ function getStockMovementDelta(
     return movement.reasonCategory === "saida_ja_estampada_sem_baixa" ? 0 : movement.quantity * -1;
   }
 
-  return movement.plainAfter - movement.plainBefore;
+  return (movement.plainAfter ?? 0) - (movement.plainBefore ?? 0);
 }
 
 export async function deleteManualStockMovement(id: string) {
