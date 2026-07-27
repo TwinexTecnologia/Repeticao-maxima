@@ -648,7 +648,6 @@ export async function updateManualStockMovement(id: string, input: unknown) {
         reason_category: currentMovement.reasonCategory,
         reason_text: currentMovement.reasonText,
         source_module: currentMovement.sourceModule,
-        updated_at: nowIso,
       })
       .eq("id", movementId);
 
@@ -911,7 +910,6 @@ async function persistStockRecalculationPlans(
           stock_item_id: stockItemId || null,
           plain_before: movement.plainBefore,
           plain_after: movement.plainAfter,
-          updated_at: nowIso,
         })
         .eq("id", movement.id);
 
@@ -3145,6 +3143,10 @@ function buildDisabledState(message: string): OperationalPersistenceState {
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
+    return `Nao foi possivel acessar o Supabase: ${error.message}. Confirme que o schema repeticao_maxima foi adicionado em Settings > API > Exposed schemas e que o SQL foi executado com os GRANTs de acesso ao schema e as tabelas.`;
+  }
+
+  if (isRecord(error) && typeof error.message === "string" && error.message.trim()) {
     return `Nao foi possivel acessar o Supabase: ${error.message}. Confirme que o schema repeticao_maxima foi adicionado em Settings > API > Exposed schemas e que o SQL foi executado com os GRANTs de acesso ao schema e as tabelas.`;
   }
 
