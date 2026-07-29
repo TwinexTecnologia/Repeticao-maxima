@@ -1417,6 +1417,45 @@
   gap: 12px;
 }
 
+.financeTopGrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(280px, 0.92fr) minmax(0, 1.08fr);
+}
+
+.financeActionCard {
+  padding: 20px;
+  border-radius: 22px;
+  background: #ffffff;
+  border: 1px solid rgba(123, 44, 191, 0.08);
+  box-shadow: 0 8px 22px rgba(88, 28, 135, 0.05);
+}
+
+.financeInlineValue {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #5e189f;
+}
+
+.financeChartGrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.financeInsightGrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.financeKeyValue {
+  margin-top: 8px;
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #241535;
+}
+
 .chartRow {
   display: grid;
   grid-template-columns: minmax(120px, 160px) minmax(0, 1fr) 140px;
@@ -1445,6 +1484,14 @@
   height: 100%;
   border-radius: 999px;
   background: linear-gradient(90deg, #5e189f 0%, #8e4700 100%);
+}
+
+.chartBarEntry {
+  background: linear-gradient(90deg, #16a34a 0%, #22c55e 100%);
+}
+
+.chartBarExit {
+  background: linear-gradient(90deg, #ef4444 0%, #f97316 100%);
 }
 
 .chartValue {
@@ -1920,6 +1967,57 @@
   transform: translateY(0);
 }
 
+.movementTypeGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.movementTypeInput {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.movementTypeLabel {
+  min-height: 46px;
+  padding: 0 14px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(123, 44, 191, 0.12);
+  background: rgba(123, 44, 191, 0.04);
+  color: #5d3b7b;
+  font-weight: 700;
+}
+
+.movementTypeEntry:checked + .movementTypeLabel,
+.movementTypeExpense:checked + .movementTypeLabel {
+  border-color: rgba(123, 44, 191, 0.3);
+  background: linear-gradient(135deg, rgba(123, 44, 191, 0.12), rgba(94, 24, 159, 0.16));
+  color: #37184d;
+  box-shadow: inset 0 0 0 1px rgba(123, 44, 191, 0.08);
+}
+
+.movementPanels {
+  grid-column: 1 / -1;
+}
+
+.movementPanel {
+  display: none;
+}
+
+.movementTypeEntry:checked ~ .movementPanels .movementPanelEntry,
+.movementTypeExpense:checked ~ .movementPanels .movementPanelExpense {
+  display: grid;
+}
+
+.movementHelper {
+  color: #6f5b82;
+  line-height: 1.6;
+}
+
 @media (max-width: 1180px) {
   .appShell {
     grid-template-columns: 1fr;
@@ -1958,6 +2056,9 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .financeTopGrid,
+  .financeChartGrid,
+  .financeInsightGrid,
   .hero,
   .heroCompact,
   .twoColumn,
@@ -2134,7 +2235,6 @@
     padding-bottom: 24px;
   }
 
-
   .metricGrid {
     grid-template-columns: 1fr;
   }
@@ -2155,6 +2255,12 @@
     grid-template-columns: 1fr;
   }
 
+  .financeTopGrid,
+  .financeChartGrid,
+  .financeInsightGrid {
+    grid-template-columns: 1fr;
+  }
+
   .filterActions,
   .catalogDetailHeader,
   .catalogMedia,
@@ -2170,6 +2276,14 @@
 
   .chartRow {
     display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .chartValue {
+    text-align: left;
+  }
+
+  .movementTypeGrid {
     grid-template-columns: 1fr;
   }
 
