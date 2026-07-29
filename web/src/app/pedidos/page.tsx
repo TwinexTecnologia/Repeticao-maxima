@@ -4,7 +4,10 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import styles from "@/components/panel.module.css";
 import { buildMonthlyCashFlow } from "@/lib/financeiro/calculations";
-import { loadFinanceConfig } from "@/lib/financeiro/repository";
+import {
+  loadFinanceConfig,
+  saveFinanceConfig,
+} from "@/lib/financeiro/repository";
 import type {
   FinanceFlowDebt,
   FinanceFlowOrder,
@@ -27,6 +30,26 @@ const MAX_PAGES = 12;
 
 type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+type AnalyticsRow = {
+  label: string;
+  amount: number;
+  share: number;
+  width: number;
+  detail: string;
+};
+
+type LedgerRow = {
+  id: string;
+  dateValue: string;
+  dateSort: number;
+  kind: "entrada" | "saida";
+  category: string;
+  description: string;
+  paymentLabel: string;
+  entryAmount: number;
+  exitAmount: number;
 };
 
 function getSearchValue(
@@ -59,6 +82,10 @@ function formatMoney(value?: string | number | null) {
   }).format(amount);
 }
 
+function formatPercent(value: number) {
+  return `${value.toFixed(1).replace(".", ",")}%`;
+}
+
 function formatMonthInput(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
@@ -87,6 +114,11 @@ function getMonthRange(selectedMonth: string) {
 
 function getMonthStartDate(selectedMonth: string) {
   return `${selectedMonth}-01`;
+}
+
+function getMonthEndDate(selectedMonth: string) {
+  const { end } = getMonthRange(selectedMonth);
+  return `${selectedMonth}-${String(end.getDate()).padStart(2, "0")}`;
 }
 
 function getDefaultDebtDateForMonth(selectedMonth: string) {
@@ -213,9 +245,52 @@ function appendFlashToRedirect(
 ) {
   const [path, query = ""] = basePath.split("?");
   const params = new URLSearchParams(query);
-  params.set("expenseStatus", status);
-  params.set("expenseMessage", message);
+  params.set("movementStatus", status);
+  params.set("movementMessage", message);
   return `${path || "/pedidos"}?${params.toString()}`;
+}
+
+async function registerEntryAction(formData: FormData) {
+  "use server";
+
+  const redirectTo = String(formData.get("redirectTo") ?? "/pedidos").trim() || "/pedidos";
+  const amount = Number.parseFloat(String(formData.get("amount") ?? "0").replace(",", "."));
+
+  if (!Number.isFinite(amount) || amount < 0) {
+    redirect(
+      appendFlashToRedirect(
+        redirectTo,
+        "error",
+        "Informe um valor valido para a entrada manual.",
+      ),
+    );
+  }
+
+  const { config } = await loadFinanceConfig();
+  const result = await saveFinanceConfig({
+    ...config,
+    tiktokMonthlyNet: amount,
+  });
+
+  if (!result.ok) {
+    redirect(
+      appendFlashToRedirect(
+        redirectTo,
+        "error",
+        result.persistence.message || "Nao foi possivel salvar a entrada manual.",
+      ),
+    );
+  }
+
+  revalidatePath("/pedidos");
+  revalidatePath("/financeiro");
+  redirect(
+    appendFlashToRedirect(
+      redirectTo,
+      "success",
+      "Entrada manual do mes atualizada com sucesso.",
+    ),
+  );
 }
 
 async function registerExpenseAction(formData: FormData) {
@@ -353,15 +428,160 @@ function labelForDebtStatus(value: string) {
   return value;
 }
 
+function toTimestamp(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function buildAnalyticsRows(
+  rows: Array<{
+    label: string;
+    amount: number;
+    detail: string;
+  }>,
+) {
+  const filtered = rows.filter((row) => row.amount > 0);
+  const total = filtered.reduce((sum, row) => sum + row.amount, 0);
+  const max = filtered.reduce((largest, row) => Math.max(largest, row.amount), 0);
+
+  return filtered
+    .sort((left, right) => right.amount - left.amount)
+    .slice(0, 6)
+    .map<AnalyticsRow>((row) => ({
+      label: row.label,
+      amount: row.amount,
+      share: total > 0 ? (row.amount / total) * 100 : 0,
+      width: max > 0 ? (row.amount / max) * 100 : 0,
+      detail: row.detail,
+    }));
+}
+
+function buildExpenseCategoryRows(
+  debtRows: ReturnType<typeof buildMonthlyCashFlow>["debtRows"],
+) {
+  const categoryMap = new Map<string, { amount: number; count: number }>();
+
+  for (const row of debtRows) {
+    if (!row.impactInMonth) {
+      continue;
+    }
+
+    const label = String(row.category || "Sem categoria").trim() || "Sem categoria";
+    const current = categoryMap.get(label) ?? { amount: 0, count: 0 };
+    current.amount += row.amount;
+    current.count += 1;
+    categoryMap.set(label, current);
+  }
+
+  return buildAnalyticsRows(
+    Array.from(categoryMap.entries()).map(([label, data]) => ({
+      label,
+      amount: data.amount,
+      detail: `${data.count} movimentacao${data.count > 1 ? "oes" : ""}`,
+    })),
+  );
+}
+
+function buildIncomeSourceRows(
+  cashFlow: ReturnType<typeof buildMonthlyCashFlow>,
+) {
+  return buildAnalyticsRows(
+    cashFlow.channelRows.map((row) => ({
+      label: row.channel,
+      amount: row.net,
+      detail:
+        row.channel === "TikTok Shop"
+          ? "Entrada manual acumulada do mes"
+          : `${row.volume} pedido${row.volume > 1 ? "s" : ""} com efeito de caixa`,
+    })),
+  );
+}
+
+function buildPaymentMixRows(
+  nuvemRows: ReturnType<typeof buildMonthlyCashFlow>["nuvemRows"],
+) {
+  const paymentMap = new Map<string, { amount: number; count: number }>();
+
+  for (const row of nuvemRows) {
+    const label = row.feeLabel || "Sem regra";
+    const current = paymentMap.get(label) ?? { amount: 0, count: 0 };
+    current.amount += row.netReceived;
+    current.count += 1;
+    paymentMap.set(label, current);
+  }
+
+  return buildAnalyticsRows(
+    Array.from(paymentMap.entries()).map(([label, data]) => ({
+      label,
+      amount: data.amount,
+      detail: `${data.count} venda${data.count > 1 ? "s" : ""}`,
+    })),
+  );
+}
+
+function buildLedgerRows(params: {
+  selectedMonth: string;
+  cashFlow: ReturnType<typeof buildMonthlyCashFlow>;
+  manualEntryAmount: number;
+}) {
+  const rows: LedgerRow[] = params.cashFlow.nuvemRows.map((row) => ({
+    id: `order-${row.id}`,
+    dateValue: row.referenceDate || `${params.selectedMonth}-01T00:00:00`,
+    dateSort: toTimestamp(row.referenceDate || `${params.selectedMonth}-01T00:00:00`),
+    kind: "entrada",
+    category: "Nuvemshop",
+    description: `Pedido #${row.number} · ${row.customerName}`,
+    paymentLabel: `${row.paymentMethod} · ${row.installments}x`,
+    entryAmount: row.netReceived,
+    exitAmount: 0,
+  }));
+
+  if (params.manualEntryAmount > 0) {
+    rows.push({
+      id: `manual-entry-${params.selectedMonth}`,
+      dateValue: `${getMonthEndDate(params.selectedMonth)}T12:00:00`,
+      dateSort: toTimestamp(`${getMonthEndDate(params.selectedMonth)}T12:00:00`),
+      kind: "entrada",
+      category: "Entrada manual",
+      description: "Ajuste manual do mes para TikTok Shop e outros canais.",
+      paymentLabel: "Manual",
+      entryAmount: params.manualEntryAmount,
+      exitAmount: 0,
+    });
+  }
+
+  for (const row of params.cashFlow.debtRows) {
+    if (!row.impactInMonth) {
+      continue;
+    }
+
+    rows.push({
+      id: `debt-${row.id}`,
+      dateValue: `${row.dueDate}T12:00:00`,
+      dateSort: toTimestamp(`${row.dueDate}T12:00:00`),
+      kind: "saida",
+      category: row.category,
+      description: row.title,
+      paymentLabel: labelForPaymentMethod(row.paymentMethod),
+      entryAmount: 0,
+      exitAmount: row.amount,
+    });
+  }
+
+  return rows.sort((left, right) => right.dateSort - left.dateSort);
+}
+
 export default async function PedidosPage({ searchParams }: PageProps) {
   const resolvedSearchParams = (await searchParams) || {};
   const selectedMonth = getSelectedMonth(resolvedSearchParams);
   const { start: monthStart, end: monthEnd, monthLabel } = getMonthRange(selectedMonth);
   const dayStats = getMonthDayStats(selectedMonth);
-  const expenseStatus = getSearchValue(resolvedSearchParams, "expenseStatus");
-  const expenseMessage = getSearchValue(resolvedSearchParams, "expenseMessage");
+  const movementStatus = getSearchValue(resolvedSearchParams, "movementStatus");
+  const movementMessage = getSearchValue(resolvedSearchParams, "movementMessage");
   const redirectTo = `/pedidos?month=${selectedMonth}`;
-  const expenseSheetId = `expense-sheet-${selectedMonth.replace("-", "")}`;
+  const movementSheetId = `movement-sheet-${selectedMonth.replace("-", "")}`;
+  const entryModeId = `${movementSheetId}-entry`;
+  const expenseModeId = `${movementSheetId}-expense`;
   const credentials = getNuvemshopCredentials();
 
   try {
@@ -438,32 +658,44 @@ export default async function PedidosPage({ searchParams }: PageProps) {
       ? averageDailyEntry * dayStats.totalDays
       : cashFlow.entradasTotais;
     const projectedMonthBalance = projectedMonthEntry - cashFlow.saidasTotais;
+    const expenseCategoryRows = buildExpenseCategoryRows(cashFlow.debtRows);
+    const incomeSourceRows = buildIncomeSourceRows(cashFlow);
+    const paymentMixRows = buildPaymentMixRows(cashFlow.nuvemRows);
+    const ledgerRows = buildLedgerRows({
+      selectedMonth,
+      cashFlow,
+      manualEntryAmount: Math.max(config.tiktokMonthlyNet, 0),
+    });
+    const biggestExpense = expenseCategoryRows[0] ?? null;
+    const biggestIncome = incomeSourceRows[0] ?? null;
+    const topPaymentMix = paymentMixRows[0] ?? null;
 
     return (
       <AppShell
         title="Financeiro"
-        subtitle="Sua leitura financeira do mes: faturamento, faturamento liquido, saidas e projecao liquida."
+        subtitle="Leitura rapida do caixa, com foco nas principais entradas, maiores gastos e no saldo do mes."
         currentPath="/pedidos"
       >
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
             <div>
-              <div className={styles.sectionTitle}>Fluxo do mes</div>
+              <div className={styles.sectionTitle}>Painel do mes</div>
               <p className={styles.sectionSubtitle}>
-                Escolha o mes e registre saidas para acompanhar quanto entrou, quanto saiu e a projecao de fechamento.
+                Escolha a competencia e acompanhe rapidamente de onde o dinheiro esta vindo e para onde ele esta indo.
               </p>
             </div>
             <div className={styles.chipRow}>
               <span className={styles.chip}>Competencia: {monthLabel}</span>
-              <span className={styles.chip}>Pedidos com entrada: {cashFlow.nuvemRows.length}</span>
+              <span className={styles.chip}>Entradas: {cashFlow.nuvemRows.length + (config.tiktokMonthlyNet > 0 ? 1 : 0)}</span>
+              <span className={styles.chip}>Saidas: {cashFlow.debtRows.filter((row) => row.impactInMonth).length}</span>
             </div>
           </div>
 
-          <div className={styles.configGrid}>
-            <article className={styles.configCard}>
+          <div className={styles.financeTopGrid}>
+            <article className={styles.financeActionCard}>
               <form className={styles.formStack} method="get">
                 <label className={styles.filterField}>
-                  <span>Mes</span>
+                  <span>Competencia</span>
                   <input type="month" name="month" defaultValue={selectedMonth} />
                 </label>
                 <div className={styles.filterActions}>
@@ -477,83 +709,171 @@ export default async function PedidosPage({ searchParams }: PageProps) {
               </form>
             </article>
 
-            <article className={styles.configCard}>
+            <article className={styles.financeActionCard}>
               <div className={styles.sectionHeader}>
                 <div>
-                  <div className={styles.listTitle}>Saidas manuais</div>
+                  <div className={styles.listTitle}>Registrar movimentacao</div>
                   <p className={styles.sectionSubtitle}>
-                    Registre novas contas e parcelas para elas entrarem direto na saida do mes.
+                    Use um unico fluxo para atualizar a entrada manual do mes ou registrar uma nova saida.
                   </p>
                 </div>
+                <div className={styles.financeInlineValue}>{formatMoney(cashFlow.saldoProjetado)}</div>
               </div>
 
-              <input id={expenseSheetId} type="checkbox" className={styles.sheetToggle} />
-              <label htmlFor={expenseSheetId} className={styles.primaryButton}>
-                Registrar saida
+              <input id={movementSheetId} type="checkbox" className={styles.sheetToggle} />
+              <label htmlFor={movementSheetId} className={styles.primaryButton}>
+                Registrar movimentacao
               </label>
-              <label htmlFor={expenseSheetId} className={styles.sheetOverlay} aria-hidden="true" />
+              <label htmlFor={movementSheetId} className={styles.sheetOverlay} aria-hidden="true" />
 
               <div className={styles.sheetPanel}>
                 <div className={styles.sheetHeader}>
-                  <div className={styles.sheetTitle}>Registrar saida</div>
-                  <label htmlFor={expenseSheetId} className={styles.sheetClose}>
+                  <div className={styles.sheetTitle}>Registrar movimentacao</div>
+                  <label htmlFor={movementSheetId} className={styles.sheetClose}>
                     Fechar
                   </label>
                 </div>
 
-                <form action={registerExpenseAction} className={styles.formStack}>
-                  <input type="hidden" name="redirectTo" value={redirectTo} />
-                  <input type="hidden" name="selectedMonth" value={selectedMonth} />
-
-                  <label className={styles.filterField}>
-                    <span>Nome da divida</span>
-                    <input type="text" name="title" placeholder="Ex.: Trafego, fornecedor, embalagem" required />
+                <div className={styles.movementTypeGrid}>
+                  <input
+                    id={entryModeId}
+                    type="radio"
+                    name={`movement-mode-${selectedMonth}`}
+                    className={`${styles.movementTypeInput} ${styles.movementTypeEntry}`}
+                    defaultChecked
+                  />
+                  <label htmlFor={entryModeId} className={styles.movementTypeLabel}>
+                    Entrada
                   </label>
 
-                  <label className={styles.filterField}>
-                    <span>Valor</span>
-                    <input type="number" name="amount" min="0" step="0.01" placeholder="0,00" required />
+                  <input
+                    id={expenseModeId}
+                    type="radio"
+                    name={`movement-mode-${selectedMonth}`}
+                    className={`${styles.movementTypeInput} ${styles.movementTypeExpense}`}
+                  />
+                  <label htmlFor={expenseModeId} className={styles.movementTypeLabel}>
+                    Saida
                   </label>
 
-                  <label className={styles.filterField}>
-                    <span>Como foi feita</span>
-                    <select name="paymentMethod" defaultValue="pix">
-                      <option value="pix">Pix</option>
-                      <option value="cartao">Cartao</option>
-                      <option value="boleto">Boleto</option>
-                      <option value="transferencia">Transferencia</option>
-                      <option value="dinheiro">Dinheiro</option>
-                      <option value="outro">Outro</option>
-                    </select>
-                  </label>
+                  <div className={styles.movementPanels}>
+                    <div className={`${styles.movementPanel} ${styles.movementPanelEntry}`}>
+                      <p className={styles.movementHelper}>
+                        Atualize a entrada manual acumulada do mes para TikTok Shop, venda direta ou outros canais nao integrados.
+                      </p>
 
-                  <label className={styles.filterField}>
-                    <span>Em quantas vezes</span>
-                    <input type="number" name="installments" min="1" step="1" defaultValue="1" required />
-                  </label>
+                      <form action={registerEntryAction} className={styles.formStack}>
+                        <input type="hidden" name="redirectTo" value={redirectTo} />
 
-                  <label className={styles.filterField}>
-                    <span>Primeiro vencimento</span>
-                    <input type="date" name="dueDate" defaultValue={getDefaultDebtDateForMonth(selectedMonth)} required />
-                  </label>
+                        <label className={styles.filterField}>
+                          <span>Entrada manual do mes</span>
+                          <input
+                            type="number"
+                            name="amount"
+                            min="0"
+                            step="0.01"
+                            defaultValue={config.tiktokMonthlyNet}
+                            placeholder="0,00"
+                            required
+                          />
+                        </label>
 
-                  <div className={styles.filterActions}>
-                    <button type="submit" className={styles.primaryButton}>
-                      Salvar saida
-                    </button>
-                    <label htmlFor={expenseSheetId} className={styles.secondaryButton}>
-                      Cancelar
-                    </label>
+                        <div className={styles.filterActions}>
+                          <button type="submit" className={styles.primaryButton}>
+                            Salvar entrada
+                          </button>
+                          <label htmlFor={movementSheetId} className={styles.secondaryButton}>
+                            Cancelar
+                          </label>
+                        </div>
+                      </form>
+                    </div>
+
+                    <div className={`${styles.movementPanel} ${styles.movementPanelExpense}`}>
+                      <p className={styles.movementHelper}>
+                        Registre uma conta nova para ela aparecer imediatamente nas saidas do mes e no extrato financeiro.
+                      </p>
+
+                      <form action={registerExpenseAction} className={styles.formStack}>
+                        <input type="hidden" name="redirectTo" value={redirectTo} />
+                        <input type="hidden" name="selectedMonth" value={selectedMonth} />
+
+                        <label className={styles.filterField}>
+                          <span>Nome da saida</span>
+                          <input
+                            type="text"
+                            name="title"
+                            placeholder="Ex.: Trafego, fornecedor, embalagem"
+                            required
+                          />
+                        </label>
+
+                        <label className={styles.filterField}>
+                          <span>Valor</span>
+                          <input
+                            type="number"
+                            name="amount"
+                            min="0"
+                            step="0.01"
+                            placeholder="0,00"
+                            required
+                          />
+                        </label>
+
+                        <label className={styles.filterField}>
+                          <span>Como foi paga</span>
+                          <select name="paymentMethod" defaultValue="pix">
+                            <option value="pix">Pix</option>
+                            <option value="cartao">Cartao</option>
+                            <option value="boleto">Boleto</option>
+                            <option value="transferencia">Transferencia</option>
+                            <option value="dinheiro">Dinheiro</option>
+                            <option value="outro">Outro</option>
+                          </select>
+                        </label>
+
+                        <label className={styles.filterField}>
+                          <span>Em quantas vezes</span>
+                          <input
+                            type="number"
+                            name="installments"
+                            min="1"
+                            step="1"
+                            defaultValue="1"
+                            required
+                          />
+                        </label>
+
+                        <label className={styles.filterField}>
+                          <span>Primeiro vencimento</span>
+                          <input
+                            type="date"
+                            name="dueDate"
+                            defaultValue={getDefaultDebtDateForMonth(selectedMonth)}
+                            required
+                          />
+                        </label>
+
+                        <div className={styles.filterActions}>
+                          <button type="submit" className={styles.primaryButton}>
+                            Salvar saida
+                          </button>
+                          <label htmlFor={movementSheetId} className={styles.secondaryButton}>
+                            Cancelar
+                          </label>
+                        </div>
+                      </form>
+                    </div>
                   </div>
-                </form>
+                </div>
               </div>
             </article>
           </div>
 
-          {expenseMessage ? (
-            <div className={expenseStatus === "success" ? styles.callout : styles.warningPanel}>
-              <h3>{expenseStatus === "success" ? "Saida registrada" : "Nao foi possivel registrar"}</h3>
-              <p>{expenseMessage}</p>
+          {movementMessage ? (
+            <div className={movementStatus === "success" ? styles.callout : styles.warningPanel}>
+              <h3>{movementStatus === "success" ? "Movimentacao atualizada" : "Nao foi possivel salvar"}</h3>
+              <p>{movementMessage}</p>
             </div>
           ) : null}
         </section>
@@ -563,7 +883,7 @@ export default async function PedidosPage({ searchParams }: PageProps) {
             <div>
               <div className={styles.sectionTitle}>Resumo financeiro</div>
               <p className={styles.sectionSubtitle}>
-                O lucro estimado saiu daqui e a leitura agora destaca faturamento, faturamento liquido e projecao liquida do mes.
+                Mantive a leitura essencial do mes e deixei o foco nas metricas que ajudam a decidir mais rapido.
               </p>
             </div>
           </div>
@@ -572,7 +892,7 @@ export default async function PedidosPage({ searchParams }: PageProps) {
             <article className={styles.metricCard}>
               <div className={styles.metricLabel}>Entradas do mes</div>
               <div className={styles.metricValue}>{formatMoney(cashFlow.entradasTotais)}</div>
-              <div className={styles.metricHint}>Liquido estimado da Nuvemshop mais entradas manuais</div>
+              <div className={styles.metricHint}>Liquido estimado da Nuvemshop mais entrada manual acumulada</div>
             </article>
 
             <article className={styles.metricCard}>
@@ -612,6 +932,152 @@ export default async function PedidosPage({ searchParams }: PageProps) {
         </section>
 
         <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <div className={styles.sectionTitle}>Analise rapida</div>
+              <p className={styles.sectionSubtitle}>
+                Graficos leves para destacar os maiores pesos da operacao sem aumentar a carga da consulta.
+              </p>
+            </div>
+          </div>
+
+          <div className={styles.financeChartGrid}>
+            <article className={styles.configCard}>
+              <div className={styles.listTitle}>Para onde o dinheiro esta indo</div>
+              <p className={styles.sectionSubtitle}>
+                Ranking das categorias de saida com maior impacto no caixa desta competencia.
+              </p>
+
+              {expenseCategoryRows.length > 0 ? (
+                <div className={styles.chartGrid}>
+                  {expenseCategoryRows.map((row) => (
+                    <div key={row.label} className={styles.chartRow}>
+                      <div className={styles.chartLabel}>
+                        <strong>{row.label}</strong>
+                        <span>{row.detail}</span>
+                      </div>
+                      <div className={styles.chartTrack}>
+                        <div
+                          className={`${styles.chartBar} ${styles.chartBarExit}`}
+                          style={{ width: `${row.width}%` }}
+                        />
+                      </div>
+                      <div className={styles.chartValue}>
+                        {formatMoney(row.amount)} · {formatPercent(row.share)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className={styles.emptyState}>Nenhuma saida com impacto encontrada para este mes.</div>
+              )}
+            </article>
+
+            <article className={styles.configCard}>
+              <div className={styles.listTitle}>De onde o dinheiro esta vindo</div>
+              <p className={styles.sectionSubtitle}>
+                Visao por origem de entrada para identificar rapidamente seu canal principal.
+              </p>
+
+              {incomeSourceRows.length > 0 ? (
+                <div className={styles.chartGrid}>
+                  {incomeSourceRows.map((row) => (
+                    <div key={row.label} className={styles.chartRow}>
+                      <div className={styles.chartLabel}>
+                        <strong>{row.label}</strong>
+                        <span>{row.detail}</span>
+                      </div>
+                      <div className={styles.chartTrack}>
+                        <div
+                          className={`${styles.chartBar} ${styles.chartBarEntry}`}
+                          style={{ width: `${row.width}%` }}
+                        />
+                      </div>
+                      <div className={styles.chartValue}>
+                        {formatMoney(row.amount)} · {formatPercent(row.share)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className={styles.emptyState}>Nenhuma entrada encontrada para este mes.</div>
+              )}
+            </article>
+
+            <article className={styles.configCard}>
+              <div className={styles.listTitle}>Entradas Nuvemshop por pagamento</div>
+              <p className={styles.sectionSubtitle}>
+                Distribuicao do liquido por regra de pagamento para leitura mais operacional.
+              </p>
+
+              {paymentMixRows.length > 0 ? (
+                <div className={styles.chartGrid}>
+                  {paymentMixRows.map((row) => (
+                    <div key={row.label} className={styles.chartRow}>
+                      <div className={styles.chartLabel}>
+                        <strong>{row.label}</strong>
+                        <span>{row.detail}</span>
+                      </div>
+                      <div className={styles.chartTrack}>
+                        <div
+                          className={`${styles.chartBar} ${styles.chartBarEntry}`}
+                          style={{ width: `${row.width}%` }}
+                        />
+                      </div>
+                      <div className={styles.chartValue}>
+                        {formatMoney(row.amount)} · {formatPercent(row.share)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className={styles.emptyState}>Nenhuma entrada Nuvemshop encontrada para este mes.</div>
+              )}
+            </article>
+          </div>
+        </section>
+
+        <section className={styles.section}>
+          <div className={styles.financeInsightGrid}>
+            <article className={styles.definitionCard}>
+              <div className={styles.metricLabel}>Maior gasto</div>
+              <div className={styles.financeKeyValue}>
+                {biggestExpense ? biggestExpense.label : "Sem saidas"}
+              </div>
+              <div className={styles.metricHint}>
+                {biggestExpense
+                  ? `${formatMoney(biggestExpense.amount)} · ${formatPercent(biggestExpense.share)} das saidas`
+                  : "Nenhuma categoria de saida com impacto no mes."}
+              </div>
+            </article>
+
+            <article className={styles.definitionCard}>
+              <div className={styles.metricLabel}>Principal origem</div>
+              <div className={styles.financeKeyValue}>
+                {biggestIncome ? biggestIncome.label : "Sem entradas"}
+              </div>
+              <div className={styles.metricHint}>
+                {biggestIncome
+                  ? `${formatMoney(biggestIncome.amount)} · ${formatPercent(biggestIncome.share)} das entradas`
+                  : "Nenhuma entrada registrada na competencia."}
+              </div>
+            </article>
+
+            <article className={styles.definitionCard}>
+              <div className={styles.metricLabel}>Meio mais forte da Nuvemshop</div>
+              <div className={styles.financeKeyValue}>
+                {topPaymentMix ? topPaymentMix.label : "Sem vendas"}
+              </div>
+              <div className={styles.metricHint}>
+                {topPaymentMix
+                  ? `${formatMoney(topPaymentMix.amount)} em recebimento liquido`
+                  : "Sem pedidos com efeito de caixa no periodo."}
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section className={styles.section}>
           <div className={styles.twoColumn}>
             <div className={flow.nuvemshop.ok ? styles.callout : styles.warningPanel}>
               <h3>Nuvemshop</h3>
@@ -628,9 +1094,9 @@ export default async function PedidosPage({ searchParams }: PageProps) {
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
             <div>
-              <div className={styles.sectionTitle}>Saidas do mes</div>
+              <div className={styles.sectionTitle}>Extrato do mes</div>
               <p className={styles.sectionSubtitle}>
-                Aqui voce acompanha o que ja saiu ou ainda vence no mes selecionado.
+                Entradas e saidas em uma unica leitura para deixar a analise mais direta no dia a dia.
               </p>
             </div>
           </div>
@@ -639,89 +1105,37 @@ export default async function PedidosPage({ searchParams }: PageProps) {
             <table className={styles.table}>
               <thead>
                 <tr>
-                  <th>Divida</th>
+                  <th>Data</th>
+                  <th>Tipo</th>
                   <th>Categoria</th>
+                  <th>Descricao</th>
                   <th>Pagamento</th>
-                  <th>Parcela</th>
-                  <th>Vencimento</th>
-                  <th>Valor</th>
-                  <th>Status</th>
+                  <th>Entrada</th>
+                  <th>Saida</th>
                 </tr>
               </thead>
               <tbody>
-                {cashFlow.debtRows.length > 0 ? (
-                  cashFlow.debtRows.map((row) => (
+                {ledgerRows.length > 0 ? (
+                  ledgerRows.map((row) => (
                     <tr key={row.id}>
-                      <td>{row.title}</td>
+                      <td>{formatDateTime(row.dateValue)}</td>
+                      <td className={row.kind === "entrada" ? styles.profitPositive : styles.profitAttention}>
+                        {row.kind === "entrada" ? "Entrada" : "Saida"}
+                      </td>
                       <td>{row.category}</td>
-                      <td>{labelForPaymentMethod(row.paymentMethod)}</td>
-                      <td>{row.installmentLabel}</td>
-                      <td>{formatDate(row.dueDate)}</td>
-                      <td>{formatMoney(row.amount)}</td>
-                      <td
-                        className={
-                          row.status === "paga"
-                            ? styles.profitPositive
-                            : row.status === "cancelada"
-                              ? styles.footerNote
-                              : styles.profitAttention
-                        }
-                      >
-                        {labelForDebtStatus(row.status)}
+                      <td>{row.description}</td>
+                      <td>{row.paymentLabel}</td>
+                      <td className={row.entryAmount > 0 ? styles.profitPositive : undefined}>
+                        {row.entryAmount > 0 ? formatMoney(row.entryAmount) : "-"}
+                      </td>
+                      <td className={row.exitAmount > 0 ? styles.profitAttention : undefined}>
+                        {row.exitAmount > 0 ? formatMoney(row.exitAmount) : "-"}
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={7}>Nenhuma saida encontrada para este mes.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section className={styles.section}>
-          <div className={styles.sectionHeader}>
-            <div>
-              <div className={styles.sectionTitle}>Pedidos com entrada no mes</div>
-              <p className={styles.sectionSubtitle}>
-                Mantive o nome de quem fez o pedido e a leitura de quanto cada venda deixou liquido no caixa.
-              </p>
-            </div>
-          </div>
-
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Pedido</th>
-                  <th>Cliente</th>
-                  <th>Data</th>
-                  <th>Pagamento</th>
-                  <th>Bruto</th>
-                  <th>Taxa estimada</th>
-                  <th>Liquido estimado</th>
-                  <th>Cupom</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cashFlow.nuvemRows.length > 0 ? (
-                  cashFlow.nuvemRows.map((row) => (
-                    <tr key={row.id}>
-                      <td>#{row.number}</td>
-                      <td>{row.customerName}</td>
-                      <td>{row.referenceDate ? formatDateTime(row.referenceDate) : "-"}</td>
-                      <td>{`${row.paymentMethod} · ${row.installments}x`}</td>
-                      <td>{formatMoney(row.total)}</td>
-                      <td>{formatMoney(row.feeCost)}</td>
-                      <td className={styles.profitPositive}>{formatMoney(row.netReceived)}</td>
-                      <td>{row.couponCode || "-"}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={8}>Nenhum pedido com efeito de caixa neste mes.</td>
+                    <td colSpan={7}>Nenhuma movimentacao encontrada para este mes.</td>
                   </tr>
                 )}
               </tbody>
