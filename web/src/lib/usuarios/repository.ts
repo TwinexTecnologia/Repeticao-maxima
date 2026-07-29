@@ -267,7 +267,7 @@ export async function createEmployeeAccessUser(input: unknown) {
         user_type: "funcionario",
         full_name: row.fullName,
         email: row.email,
-        active: true,
+        active: row.active,
         notes: row.notes,
       })
       .select("*")
@@ -280,18 +280,7 @@ export async function createEmployeeAccessUser(input: unknown) {
     const { error: permissionsError } = await supabase.client
       .schema(OPERATIONS_SCHEMA)
       .from(PERMISSIONS_TABLE)
-      .insert({
-        profile_id: profileData.id,
-        can_dashboard: row.permissions.dashboard,
-        can_compras: row.permissions.compras,
-        can_estoque: row.permissions.estoque,
-        can_pedidos: row.permissions.pedidos,
-        can_financeiro: row.permissions.financeiro,
-        can_nuvemshop: row.permissions.nuvemshop,
-        can_influenciadores: row.permissions.influenciadores,
-        can_empresa: row.permissions.empresa,
-        can_usuarios: row.permissions.usuarios,
-      });
+      .insert(buildPermissionsRow(profileData.id, row.permissions));
 
     if (permissionsError) {
       throw permissionsError;
@@ -313,6 +302,107 @@ export async function createEmployeeAccessUser(input: unknown) {
       await supabase.client.auth.admin.deleteUser(authUserId);
     }
 
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function updateEmployeeAccessUser(employeeId: string, input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const profileId = String(employeeId ?? "").trim();
+  const row = normalizeEmployeeUpdateInput(input);
+
+  if (!profileId) {
+    throw new Error("Nao foi possivel identificar o funcionario que sera atualizado.");
+  }
+
+  try {
+    const { data: existingProfile, error: existingProfileError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(USERS_TABLE)
+      .select("*")
+      .eq("id", profileId)
+      .eq("user_type", "funcionario")
+      .maybeSingle();
+
+    if (existingProfileError) {
+      throw existingProfileError;
+    }
+
+    if (!existingProfile) {
+      throw new Error("Funcionario nao encontrado para atualizar os acessos.");
+    }
+
+    if (existingProfile.auth_user_id) {
+      const authUpdateResult = await supabase.client.auth.admin.updateUserById(
+        String(existingProfile.auth_user_id),
+        {
+          user_metadata: {
+            app_scope: OPERATIONS_SCHEMA,
+            user_type: "funcionario",
+            full_name: row.fullName,
+          },
+        },
+      );
+
+      if (authUpdateResult.error) {
+        throw authUpdateResult.error;
+      }
+    }
+
+    const updatedAt = new Date().toISOString();
+    const { data: profileData, error: profileError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(USERS_TABLE)
+      .update({
+        full_name: row.fullName,
+        active: row.active,
+        notes: row.notes,
+        updated_at: updatedAt,
+      })
+      .eq("id", profileId)
+      .select("*")
+      .single();
+
+    if (profileError || !profileData) {
+      throw profileError || new Error("Nao foi possivel salvar o perfil do funcionario.");
+    }
+
+    const { error: permissionsError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PERMISSIONS_TABLE)
+      .upsert(buildPermissionsRow(profileId, row.permissions, updatedAt), {
+        onConflict: "profile_id",
+      });
+
+    if (permissionsError) {
+      throw permissionsError;
+    }
+
+    return {
+      ok: true as const,
+      employee: rowToEmployeeAccessUser(profileData, row.permissions),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message: "Acessos do funcionario atualizados com sucesso.",
+        updatedAt:
+          typeof profileData.updated_at === "string" ? profileData.updated_at : updatedAt,
+      },
+    };
+  } catch (error) {
     return {
       ok: false as const,
       persistence: buildDisabledState(getErrorMessage(error)),
@@ -731,6 +821,23 @@ function normalizeEmployeeInput(input: unknown) {
     fullName,
     email,
     password,
+    active: source.active === false ? false : true,
+    notes: String(source.notes ?? "").trim(),
+    permissions: normalizePermissions(source.permissions),
+  };
+}
+
+function normalizeEmployeeUpdateInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+  const fullName = String(source.fullName ?? "").trim();
+
+  if (!fullName) {
+    throw new Error("Informe o nome do funcionario.");
+  }
+
+  return {
+    fullName,
+    active: source.active === false ? false : true,
     notes: String(source.notes ?? "").trim(),
     permissions: normalizePermissions(source.permissions),
   };
@@ -828,6 +935,26 @@ function normalizePermissions(value: unknown): UserMenuPermissions {
     influenciadores: source.influenciadores === true,
     empresa: source.empresa === true,
     usuarios: source.usuarios === true,
+  };
+}
+
+function buildPermissionsRow(
+  profileId: string,
+  permissions: UserMenuPermissions,
+  updatedAt?: string,
+) {
+  return {
+    profile_id: profileId,
+    can_dashboard: permissions.dashboard,
+    can_compras: permissions.compras,
+    can_estoque: permissions.estoque,
+    can_pedidos: permissions.pedidos,
+    can_financeiro: permissions.financeiro,
+    can_nuvemshop: permissions.nuvemshop,
+    can_influenciadores: permissions.influenciadores,
+    can_empresa: permissions.empresa,
+    can_usuarios: permissions.usuarios,
+    ...(updatedAt ? { updated_at: updatedAt } : {}),
   };
 }
 
