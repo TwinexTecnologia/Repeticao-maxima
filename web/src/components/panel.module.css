@@ -189,6 +189,76 @@
   color: #241535;
 }
 
+.mobileModuleNav {
+  display: none;
+}
+
+.mobileModuleLink {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  color: #41255b;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(123, 44, 191, 0.12);
+  box-shadow: 0 12px 26px rgba(88, 28, 135, 0.08);
+}
+
+.mobileModuleLinkActive {
+  border-color: rgba(245, 158, 11, 0.44);
+  background:
+    linear-gradient(180deg, rgba(255, 250, 240, 0.98) 0%, rgba(255, 244, 227, 0.96) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(245, 158, 11, 0.16),
+    0 14px 30px rgba(88, 28, 135, 0.12);
+}
+
+.mobileModuleIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #7b2cbf;
+  background: rgba(123, 44, 191, 0.08);
+  border: 1px solid rgba(123, 44, 191, 0.12);
+}
+
+.mobileModuleIcon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.mobileModuleLinkActive .mobileModuleIcon {
+  color: #d97706;
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.24);
+}
+
+.mobileModuleCopy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.mobileModuleCopy strong {
+  font-size: 0.94rem;
+  color: #37184d;
+}
+
+.mobileModuleCopy span {
+  font-size: 0.78rem;
+  color: #755b8d;
+}
+
+.mobileModuleLinkActive .mobileModuleCopy strong,
+.mobileModuleLinkActive .mobileModuleCopy span {
+  color: #7c2d12;
+}
+
 .titleBlock h1 {
   font-size: clamp(2rem, 4vw, 2.8rem);
   line-height: 1.1;
@@ -1975,6 +2045,12 @@
 
   .mobileTopBrand {
     display: flex;
+  }
+
+  .mobileModuleNav {
+    display: grid;
+    gap: 10px;
+    margin: 4px 0 16px;
   }
 
   .titleBlock h1 {
