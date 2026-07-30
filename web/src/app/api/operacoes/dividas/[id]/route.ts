@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { authorizeApiAccess } from "@/lib/auth/access";
 import { updateDebtStatus } from "@/lib/operacoes/repository";
 
 type RouteContext = {
@@ -9,6 +10,12 @@ type RouteContext = {
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
+  const authorization = await authorizeApiAccess("compras");
+
+  if (!authorization.ok) {
+    return authorization.response;
+  }
+
   try {
     const body = await request.json();
     const { id } = await context.params;

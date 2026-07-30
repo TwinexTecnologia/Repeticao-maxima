@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import styles from "@/components/panel.module.css";
 import type {
   CompanyCartDiscountRule,
+  CompanyCartDiscountGroup,
   CompanyDiscountCategoryOption,
   CompanyDiscountProductOption,
   CompanyPersistenceState,
@@ -46,6 +47,7 @@ export function EmpresaClient({
   const [togglingRuleId, setTogglingRuleId] = useState<string | null>(null);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [form, setForm] = useState({
+    title: "",
     ruleMode: "categoria" as RuleMode,
     categoryIds: defaultCategoryId ? [defaultCategoryId] : [],
     minimumQuantity: "3",
@@ -53,12 +55,19 @@ export function EmpresaClient({
     notes: "",
   });
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [groupMinimums, setGroupMinimums] = useState<Record<string, string>>(() =>
+    defaultCategoryId ? { [defaultCategoryId]: "1" } : {},
+  );
 
   const selectedCategories = useMemo(
     () =>
-      initialCategories.filter((category) =>
-        form.categoryIds.includes(category.id),
-      ),
+      form.categoryIds
+        .map((categoryId) =>
+          initialCategories.find((category) => category.id === categoryId),
+        )
+        .filter(
+          (category): category is CompanyDiscountCategoryOption => Boolean(category),
+        ),
     [form.categoryIds, initialCategories],
   );
 
@@ -74,6 +83,57 @@ export function EmpresaClient({
     [form.categoryIds, initialProducts],
   );
 
+  const selectedProducts = useMemo(
+    () =>
+      filteredProducts.filter((product) =>
+        selectedProductIds.includes(product.productId),
+      ),
+    [filteredProducts, selectedProductIds],
+  );
+
+  const comboGroups = useMemo<CompanyCartDiscountGroup[]>(
+    () =>
+      form.ruleMode !== "misto"
+        ? []
+        : selectedCategories.map((category) => {
+            const groupProducts = selectedProducts.filter((product) =>
+              product.categoryIds.includes(category.id),
+            );
+
+            return {
+              categoryId: category.id,
+              categoryName: category.name,
+              minimumQuantity: Math.max(
+                getIntegerValue(groupMinimums[category.id] ?? "1"),
+                1,
+              ),
+              productIds: Array.from(
+                new Set(
+                  groupProducts.flatMap((product) =>
+                    product.matchIds.length > 0
+                      ? product.matchIds
+                      : [product.productId],
+                  ),
+                ),
+              ),
+              productNames: groupProducts.map((product) => product.productName),
+            };
+          }),
+    [form.ruleMode, groupMinimums, selectedCategories, selectedProducts],
+  );
+
+  const computedMinimumQuantity = useMemo(
+    () =>
+      form.ruleMode === "misto" && selectedCategories.length > 0
+        ? selectedCategories.reduce(
+            (sum, category) =>
+              sum + Math.max(getIntegerValue(groupMinimums[category.id] ?? "1"), 1),
+            0,
+          )
+        : Math.max(getIntegerValue(form.minimumQuantity), 1),
+    [form.minimumQuantity, form.ruleMode, groupMinimums, selectedCategories],
+  );
+
   const metrics = useMemo(() => {
     const activeRules = rules.filter((rule) => rule.active).length;
     const mappedProducts = new Set(rules.flatMap((rule) => rule.productIds)).size;
@@ -86,7 +146,7 @@ export function EmpresaClient({
       {
         label: "Promocoes salvas",
         value: String(rules.length),
-        detail: "Regras internas prontas para virar integracao de carrinho",
+        detail: "Regras internas prontas para sincronizar com a Nuvemshop",
       },
       {
         label: "Promocoes ativas",
@@ -118,9 +178,21 @@ export function EmpresaClient({
     setFeedback("");
 
     try {
-      const selectedProducts = filteredProducts.filter((product) =>
-        selectedProductIds.includes(product.productId),
-      );
+      if (
+        form.ruleMode === "misto" &&
+        selectedCategories.some(
+          (category) =>
+            !comboGroups.some(
+              (group) =>
+                group.categoryId === category.id && group.productIds.length > 0,
+            ),
+        )
+      ) {
+        throw new Error(
+          "Selecione pelo menos um produto de cada categoria do combo composto.",
+        );
+      }
+
       const response = await fetch(
         isEditing
           ? `/api/empresa/promocoes/${editingRuleId}`
@@ -131,14 +203,22 @@ export function EmpresaClient({
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
+            title: form.title,
             ruleMode: form.ruleMode,
             categoryId: form.categoryIds[0] || "",
             categoryName: selectedCategories[0]?.name || "",
             categoryIds: form.categoryIds,
             categoryNames: selectedCategories.map((category) => category.name),
-            productIds: selectedProducts.map((product) => product.productId),
+            comboGroups,
+            productIds: Array.from(
+              new Set(
+                selectedProducts.flatMap((product) =>
+                  product.matchIds.length > 0 ? product.matchIds : [product.productId],
+                ),
+              ),
+            ),
             productNames: selectedProducts.map((product) => product.productName),
-            minimumQuantity: form.minimumQuantity,
+            minimumQuantity: String(computedMinimumQuantity),
             discountAmount: form.discountAmount,
             notes: form.notes,
           }),
@@ -229,6 +309,9 @@ export function EmpresaClient({
   }
 
   function toggleCategory(categoryId: string) {
+    const isCategoryMode = form.ruleMode === "categoria";
+    const alreadySelected = form.categoryIds.includes(categoryId);
+
     setForm((current) => {
       if (current.ruleMode === "categoria") {
         return {
@@ -246,6 +329,22 @@ export function EmpresaClient({
       };
     });
     setSelectedProductIds([]);
+    setGroupMinimums((current) => {
+      if (isCategoryMode) {
+        return { [categoryId]: current[categoryId] ?? "1" };
+      }
+
+      if (alreadySelected) {
+        const next = { ...current };
+        delete next[categoryId];
+        return next;
+      }
+
+      return {
+        ...current,
+        [categoryId]: current[categoryId] ?? "1",
+      };
+    });
   }
 
   function toggleSelectAllFilteredProducts() {
@@ -273,9 +372,17 @@ export function EmpresaClient({
     setSelectedProductIds([]);
   }
 
+  function updateGroupMinimum(categoryId: string, value: string) {
+    setGroupMinimums((current) => ({
+      ...current,
+      [categoryId]: value,
+    }));
+  }
+
   function startEditingRule(rule: CompanyCartDiscountRule) {
     setEditingRuleId(rule.id);
     setForm({
+      title: rule.title,
       ruleMode: rule.ruleMode,
       categoryIds:
         rule.categoryIds.length > 0
@@ -288,13 +395,36 @@ export function EmpresaClient({
       notes: rule.notes,
     });
     setSelectedProductIds(rule.productIds);
+    setGroupMinimums(
+      rule.comboGroups.length > 0
+        ? Object.fromEntries(
+            rule.comboGroups.map((group) => [
+              group.categoryId,
+              String(group.minimumQuantity),
+            ]),
+          )
+        : Object.fromEntries(
+            (
+              rule.categoryIds.length > 0
+                ? rule.categoryIds
+                : rule.categoryId
+                  ? [rule.categoryId]
+                  : []
+            ).map((categoryId, index) => [
+              categoryId,
+              String(index === 0 ? rule.minimumQuantity : 1),
+            ]),
+          ),
+    );
     setFeedback(`Editando a promocao "${rule.title}".`);
   }
 
   function resetForm() {
     setEditingRuleId(null);
     setSelectedProductIds([]);
+    setGroupMinimums(defaultCategoryId ? { [defaultCategoryId]: "1" } : {});
     setForm({
+      title: "",
       ruleMode: "categoria",
       categoryIds: defaultCategoryId ? [defaultCategoryId] : [],
       minimumQuantity: "3",
@@ -379,18 +509,30 @@ export function EmpresaClient({
                     </td>
                     <td>{rule.ruleMode === "misto" ? "Misto" : "Categoria"}</td>
                     <td>
-                      {(rule.categoryNames.length > 0
-                        ? rule.categoryNames
-                        : [rule.categoryName]
-                      )
-                        .slice(0, 2)
-                        .join(", ")}
+                      {rule.comboGroups.length > 0
+                        ? rule.comboGroups
+                            .slice(0, 2)
+                            .map(
+                              (group) =>
+                                `${group.minimumQuantity}x ${group.categoryName}`,
+                            )
+                            .join(", ")
+                        : (rule.categoryNames.length > 0
+                            ? rule.categoryNames
+                            : [rule.categoryName]
+                          )
+                            .slice(0, 2)
+                            .join(", ")}
                       <div style={{ color: "#6f5b82", marginTop: 6 }}>
-                        {rule.categoryNames.length > 2
-                          ? `+ ${rule.categoryNames.length - 2} categoria(s)`
-                          : rule.ruleMode === "misto"
-                            ? "Categorias combinadas no mesmo combo"
-                            : "Categoria principal da regra"}
+                        {rule.comboGroups.length > 2
+                          ? `+ ${rule.comboGroups.length - 2} grupo(s)`
+                          : rule.comboGroups.length > 0
+                            ? "Composicao exigida para liberar o desconto"
+                            : rule.categoryNames.length > 2
+                              ? `+ ${rule.categoryNames.length - 2} categoria(s)`
+                              : rule.ruleMode === "misto"
+                                ? "Categorias combinadas no mesmo combo"
+                                : "Categoria principal da regra"}
                       </div>
                     </td>
                     <td>
@@ -405,7 +547,31 @@ export function EmpresaClient({
                     <td>{rule.minimumQuantity}</td>
                     <td>{formatMoney(rule.discountAmount)}</td>
                     <td>{rule.active ? "Ativa" : "Pausada"}</td>
-                    <td>Pendente</td>
+                    <td>
+                      <div
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "6px 10px",
+                          borderRadius: 999,
+                          background:
+                            getNuvemshopStatusStyles(rule.nuvemshopStatus).background,
+                          color: getNuvemshopStatusStyles(rule.nuvemshopStatus).color,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {getNuvemshopStatusLabel(rule.nuvemshopStatus)}
+                      </div>
+                      <div style={{ color: "#6f5b82", marginTop: 6 }}>
+                        {rule.nuvemshopMessage}
+                      </div>
+                      {rule.nuvemshopLastSyncedAt ? (
+                        <div style={{ color: "#6f5b82", marginTop: 6 }}>
+                          Ultima sync: {formatDateTime(rule.nuvemshopLastSyncedAt)}
+                        </div>
+                      ) : null}
+                    </td>
                     <td>
                       <div
                         style={{
@@ -460,24 +626,55 @@ export function EmpresaClient({
 
             <div className={styles.formStack}>
               <label className={styles.filterField}>
+                <span>Titulo da promocao no site</span>
+                <input
+                  type="text"
+                  placeholder="Ex.: Leve 3 oversized e ganhe R$ 57 OFF"
+                  value={form.title}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      title: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+
+              <label className={styles.filterField}>
                 <span>Modo do combo</span>
                 <select
                   value={form.ruleMode}
                   onChange={(event) => {
                     const nextMode = event.target.value as RuleMode;
+                    const nextCategoryIds =
+                      nextMode === "categoria"
+                        ? form.categoryIds[0]
+                          ? [form.categoryIds[0]]
+                          : defaultCategoryId
+                            ? [defaultCategoryId]
+                            : []
+                        : form.categoryIds;
                     setForm((current) => ({
                       ...current,
                       ruleMode: nextMode,
-                      categoryIds:
-                        nextMode === "categoria"
-                          ? current.categoryIds[0]
-                            ? [current.categoryIds[0]]
-                            : defaultCategoryId
-                              ? [defaultCategoryId]
-                              : []
-                          : current.categoryIds,
+                      categoryIds: nextCategoryIds,
                     }));
                     setSelectedProductIds([]);
+                    setGroupMinimums((current) => {
+                      if (nextMode === "categoria") {
+                        const onlyCategoryId = nextCategoryIds[0];
+                        return onlyCategoryId
+                          ? { [onlyCategoryId]: current[onlyCategoryId] ?? "1" }
+                          : {};
+                      }
+
+                      return Object.fromEntries(
+                        nextCategoryIds.map((categoryId) => [
+                          categoryId,
+                          current[categoryId] ?? "1",
+                        ]),
+                      );
+                    });
                   }}
                 >
                   <option value="categoria">So uma categoria</option>
@@ -487,11 +684,20 @@ export function EmpresaClient({
 
               <div className={styles.filterGrid}>
                 <label className={styles.filterField}>
-                  <span>Quantidade minima</span>
+                  <span>
+                    {form.ruleMode === "misto"
+                      ? "Quantidade total do combo"
+                      : "Quantidade minima"}
+                  </span>
                   <input
                     type="number"
                     min={1}
-                    value={form.minimumQuantity}
+                    value={
+                      form.ruleMode === "misto"
+                        ? String(computedMinimumQuantity)
+                        : form.minimumQuantity
+                    }
+                    disabled={form.ruleMode === "misto"}
                     onChange={(event) =>
                       setForm((current) => ({
                         ...current,
@@ -563,6 +769,47 @@ export function EmpresaClient({
               </div>
             </div>
 
+            {form.ruleMode === "misto" && selectedCategories.length > 0 ? (
+              <div style={{ marginTop: 18 }}>
+                <div className={styles.listTitle}>Composicao do combo</div>
+                <div className={styles.formStack} style={{ marginTop: 12 }}>
+                  {selectedCategories.map((category) => {
+                    const selectedCount = selectedProducts.filter((product) =>
+                      product.categoryIds.includes(category.id),
+                    ).length;
+
+                    return (
+                      <div key={category.id} className={styles.filterGrid}>
+                        <label className={styles.filterField}>
+                          <span>Categoria</span>
+                          <input value={category.name} disabled />
+                        </label>
+                        <label className={styles.filterField}>
+                          <span>Qtd exigida</span>
+                          <input
+                            type="number"
+                            min={1}
+                            value={groupMinimums[category.id] ?? "1"}
+                            onChange={(event) =>
+                              updateGroupMinimum(category.id, event.target.value)
+                            }
+                          />
+                        </label>
+                        <label className={styles.filterField}>
+                          <span>Produtos selecionados</span>
+                          <input value={String(selectedCount)} disabled />
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p style={{ color: "#6f5b82", marginTop: 12 }}>
+                  Cada item do carrinho conta uma vez so. Exemplo: 2 Full
+                  Estampa + 1 Minimalista.
+                </p>
+              </div>
+            ) : null}
+
             <div className={styles.filterActions} style={{ marginTop: 16 }}>
               <button
                 type="button"
@@ -600,13 +847,14 @@ export function EmpresaClient({
             <p>{feedback || persistence.message}</p>
             <p style={{ marginTop: 10 }}>{initialCatalogState.message}</p>
             <p style={{ marginTop: 10 }}>
-              Agora voce consegue criar combo so por categoria ou misturar varias
-              categorias com produtos diferentes na mesma regra.
+              Agora voce consegue criar o combo, publicar a promocao na
+              Nuvemshop e deixar o callback do carrinho decidir quando aplicar
+              ou remover o desconto.
             </p>
             <p style={{ marginTop: 10 }}>
-              Ativar aqui hoje ativa a regra no sistema. Para ativar no carrinho
-              real da Nuvemshop ainda falta a integracao do app de promocoes com
-              callback.
+              Se alguma regra aparecer com erro, a propria mensagem da linha
+              mostra o retorno da sincronizacao para voce corrigir ambiente,
+              callback ou payload.
             </p>
           </article>
         </div>
@@ -732,10 +980,54 @@ function formatMoney(value: number) {
   }).format(value || 0);
 }
 
+function formatDateTime(value: string) {
+  const parsed = new Date(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(parsed);
+}
+
+function getNuvemshopStatusLabel(status: CompanyCartDiscountRule["nuvemshopStatus"]) {
+  switch (status) {
+    case "publicada":
+      return "Publicada";
+    case "pausada":
+      return "Pausada";
+    case "erro":
+      return "Erro";
+    default:
+      return "Pendente";
+  }
+}
+
+function getNuvemshopStatusStyles(status: CompanyCartDiscountRule["nuvemshopStatus"]) {
+  switch (status) {
+    case "publicada":
+      return { background: "#e6f7ee", color: "#0f8a4a" };
+    case "pausada":
+      return { background: "#fff3dd", color: "#9a6700" };
+    case "erro":
+      return { background: "#ffe6e6", color: "#b42318" };
+    default:
+      return { background: "#eee6fb", color: "#5b2aa8" };
+  }
+}
+
 function normalizeText(value: string) {
   return value
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
+}
+
+function getIntegerValue(value: string) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
 }

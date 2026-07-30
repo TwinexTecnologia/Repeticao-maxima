@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import styles from "@/components/panel.module.css";
 import {
@@ -10,11 +11,11 @@ import {
   type DtfStockItem,
   type NuvemshopStockProduct,
   type OperationalPersistenceState,
+  type StockMovement,
 } from "@/lib/operacoes/repository";
-import { operationAlerts } from "@/lib/operations-data";
-
 type EstoqueClientProps = {
   initialItems: BaseStockItem[];
+  initialMovements: StockMovement[];
   initialPersistence: OperationalPersistenceState;
   initialDtfItems: DtfStockItem[];
   initialDtfPersistence: OperationalPersistenceState;
@@ -31,6 +32,12 @@ type StockApiResponse = {
   item?: BaseStockItem;
 };
 
+type StockSavePayload = BaseStockItem & {
+  movementReasonCategory?: string;
+  movementReasonText?: string;
+  movementSourceModule?: string;
+};
+
 type DtfApiResponse = {
   ok: boolean;
   message?: string;
@@ -38,8 +45,18 @@ type DtfApiResponse = {
   item?: DtfStockItem;
 };
 
+type StockAdjustmentState = {
+  mode: "add" | "remove";
+  quantity: string;
+  reasonCategory: string;
+  reasonText: string;
+};
+
+const TRACKED_BASE_COLORS = ["Preta", "Branca", "Roxa"] as const;
+
 export function EstoqueClient({
   initialItems,
+  initialMovements,
   initialPersistence,
   initialDtfItems,
   initialDtfPersistence,
@@ -48,8 +65,18 @@ export function EstoqueClient({
   initialNuvemshopStock,
   initialNuvemshopStockState,
 }: EstoqueClientProps) {
+  const router = useRouter();
+  const initialVisibleBaseItems = initialItems.filter((item) =>
+    TRACKED_BASE_COLORS.includes(item.color as (typeof TRACKED_BASE_COLORS)[number]),
+  );
+  const firstVisibleBaseItem = initialVisibleBaseItems[0] ?? initialItems[0] ?? null;
+  const baseCategoryOptions = useMemo(
+    () => getStockBaseCategoryOptions(initialNuvemshopStock),
+    [initialNuvemshopStock],
+  );
   const defaultBaseCategory = getDefaultStockCategory(initialNuvemshopStock);
   const [items, setItems] = useState(initialItems);
+  const [movements, setMovements] = useState(initialMovements);
   const [persistence, setPersistence] =
     useState<OperationalPersistenceState>(initialPersistence);
   const [feedback, setFeedback] = useState("");
@@ -60,7 +87,10 @@ export function EstoqueClient({
     color: "Preta",
     size: "M",
     total: "0",
+    movementReasonCategory: "entrada_lote",
+    movementReasonText: "",
     reorderPoint: "0",
+    leadTimeDays: "10",
     notes: "",
   });
   const [drafts, setDrafts] = useState<Record<string, BaseStockItem>>(() =>
@@ -69,9 +99,12 @@ export function EstoqueClient({
       return acc;
     }, {}),
   );
-  const [selectedSku, setSelectedSku] = useState(initialItems[0]?.sku ?? "");
-  const [selectedColor, setSelectedColor] = useState(initialItems[0]?.color ?? "");
-  const [selectedSize, setSelectedSize] = useState(initialItems[0]?.size ?? "");
+  const [stockAdjustments, setStockAdjustments] = useState<
+    Record<string, StockAdjustmentState>
+  >({});
+  const [selectedSku, setSelectedSku] = useState(firstVisibleBaseItem?.sku ?? "");
+  const [selectedColor, setSelectedColor] = useState(firstVisibleBaseItem?.color ?? "");
+  const [selectedSize, setSelectedSize] = useState(firstVisibleBaseItem?.size ?? "");
 
   const [dtfItems, setDtfItems] = useState(initialDtfItems);
   const [dtfPersistence, setDtfPersistence] =
@@ -102,29 +135,67 @@ export function EstoqueClient({
   const [selectedNuvemshopSize, setSelectedNuvemshopSize] = useState("");
   const [visibleNuvemshopItems, setVisibleNuvemshopItems] = useState(2);
 
+  useEffect(() => {
+    setItems(initialItems);
+  }, [initialItems]);
+
+  useEffect(() => {
+    setMovements(initialMovements);
+  }, [initialMovements]);
+
+  useEffect(() => {
+    setPersistence(initialPersistence);
+  }, [initialPersistence]);
+
+  const visibleBaseItems = useMemo(
+    () =>
+      items.filter((item) =>
+        TRACKED_BASE_COLORS.includes(item.color as (typeof TRACKED_BASE_COLORS)[number]),
+      ),
+    [items],
+  );
+
   const metrics = useMemo(() => {
-    const total = items.reduce((sum, item) => sum + item.total, 0);
-    const printed = items.reduce((sum, item) => sum + item.printed, 0);
-    const free = items.reduce((sum, item) => sum + item.free, 0);
+    const totalLisas = visibleBaseItems.reduce((sum, item) => sum + item.plain, 0);
+    const totalPublished = visibleBaseItems.reduce((sum, item) => sum + item.published, 0);
+    const totalDifference = visibleBaseItems.reduce(
+      (sum, item) => sum + Math.max(item.plain - item.published, 0),
+      0,
+    );
 
     return [
       {
-        label: "Total de camisetas base",
-        value: String(total),
-        detail: "Saldo geral somando cores e tamanhos",
+        label: "Lisas em casa",
+        value: String(totalLisas),
+        detail: "Esse e o total fisico que voce controla internamente hoje.",
       },
       {
-        label: "Ja estampadas",
-        value: String(printed),
-        detail: "Pecas prontas que ja sairam do saldo livre",
+        label: "Preta",
+        value: String(sumPlainStockByColor(visibleBaseItems, "Preta")),
+        detail: "Saldo liso total da cor preta.",
       },
       {
-        label: "Livres para usar",
-        value: String(free),
-        detail: "Base real para nova venda ou nova estampa",
+        label: "Branca",
+        value: String(sumPlainStockByColor(visibleBaseItems, "Branca")),
+        detail: "Saldo liso total da cor branca.",
+      },
+      {
+        label: "Roxa",
+        value: String(sumPlainStockByColor(visibleBaseItems, "Roxa")),
+        detail: "Saldo liso total da cor roxa.",
+      },
+      {
+        label: "Alocado no site",
+        value: String(totalPublished),
+        detail: "Quantidade publicada na loja como referencia comercial.",
+      },
+      {
+        label: "Folga interna",
+        value: String(totalDifference),
+        detail: "Quanto sobra nas lisas depois do que ja esta alocado no site.",
       },
     ];
-  }, [items]);
+  }, [visibleBaseItems]);
 
   const dtfMetrics = useMemo(() => {
     const totalAvailable = dtfItems.reduce(
@@ -173,46 +244,62 @@ export function EstoqueClient({
   }, [dtfItems]);
 
   const skuOptions = useMemo(
-    () => Array.from(new Set(items.map((item) => item.sku))),
-    [items],
+    () => Array.from(new Set(visibleBaseItems.map((item) => item.sku))),
+    [visibleBaseItems],
   );
 
   const colorOptions = useMemo(
     () =>
       Array.from(
         new Set(
-          items
+          visibleBaseItems
             .filter((item) => item.sku === selectedSku)
             .map((item) => item.color),
         ),
       ),
-    [items, selectedSku],
+    [selectedSku, visibleBaseItems],
   );
 
   const sizeOptions = useMemo(
     () =>
       Array.from(
         new Set(
-          items
+          visibleBaseItems
             .filter(
               (item) => item.sku === selectedSku && item.color === selectedColor,
             )
             .map((item) => item.size),
         ),
       ),
-    [items, selectedColor, selectedSku],
+    [selectedColor, selectedSku, visibleBaseItems],
   );
 
   const selectedItem = useMemo(
     () =>
-      items.find(
+      visibleBaseItems.find(
         (item) =>
           item.sku === selectedSku &&
           item.color === selectedColor &&
           item.size === selectedSize,
       ) ?? null,
-    [items, selectedColor, selectedSize, selectedSku],
+    [visibleBaseItems, selectedColor, selectedSize, selectedSku],
   );
+
+  const matchingFormItem = useMemo(
+    () =>
+      visibleBaseItems.find(
+        (item) =>
+          item.sku === form.sku &&
+          item.color === form.color &&
+          item.size === form.size,
+      ) ?? null,
+    [form.color, form.size, form.sku, visibleBaseItems],
+  );
+
+  const addQuantityPreview = Math.max(parsePositiveInteger(form.total), 0);
+  const projectedTotal = matchingFormItem
+    ? matchingFormItem.plain + addQuantityPreview
+    : addQuantityPreview;
 
   const selectedDtfItem = useMemo(
     () => dtfItems.find((item) => item.id === selectedDtfId) ?? null,
@@ -373,6 +460,14 @@ export function EstoqueClient({
     setFeedback("");
 
     try {
+      if (addQuantityPreview <= 0) {
+        throw new Error("Informe quantas lisas chegaram nesse lote.");
+      }
+
+      if (!form.movementReasonText.trim()) {
+        throw new Error("Informe a justificativa dessa entrada no estoque.");
+      }
+
       const response = await fetch("/api/operacoes/estoque", {
         method: "POST",
         headers: {
@@ -385,11 +480,21 @@ export function EstoqueClient({
 
       if (!response.ok || !result.ok || !result.item) {
         throw new Error(
-          result.message || "Nao foi possivel adicionar a linha de estoque.",
+          result.message || "Nao foi possivel salvar a linha de estoque.",
         );
       }
 
-      setItems((current) => [...current, result.item!]);
+      setItems((current) => {
+        const existingItem = current.find((item) => item.id === result.item!.id);
+
+        if (existingItem) {
+          return sortStockItems(
+            current.map((item) => (item.id === result.item!.id ? result.item! : item)),
+          );
+        }
+
+        return sortStockItems([...current, result.item!]);
+      });
       setDrafts((current) => ({
         ...current,
         [result.item!.id]: result.item!,
@@ -405,27 +510,30 @@ export function EstoqueClient({
         color: "Preta",
         size: "M",
         total: "0",
+        movementReasonCategory: "entrada_lote",
+        movementReasonText: "",
         reorderPoint: "0",
+        leadTimeDays: "10",
         notes: "",
       });
-      setFeedback(result.message || "Linha de estoque adicionada.");
+      setFeedback(result.message || "Linha de estoque salva.");
+      router.refresh();
     } catch (error) {
       setFeedback(
         error instanceof Error
           ? error.message
-          : "Nao foi possivel adicionar a linha de estoque.",
+          : "Nao foi possivel salvar a linha de estoque.",
       );
     } finally {
       setIsCreating(false);
     }
   }
 
-  async function handleSaveItem(id: string) {
-    const currentDraft = drafts[id];
-    if (!currentDraft) {
-      return;
-    }
-
+  async function saveStockItem(
+    id: string,
+    itemToSave: StockSavePayload,
+    successMessage?: string,
+  ) {
     setSavingItemId(id);
     setFeedback("");
 
@@ -435,7 +543,7 @@ export function EstoqueClient({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(currentDraft),
+        body: JSON.stringify(itemToSave),
       });
 
       const result = (await response.json()) as StockApiResponse;
@@ -447,7 +555,9 @@ export function EstoqueClient({
       }
 
       setItems((current) =>
-        current.map((item) => (item.id === id ? result.item! : item)),
+        sortStockItems(
+          current.map((item) => (item.id === id ? result.item! : item)),
+        ),
       );
       setDrafts((current) => ({
         ...current,
@@ -456,15 +566,93 @@ export function EstoqueClient({
       if (result.persistence) {
         setPersistence(result.persistence);
       }
-      setFeedback(result.message || "Saldos atualizados.");
+      setFeedback(result.message || successMessage || "Saldos atualizados.");
+      return true;
     } catch (error) {
       setFeedback(
         error instanceof Error
           ? error.message
           : "Nao foi possivel atualizar os saldos.",
       );
+      return false;
     } finally {
       setSavingItemId(null);
+    }
+  }
+
+  function getStockAdjustment(id: string): StockAdjustmentState {
+    return stockAdjustments[id] ?? {
+      mode: "add",
+      quantity: "1",
+      reasonCategory: "entrada_lote",
+      reasonText: "",
+    };
+  }
+
+  async function handleApplyStockAdjustment(id: string) {
+    const currentDraft = drafts[id];
+    const adjustment = getStockAdjustment(id);
+    const quantity = Math.max(parsePositiveInteger(adjustment.quantity), 0);
+
+    if (!currentDraft) {
+      return;
+    }
+
+    if (quantity <= 0) {
+      setFeedback("Informe quantas lisas voce quer adicionar ou retirar.");
+      return;
+    }
+
+    if (!adjustment.reasonText.trim()) {
+      setFeedback("Informe a justificativa dessa movimentacao de estoque.");
+      return;
+    }
+
+    const delta = adjustment.mode === "add" ? quantity : -quantity;
+    if (adjustment.mode === "remove" && quantity > currentDraft.plain) {
+      setFeedback("Nao ha lisas suficientes nessa linha para retirar essa quantidade.");
+      return;
+    }
+
+    const nextTotal = Math.max(currentDraft.total + delta, currentDraft.printedReal);
+
+    if (nextTotal === currentDraft.total) {
+      setFeedback(
+        adjustment.mode === "add"
+          ? "Esse ajuste nao mudou o saldo de lisas."
+          : "Nao ha lisas suficientes para retirar nessa linha.",
+      );
+      return;
+    }
+
+    const nextDraft = recalculateDraftStockState({
+      ...currentDraft,
+      total: nextTotal,
+    });
+    const ok = await saveStockItem(
+      id,
+      {
+        ...nextDraft,
+        movementReasonCategory: adjustment.reasonCategory,
+        movementReasonText: adjustment.reasonText,
+        movementSourceModule: "estoque",
+      },
+      adjustment.mode === "add"
+        ? "Lisas adicionadas com sucesso."
+        : "Lisas retiradas com sucesso.",
+    );
+
+    if (ok) {
+      setStockAdjustments((current) => ({
+        ...current,
+        [id]: {
+          mode: adjustment.mode,
+          quantity: "1",
+          reasonCategory: adjustment.mode === "add" ? "entrada_lote" : "saida_manual",
+          reasonText: "",
+        },
+      }));
+      router.refresh();
     }
   }
 
@@ -566,7 +754,9 @@ export function EstoqueClient({
     setSelectedSku(value);
     const nextColorOptions = Array.from(
       new Set(
-        items.filter((item) => item.sku === value).map((item) => item.color),
+        visibleBaseItems
+          .filter((item) => item.sku === value)
+          .map((item) => item.color),
       ),
     );
     const nextColor = nextColorOptions[0] ?? "";
@@ -574,7 +764,7 @@ export function EstoqueClient({
 
     const nextSizeOptions = Array.from(
       new Set(
-        items
+        visibleBaseItems
           .filter((item) => item.sku === value && item.color === nextColor)
           .map((item) => item.size),
       ),
@@ -586,7 +776,7 @@ export function EstoqueClient({
     setSelectedColor(value);
     const nextSizeOptions = Array.from(
       new Set(
-        items
+        visibleBaseItems
           .filter((item) => item.sku === selectedSku && item.color === value)
           .map((item) => item.size),
       ),
@@ -627,39 +817,6 @@ export function EstoqueClient({
     }));
   }
 
-  function updateDraft(
-    id: string,
-    field: keyof BaseStockItem,
-    value: string | number,
-  ) {
-    setDrafts((current) => {
-      const currentItem = current[id];
-      if (!currentItem) {
-        return current;
-      }
-
-      const nextItem = {
-        ...currentItem,
-        [field]:
-          typeof value === "number"
-            ? Math.max(value, 0)
-            : value,
-      } as BaseStockItem;
-
-      const total = Math.max(nextItem.total, 0);
-      const printed = Math.min(Math.max(nextItem.printed, 0), total);
-
-      nextItem.total = total;
-      nextItem.printed = printed;
-      nextItem.free = Math.max(total - printed, 0);
-
-      return {
-        ...current,
-        [id]: nextItem,
-      };
-    });
-  }
-
   function updateDtfDraft(
     id: string,
     field: keyof DtfStockItem,
@@ -689,10 +846,11 @@ export function EstoqueClient({
       <section className={styles.section}>
         <div className={styles.sectionHeader}>
           <div>
-            <div className={styles.sectionTitle}>Banco interno do estoque</div>
+            <div className={styles.sectionTitle}>Central do estoque base</div>
             <p className={styles.sectionSubtitle}>
-              O estoque base e interno da marca, entao ele fica salvo no nosso
-              banco e pode ser alterado direto pelo sistema.
+              Agora essa tela olha so para o que voce tem liso em casa. O
+              alocado no site continua aparecendo apenas como referencia para
+              voce comparar e remanejar melhor.
             </p>
           </div>
         </div>
@@ -710,20 +868,8 @@ export function EstoqueClient({
               : ""}
           </p>
         </div>
-      </section>
 
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <div className={styles.sectionTitle}>Leitura do estoque atual</div>
-            <p className={styles.sectionSubtitle}>
-              Agora o resumo bate com a sua rotina: total em maos, estampadas
-              na Nuvemshop e livres para novas vendas.
-            </p>
-          </div>
-        </div>
-
-        <div className={styles.metricGrid}>
+        <div className={styles.metricGrid} style={{ marginTop: 16 }}>
           {metrics.map((metric) => (
             <article key={metric.label} className={styles.metricCard}>
               <div className={styles.metricLabel}>{metric.label}</div>
@@ -732,6 +878,510 @@ export function EstoqueClient({
             </article>
           ))}
         </div>
+
+        <div className={styles.stockSplitGrid} style={{ marginTop: 16 }}>
+          <article className={styles.stockPanel}>
+            <div className={styles.listTitle}>Adicionar ao estoque</div>
+            <p className={styles.sectionSubtitle}>
+              Use esse bloco quando chegar mais camiseta lisa. Se a linha ja
+              existir, o sistema soma no saldo liso que voce controla aqui.
+            </p>
+            <div className={styles.formStack}>
+              <label className={styles.filterField}>
+                <span>Produto base</span>
+                <select
+                  value={form.sku}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      sku: event.target.value,
+                    }))
+                  }
+                >
+                  {baseCategoryOptions.length === 0 ? (
+                    <option value="">Sem categorias da Nuvemshop</option>
+                  ) : (
+                    baseCategoryOptions.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+              <label className={styles.filterField}>
+                <span>Cor</span>
+                <select
+                  value={form.color}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      color: event.target.value,
+                    }))
+                  }
+                >
+                  <option>Preta</option>
+                  <option>Branca</option>
+                  <option>Roxa</option>
+                </select>
+              </label>
+              <label className={styles.filterField}>
+                <span>Tamanho</span>
+                <select
+                  value={form.size}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      size: event.target.value,
+                    }))
+                  }
+                >
+                  <option>P</option>
+                  <option>M</option>
+                  <option>G</option>
+                  <option>GG</option>
+                </select>
+              </label>
+              <label className={styles.filterField}>
+                <span>Qtd do lote</span>
+                <input
+                  type="number"
+                  value={form.total}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      total: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className={styles.filterField}>
+                <span>Motivo da entrada</span>
+                <select
+                  value={form.movementReasonCategory}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      movementReasonCategory: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="entrada_lote">Chegada de lote</option>
+                  <option value="devolucao">Devolucao ao estoque</option>
+                  <option value="correcao_ajuste">Correcao de contagem</option>
+                  <option value="entrada_manual">Entrada manual</option>
+                </select>
+              </label>
+              <label className={styles.filterField}>
+                <span>Justificativa da entrada</span>
+                <input
+                  value={form.movementReasonText}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      movementReasonText: event.target.value,
+                    }))
+                  }
+                  placeholder="Ex.: lote recebido do fornecedor hoje"
+                />
+              </label>
+              <label className={styles.filterField}>
+                <span>Ponto de reposicao</span>
+                <input
+                  type="number"
+                  value={form.reorderPoint}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      reorderPoint: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className={styles.filterField}>
+                <span>Prazo de reposicao</span>
+                <input
+                  type="number"
+                  value={form.leadTimeDays}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      leadTimeDays: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className={styles.filterField}>
+                <span>Observacao</span>
+                <input
+                  value={form.notes}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      notes: event.target.value,
+                    }))
+                  }
+                  placeholder="Ex.: prioridade de recompra"
+                />
+              </label>
+            </div>
+
+            <div className={styles.callout} style={{ marginTop: 16 }}>
+              <h3>
+                {matchingFormItem
+                  ? "Essa linha ja existe no banco"
+                  : "Voce vai criar uma linha nova"}
+              </h3>
+              <p>
+                {matchingFormItem
+                  ? `Hoje essa combinacao esta com ${matchingFormItem.plain} lisas em casa. Ao adicionar ${addQuantityPreview}, ela passa para ${projectedTotal} lisas.`
+                  : `Ao salvar ${addQuantityPreview}, essa combinacao entra como nova linha de lisa em casa.`}
+              </p>
+            </div>
+
+            <div className={styles.filterActions}>
+              <button
+                type="button"
+                className={styles.primaryButton}
+                onClick={handleCreateItem}
+                disabled={!persistence.enabled || isCreating}
+              >
+                {isCreating ? "Salvando..." : "Adicionar saldo"}
+              </button>
+            </div>
+          </article>
+
+          <article className={styles.stockPanel}>
+            <div className={styles.listTitle}>Revisar uma linha especifica</div>
+            <p className={styles.sectionSubtitle}>
+              Se vendeu ou se voce quer corrigir a contagem, escolha a linha e
+              use apenas adicionar ou retirar do saldo liso.
+            </p>
+            <div className={styles.formStack}>
+              <label className={styles.filterField}>
+                <span>Modelo</span>
+                <select
+                  value={selectedSku}
+                  onChange={(event) => handleSelectSku(event.target.value)}
+                >
+                  {skuOptions.map((sku) => (
+                    <option key={sku} value={sku}>
+                      {sku}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.filterField}>
+                <span>Cor</span>
+                <select
+                  value={selectedColor}
+                  onChange={(event) => handleSelectColor(event.target.value)}
+                >
+                  {colorOptions.map((color) => (
+                    <option key={color} value={color}>
+                      {color}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.filterField}>
+                <span>Tamanho</span>
+                <select
+                  value={selectedSize}
+                  onChange={(event) => setSelectedSize(event.target.value)}
+                >
+                  {sizeOptions.map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {selectedItem
+              ? (() => {
+                  const draft = drafts[selectedItem.id] ?? selectedItem;
+
+                  return (
+                    <>
+                      <div className={styles.callout} style={{ marginTop: 16 }}>
+                        <h3>{`${selectedItem.sku} · ${selectedItem.color} · ${selectedItem.size}`}</h3>
+                        <p>
+                          Hoje voce tem {draft.plain} lisas em casa e {draft.published} alocadas no
+                          site nessa combinacao. Quando vender, a baixa deve ser feita aqui no
+                          saldo liso.
+                        </p>
+                      </div>
+                      <div className={styles.formStack}>
+                        <label className={styles.filterField}>
+                          <span>Lisas em casa</span>
+                          <input type="number" value={draft.plain} disabled />
+                        </label>
+                        <label className={styles.filterField}>
+                          <span>Alocado no site</span>
+                          <input type="number" value={draft.published} disabled />
+                        </label>
+                        <label className={styles.filterField}>
+                          <span>Diferenca</span>
+                          <input type="number" value={draft.plain - draft.published} disabled />
+                        </label>
+                        <div className={styles.filterField}>
+                          <span>Ajustar lisas</span>
+                          <div className={styles.filterActions}>
+                            <button
+                              type="button"
+                              className={
+                                getStockAdjustment(selectedItem.id).mode === "add"
+                                  ? styles.primaryButton
+                                  : styles.secondaryButton
+                              }
+                              onClick={() =>
+                                setStockAdjustments((current) => ({
+                                  ...current,
+                                  [selectedItem.id]: {
+                                    ...getStockAdjustment(selectedItem.id),
+                                    mode: "add",
+                                    reasonCategory: "entrada_lote",
+                                  },
+                                }))
+                              }
+                            >
+                              Adicionar
+                            </button>
+                            <button
+                              type="button"
+                              className={
+                                getStockAdjustment(selectedItem.id).mode === "remove"
+                                  ? styles.primaryButton
+                                  : styles.secondaryButton
+                              }
+                              onClick={() =>
+                                setStockAdjustments((current) => ({
+                                  ...current,
+                                  [selectedItem.id]: {
+                                    ...getStockAdjustment(selectedItem.id),
+                                    mode: "remove",
+                                    reasonCategory: "saida_manual",
+                                  },
+                                }))
+                              }
+                            >
+                              Retirar
+                            </button>
+                            <input
+                              type="number"
+                              min="1"
+                              value={getStockAdjustment(selectedItem.id).quantity}
+                              onChange={(event) =>
+                                setStockAdjustments((current) => ({
+                                  ...current,
+                                  [selectedItem.id]: {
+                                    ...getStockAdjustment(selectedItem.id),
+                                    quantity: event.target.value,
+                                  },
+                                }))
+                              }
+                              style={{ maxWidth: 100 }}
+                            />
+                            <select
+                              value={getStockAdjustment(selectedItem.id).reasonCategory}
+                              onChange={(event) =>
+                                setStockAdjustments((current) => ({
+                                  ...current,
+                                  [selectedItem.id]: {
+                                    ...getStockAdjustment(selectedItem.id),
+                                    reasonCategory: event.target.value,
+                                  },
+                                }))
+                              }
+                            >
+                              {getStockAdjustment(selectedItem.id).mode === "add" ? (
+                                <>
+                                  <option value="entrada_lote">Chegada de lote</option>
+                                  <option value="devolucao">Devolucao ao estoque</option>
+                                  <option value="correcao_ajuste">Correcao de contagem</option>
+                                  <option value="entrada_manual">Entrada manual</option>
+                                </>
+                              ) : (
+                                <>
+                                  <option value="venda_site">Venda no site</option>
+                                  <option value="resgate_influenciador">Resgate de influenciador</option>
+                                  <option value="uso_interno">Uso interno</option>
+                                  <option value="perda_avaria">Perda ou avaria</option>
+                                  <option value="correcao_ajuste">Correcao de contagem</option>
+                                  <option value="saida_manual">Saida manual</option>
+                                </>
+                              )}
+                            </select>
+                            <input
+                              value={getStockAdjustment(selectedItem.id).reasonText}
+                              onChange={(event) =>
+                                setStockAdjustments((current) => ({
+                                  ...current,
+                                  [selectedItem.id]: {
+                                    ...getStockAdjustment(selectedItem.id),
+                                    reasonText: event.target.value,
+                                  },
+                                }))
+                              }
+                              placeholder="Justifique essa movimentacao"
+                              style={{ minWidth: 220 }}
+                            />
+                            <button
+                              type="button"
+                              className={styles.secondaryButton}
+                              onClick={() => handleApplyStockAdjustment(selectedItem.id)}
+                              disabled={
+                                !persistence.enabled || savingItemId === selectedItem.id
+                              }
+                            >
+                              {savingItemId === selectedItem.id ? "Salvando..." : "OK"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()
+              : (
+              <div className={styles.callout}>
+                <h3>Nenhuma combinacao encontrada</h3>
+                <p>
+                  Ajuste o modelo, a cor e o tamanho para abrir a linha certa do
+                  estoque.
+                </p>
+              </div>
+            )}
+          </article>
+        </div>
+
+        <div className={styles.stockSplitGrid} style={{ marginTop: 16 }}>
+          <article className={styles.stockPanel}>
+            <div className={styles.listTitle}>Como usar agora</div>
+            <div className={styles.stockList}>
+              <div className={styles.stockRow}>
+                <span>Lisas em casa</span>
+                <strong>Esse e o numero principal que voce controla aqui</strong>
+              </div>
+              <div className={styles.stockRow}>
+                <span>Quando vender</span>
+                <strong>Retire da lisa correspondente nessa tela</strong>
+              </div>
+              <div className={styles.stockRow}>
+                <span>Publicado na loja</span>
+                <strong>Serve so como referencia para comparar com o que voce tem em casa</strong>
+              </div>
+            </div>
+          </article>
+
+          <article className={styles.stockPanel}>
+            <div className={styles.listTitle}>Fluxo recomendado</div>
+            <div className={styles.stockList}>
+              <div className={styles.stockRow}>
+                <span>Chegou lote novo</span>
+                <strong>Use "Adicionar ao estoque"</strong>
+              </div>
+              <div className={styles.stockRow}>
+                <span>Vendeu uma arte</span>
+                <strong>Baixe direto da lisa daquela cor e tamanho</strong>
+              </div>
+              <div className={styles.stockRow}>
+                <span>Quer corrigir uma linha</span>
+                <strong>Use "Revisar uma linha especifica"</strong>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Saldo das lisas</div>
+            <p className={styles.sectionSubtitle}>
+              Aqui fica a visao simples por produto base, cor e tamanho, com o
+              saldo liso em casa e o que esta alocado no site.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Produto base</th>
+                <th>Cor</th>
+                <th>Tamanho</th>
+                <th>Lisas em casa</th>
+                <th>Alocado no site</th>
+                <th>Diferenca</th>
+                <th>Observacao</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleBaseItems.map((row) => (
+                <tr key={row.id}>
+                  <td>{row.sku}</td>
+                  <td>{row.color}</td>
+                  <td>{row.size}</td>
+                  <td>{row.plain}</td>
+                  <td>{row.published}</td>
+                  <td>{row.plain - row.published}</td>
+                  <td>{row.notes || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Lastro do estoque</div>
+            <p className={styles.sectionSubtitle}>
+              Tudo que entra ou sai da lisa fica registrado com motivo e justificativa.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Quando</th>
+                <th>Base</th>
+                <th>Movimento</th>
+                <th>Qtd</th>
+                <th>Antes</th>
+                <th>Depois</th>
+                <th>Motivo</th>
+                <th>Justificativa</th>
+              </tr>
+            </thead>
+            <tbody>
+              {movements.length > 0 ? (
+                movements.map((movement) => (
+                  <tr key={movement.id}>
+                    <td>{formatDateTime(movement.createdAt || "")}</td>
+                    <td>{`${movement.sku} · ${movement.color} · ${movement.size}`}</td>
+                    <td>{labelForMovementType(movement.movementType)}</td>
+                    <td>{movement.quantity}</td>
+                    <td>{movement.plainBefore}</td>
+                    <td>{movement.plainAfter}</td>
+                    <td>{labelForMovementReason(movement.reasonCategory)}</td>
+                    <td>{movement.reasonText || "-"}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={8}>Ainda nao existem movimentacoes registradas.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className={styles.section}>
@@ -739,8 +1389,8 @@ export function EstoqueClient({
           <div>
             <div className={styles.sectionTitle}>Estoque atual na Nuvemshop</div>
             <p className={styles.sectionSubtitle}>
-              Foto do modelo e saldo estampado da loja por cor e tamanho, com
-              filtros para voce bater o olho rapido no que esta publicado.
+              Aqui fica a distribuicao comercial publicada na loja. Isso nao
+              significa automaticamente que tudo ja esta estampado de verdade.
             </p>
           </div>
         </div>
@@ -939,354 +1589,6 @@ export function EstoqueClient({
             Nenhum modelo da Nuvemshop encontrado com esse filtro.
           </div>
         )}
-      </section>
-
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <div className={styles.sectionTitle}>Nova linha de estoque</div>
-            <p className={styles.sectionSubtitle}>
-              Cadastre por cor e tamanho o que chegou da fabrica ou o que voce
-              quer acompanhar separado. O campo estampadas vem da Nuvemshop.
-            </p>
-          </div>
-        </div>
-
-        <div className={styles.configGrid}>
-          <article className={styles.configCard}>
-            <div className={styles.formStack}>
-              <label className={styles.filterField}>
-                <span>Produto base</span>
-                <select
-                  value={form.sku}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      sku: event.target.value,
-                    }))
-                  }
-                >
-                  {nuvemshopCategoryOptions.length === 0 ? (
-                    <option value="">Sem categorias da Nuvemshop</option>
-                  ) : (
-                    nuvemshopCategoryOptions.map((category) => (
-                      <option key={category} value={category}>
-                        {category}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </label>
-              <label className={styles.filterField}>
-                <span>Cor</span>
-                <select
-                  value={form.color}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      color: event.target.value,
-                    }))
-                  }
-                >
-                  <option>Preta</option>
-                  <option>Branca</option>
-                  <option>Roxa</option>
-                  <option>Avela</option>
-                </select>
-              </label>
-              <label className={styles.filterField}>
-                <span>Tamanho</span>
-                <select
-                  value={form.size}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      size: event.target.value,
-                    }))
-                  }
-                >
-                  <option>P</option>
-                  <option>M</option>
-                  <option>G</option>
-                  <option>GG</option>
-                </select>
-              </label>
-              <label className={styles.filterField}>
-                <span>Total</span>
-                <input
-                  type="number"
-                  value={form.total}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      total: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className={styles.filterField}>
-                <span>Ponto de reposicao</span>
-                <input
-                  type="number"
-                  value={form.reorderPoint}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      reorderPoint: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className={styles.filterField}>
-                <span>Observacao</span>
-                <input
-                  value={form.notes}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      notes: event.target.value,
-                    }))
-                  }
-                  placeholder="Ex.: prioridade de recompra"
-                />
-              </label>
-            </div>
-
-            <div className={styles.filterActions}>
-              <button
-                type="button"
-                className={styles.primaryButton}
-                onClick={handleCreateItem}
-                disabled={!persistence.enabled || isCreating}
-              >
-                {isCreating ? "Salvando..." : "Adicionar linha"}
-              </button>
-            </div>
-          </article>
-
-          <article className={styles.configCard}>
-            <div className={styles.callout}>
-              <h3>Regra pratica de leitura</h3>
-              <p>
-                O que manda a recompra nao e so o total em maos. O sistema olha
-                o total interno e desconta automaticamente o estoque estampado
-                que esta hoje na Nuvemshop.
-              </p>
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <div className={styles.sectionTitle}>Cobertura por cor e tamanho</div>
-            <p className={styles.sectionSubtitle}>
-              Essa grade mostra a foto atual do banco. Abaixo dela voce ajusta
-              os saldos quando algo muda na operacao.
-            </p>
-          </div>
-        </div>
-
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Produto base</th>
-                <th>Cor</th>
-                <th>Tamanho</th>
-                <th>Total</th>
-                <th>Ja estampadas</th>
-                <th>Livres</th>
-                <th>Ponto de reposicao</th>
-                <th>Observacao</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((row) => (
-                <tr key={row.id}>
-                  <td>{row.sku}</td>
-                  <td>{row.color}</td>
-                  <td>{row.size}</td>
-                  <td>{row.total}</td>
-                  <td>{row.printed}</td>
-                  <td>{row.free}</td>
-                  <td>{row.reorderPoint}</td>
-                  <td>{row.notes || "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <div className={styles.sectionTitle}>Atualizar saldos</div>
-            <p className={styles.sectionSubtitle}>
-              Escolha modelo, cor e tamanho. So depois disso os campos de
-              edicao aparecem. Estampadas vem da Nuvemshop e nao sao alteradas
-              aqui.
-            </p>
-          </div>
-        </div>
-
-        <div className={styles.configGrid}>
-          <article className={styles.configCard}>
-            <div className={styles.formStack}>
-              <label className={styles.filterField}>
-                <span>Modelo</span>
-                <select
-                  value={selectedSku}
-                  onChange={(event) => handleSelectSku(event.target.value)}
-                >
-                  {skuOptions.map((sku) => (
-                    <option key={sku} value={sku}>
-                      {sku}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className={styles.filterField}>
-                <span>Cor</span>
-                <select
-                  value={selectedColor}
-                  onChange={(event) => handleSelectColor(event.target.value)}
-                >
-                  {colorOptions.map((color) => (
-                    <option key={color} value={color}>
-                      {color}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className={styles.filterField}>
-                <span>Tamanho</span>
-                <select
-                  value={selectedSize}
-                  onChange={(event) => setSelectedSize(event.target.value)}
-                >
-                  {sizeOptions.map((size) => (
-                    <option key={size} value={size}>
-                      {size}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </article>
-
-          {selectedItem ? (
-            <article className={styles.configCard}>
-              {(() => {
-                const draft = drafts[selectedItem.id] ?? selectedItem;
-
-                return (
-                  <>
-                    <div className={styles.listTitle}>{`${selectedItem.sku} · ${selectedItem.color} · ${selectedItem.size}`}</div>
-                    <div className={styles.formStack}>
-                      <label className={styles.filterField}>
-                        <span>Total</span>
-                        <input
-                          type="number"
-                          value={draft.total}
-                          onChange={(event) =>
-                            updateDraft(
-                              selectedItem.id,
-                              "total",
-                              Number.parseInt(event.target.value || "0", 10),
-                            )
-                          }
-                        />
-                      </label>
-                      <label className={styles.filterField}>
-                        <span>Ja estampadas</span>
-                        <input type="number" value={draft.printed} disabled />
-                      </label>
-                      <label className={styles.filterField}>
-                        <span>Livres</span>
-                        <input type="number" value={draft.free} disabled />
-                      </label>
-                      <label className={styles.filterField}>
-                        <span>Ponto de reposicao</span>
-                        <input
-                          type="number"
-                          value={draft.reorderPoint}
-                          onChange={(event) =>
-                            updateDraft(
-                              selectedItem.id,
-                              "reorderPoint",
-                              Number.parseInt(event.target.value || "0", 10),
-                            )
-                          }
-                        />
-                      </label>
-                      <label className={styles.filterField}>
-                        <span>Observacao</span>
-                        <input
-                          value={draft.notes}
-                          onChange={(event) =>
-                            updateDraft(selectedItem.id, "notes", event.target.value)
-                          }
-                        />
-                      </label>
-                    </div>
-                    <div className={styles.filterActions}>
-                      <button
-                        type="button"
-                        className={styles.secondaryButton}
-                        onClick={() => handleSaveItem(selectedItem.id)}
-                        disabled={
-                          !persistence.enabled || savingItemId === selectedItem.id
-                        }
-                      >
-                        {savingItemId === selectedItem.id
-                          ? "Salvando..."
-                          : "Salvar saldos"}
-                      </button>
-                    </div>
-                  </>
-                );
-              })()}
-            </article>
-          ) : (
-            <article className={styles.configCard}>
-              <div className={styles.callout}>
-                <h3>Nenhuma combinacao encontrada</h3>
-                <p>
-                  Ajuste o modelo, a cor e o tamanho para abrir a linha certa do
-                  estoque.
-                </p>
-              </div>
-            </article>
-          )}
-        </div>
-      </section>
-
-      <section className={styles.section}>
-        <div className={styles.list}>
-          {operationAlerts.slice(0, 3).map((alert) => {
-            const pillClass =
-              alert.level === "alto"
-                ? styles.pillHigh
-                : alert.level === "medio"
-                  ? styles.pillMedium
-                  : styles.pillLow;
-
-            return (
-              <article key={alert.title} className={styles.listItem}>
-                <div className={styles.listTitleRow}>
-                  <div className={styles.listTitle}>{alert.title}</div>
-                  <span className={`${styles.pill} ${pillClass}`}>
-                    {alert.level}
-                  </span>
-                </div>
-                <p className={styles.listDetail}>{alert.detail}</p>
-              </article>
-            );
-          })}
-        </div>
       </section>
 
       <section className={styles.section}>
@@ -1652,6 +1954,42 @@ function labelForDtfType(value: DtfArtType) {
   }
 }
 
+function labelForMovementType(value: StockMovement["movementType"]) {
+  switch (value) {
+    case "entrada":
+      return "Entrada";
+    case "saida":
+      return "Saida";
+    default:
+      return "Ajuste";
+  }
+}
+
+function labelForMovementReason(value: string) {
+  switch (value) {
+    case "entrada_lote":
+      return "Chegada de lote";
+    case "devolucao":
+      return "Devolucao";
+    case "correcao_ajuste":
+      return "Correcao";
+    case "entrada_manual":
+      return "Entrada manual";
+    case "venda_site":
+      return "Venda no site";
+    case "resgate_influenciador":
+      return "Resgate de influenciador";
+    case "uso_interno":
+      return "Uso interno";
+    case "perda_avaria":
+      return "Perda ou avaria";
+    case "saida_manual":
+      return "Saida manual";
+    default:
+      return value || "-";
+  }
+}
+
 function normalizeFilterValue(value: string) {
   return value
     .normalize("NFD")
@@ -1660,14 +1998,73 @@ function normalizeFilterValue(value: string) {
     .toLowerCase();
 }
 
-function getDefaultStockCategory(products: NuvemshopStockProduct[]) {
+function getStockBaseCategoryOptions(products: NuvemshopStockProduct[]) {
   const categories = Array.from(
     new Set(products.flatMap((product) => product.categories)),
   ).sort();
+  const blockedCategories = new Set(["full estampa", "minimalista", "outlet"]);
+  const filtered = categories.filter(
+    (category) => !blockedCategories.has(normalizeFilterValue(category)),
+  );
+
+  return filtered.length > 0 ? filtered : categories;
+}
+
+function getDefaultStockCategory(products: NuvemshopStockProduct[]) {
+  const categories = getStockBaseCategoryOptions(products);
 
   return (
     categories.find((category) => normalizeFilterValue(category) === "oversized") ??
     categories[0] ??
     ""
   );
+}
+
+function parsePositiveInteger(value: string) {
+  return Number.parseInt(value || "0", 10) || 0;
+}
+
+function sumPlainStockByColor(
+  items: BaseStockItem[],
+  color: (typeof TRACKED_BASE_COLORS)[number],
+) {
+  return items
+    .filter((item) => item.color === color)
+    .reduce((sum, item) => sum + item.plain, 0);
+}
+
+function recalculateDraftStockState(item: BaseStockItem): BaseStockItem {
+  const total = Math.max(item.total, 0);
+  const printedReal = Math.min(Math.max(item.printedReal, 0), total);
+  const published = Math.max(item.published, 0);
+  const recentSales30d = Math.max(item.recentSales30d, 0);
+  const averageDailySales =
+    recentSales30d > 0 ? Math.round((recentSales30d / 30) * 10) / 10 : 0;
+  const plain = Math.max(total - printedReal, 0);
+
+  return {
+    ...item,
+    total,
+    plain,
+    printedReal,
+    printed: published,
+    published,
+    free: Math.max(total - published, 0),
+    overcommitted: Math.max(published - total, 0),
+    leadTimeDays: Math.max(item.leadTimeDays, 0),
+    recentSales30d,
+    averageDailySales,
+    coverageDays:
+      averageDailySales > 0
+        ? Math.round((plain / averageDailySales) * 10) / 10
+        : null,
+  };
+}
+
+function sortStockItems(items: BaseStockItem[]) {
+  return [...items].sort((left, right) => {
+    const leftKey = `${left.sku}-${left.color}-${left.size}`;
+    const rightKey = `${right.sku}-${right.color}-${right.size}`;
+    return leftKey.localeCompare(rightKey);
+  });
 }

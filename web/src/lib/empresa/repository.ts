@@ -1,5 +1,7 @@
 "use server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   getNuvemshopCredentials,
@@ -9,6 +11,10 @@ import type {
   NuvemshopLocalizedText,
   NuvemshopProduct,
 } from "@/lib/nuvemshop/types";
+import {
+  syncCompanyRuleWithNuvemshop,
+  type CompanyNuvemshopStatus,
+} from "./nuvemshop-discounts";
 
 const OPERATIONS_SCHEMA = "repeticao_maxima";
 const COMPANY_CART_DISCOUNT_TABLE = "promocoes_carrinho";
@@ -34,6 +40,15 @@ export type CompanyDiscountProductOption = {
   categoryIds: string[];
   categoryNames: string[];
   imageUrl: string | null;
+  matchIds: string[];
+};
+
+export type CompanyCartDiscountGroup = {
+  categoryId: string;
+  categoryName: string;
+  minimumQuantity: number;
+  productIds: string[];
+  productNames: string[];
 };
 
 export type CompanyCartDiscountRule = {
@@ -44,12 +59,18 @@ export type CompanyCartDiscountRule = {
   categoryName: string;
   categoryIds: string[];
   categoryNames: string[];
+  comboGroups: CompanyCartDiscountGroup[];
   productIds: string[];
   productNames: string[];
   minimumQuantity: number;
   discountAmount: number;
   active: boolean;
   notes: string;
+  nuvemshopPromotionId: string | null;
+  nuvemshopStatus: CompanyNuvemshopStatus;
+  nuvemshopMessage: string;
+  nuvemshopCallbackUrl: string | null;
+  nuvemshopLastSyncedAt: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 };
@@ -110,7 +131,10 @@ export async function loadCompanyDiscountModuleData() {
   }
 }
 
-export async function createCompanyCartDiscountRule(input: unknown) {
+export async function createCompanyCartDiscountRule(
+  input: unknown,
+  origin?: string,
+) {
   const supabase = createSupabaseServerClient();
 
   if (!supabase.ok) {
@@ -135,6 +159,7 @@ export async function createCompanyCartDiscountRule(input: unknown) {
         category_name: row.categoryName,
         category_ids: row.categoryIds,
         category_names: row.categoryNames,
+        combo_groups: row.comboGroups,
         product_ids: row.productIds,
         product_names: row.productNames,
         minimum_quantity: row.minimumQuantity,
@@ -149,15 +174,23 @@ export async function createCompanyCartDiscountRule(input: unknown) {
       throw error;
     }
 
+    const syncedRule = await syncRuleSnapshot(
+      supabase.client,
+      rowToCompanyCartDiscountRule(data),
+      origin,
+    );
+
     return {
       ok: true as const,
-      rule: rowToCompanyCartDiscountRule(data),
+      rule: syncedRule,
       persistence: {
         enabled: true,
         source: "supabase" as const,
-        message: "Promocao de carrinho salva no Supabase.",
-        updatedAt:
-          data && typeof data.updated_at === "string" ? data.updated_at : null,
+        message: buildSyncMessage(
+          "Promocao de carrinho salva no Supabase.",
+          syncedRule,
+        ),
+        updatedAt: syncedRule.updatedAt,
       },
     };
   } catch (error) {
@@ -171,6 +204,7 @@ export async function createCompanyCartDiscountRule(input: unknown) {
 export async function updateCompanyCartDiscountRuleStatus(
   id: string,
   input: unknown,
+  origin?: string,
 ) {
   const supabase = createSupabaseServerClient();
 
@@ -202,17 +236,25 @@ export async function updateCompanyCartDiscountRuleStatus(
       throw error;
     }
 
+    const syncedRule = await syncRuleSnapshot(
+      supabase.client,
+      rowToCompanyCartDiscountRule(data),
+      origin,
+    );
+
     return {
       ok: true as const,
-      rule: rowToCompanyCartDiscountRule(data),
+      rule: syncedRule,
       persistence: {
         enabled: true,
         source: "supabase" as const,
-        message: active
-          ? "Promocao reativada com sucesso."
-          : "Promocao pausada com sucesso.",
-        updatedAt:
-          data && typeof data.updated_at === "string" ? data.updated_at : null,
+        message: buildSyncMessage(
+          active
+            ? "Promocao reativada com sucesso."
+            : "Promocao pausada com sucesso.",
+          syncedRule,
+        ),
+        updatedAt: syncedRule.updatedAt,
       },
     };
   } catch (error) {
@@ -223,7 +265,11 @@ export async function updateCompanyCartDiscountRuleStatus(
   }
 }
 
-export async function updateCompanyCartDiscountRule(id: string, input: unknown) {
+export async function updateCompanyCartDiscountRule(
+  id: string,
+  input: unknown,
+  origin?: string,
+) {
   const supabase = createSupabaseServerClient();
 
   if (!supabase.ok) {
@@ -238,6 +284,18 @@ export async function updateCompanyCartDiscountRule(id: string, input: unknown) 
   const row = normalizeCompanyCartDiscountInput(input);
 
   try {
+    const { data: currentData, error: currentError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(COMPANY_CART_DISCOUNT_TABLE)
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (currentError || !currentData) {
+      throw currentError || new Error("Promocao nao encontrada para edicao.");
+    }
+
+    const previousRule = rowToCompanyCartDiscountRule(currentData);
     const { data, error } = await supabase.client
       .schema(OPERATIONS_SCHEMA)
       .from(COMPANY_CART_DISCOUNT_TABLE)
@@ -248,6 +306,7 @@ export async function updateCompanyCartDiscountRule(id: string, input: unknown) 
         category_name: row.categoryName,
         category_ids: row.categoryIds,
         category_names: row.categoryNames,
+        combo_groups: row.comboGroups,
         product_ids: row.productIds,
         product_names: row.productNames,
         minimum_quantity: row.minimumQuantity,
@@ -264,15 +323,24 @@ export async function updateCompanyCartDiscountRule(id: string, input: unknown) 
       throw error;
     }
 
+    const syncedRule = await syncRuleSnapshot(
+      supabase.client,
+      rowToCompanyCartDiscountRule(data),
+      origin,
+      previousRule,
+    );
+
     return {
       ok: true as const,
-      rule: rowToCompanyCartDiscountRule(data),
+      rule: syncedRule,
       persistence: {
         enabled: true,
         source: "supabase" as const,
-        message: "Promocao de carrinho atualizada no Supabase.",
-        updatedAt:
-          data && typeof data.updated_at === "string" ? data.updated_at : null,
+        message: buildSyncMessage(
+          "Promocao de carrinho atualizada no Supabase.",
+          syncedRule,
+        ),
+        updatedAt: syncedRule.updatedAt,
       },
     };
   } catch (error) {
@@ -280,6 +348,60 @@ export async function updateCompanyCartDiscountRule(id: string, input: unknown) 
       ok: false as const,
       persistence: buildDisabledState(getErrorMessage(error)),
     };
+  }
+}
+
+export async function loadPublishedCompanyDiscountRulesForCallback() {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return [] as CompanyCartDiscountRule[];
+  }
+
+  try {
+    const catalog = await loadNuvemshopDiscountCatalog();
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(COMPANY_CART_DISCOUNT_TABLE)
+      .select("*")
+      .eq("active", true)
+      .order("updated_at", { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    const productMatchMap = new Map(
+      (catalog.products || []).map((product) => [product.productId, product.matchIds]),
+    );
+
+    return (data ?? [])
+      .map(rowToCompanyCartDiscountRule)
+      .map((rule) => ({
+        ...rule,
+        comboGroups: rule.comboGroups.map((group) => ({
+          ...group,
+          productIds: Array.from(
+            new Set(
+              group.productIds.flatMap((productId) => {
+                const matchIds = productMatchMap.get(productId);
+                return matchIds && matchIds.length > 0 ? matchIds : [productId];
+              }),
+            ),
+          ),
+        })),
+        productIds: Array.from(
+          new Set(
+            rule.productIds.flatMap((productId) => {
+              const matchIds = productMatchMap.get(productId);
+              return matchIds && matchIds.length > 0 ? matchIds : [productId];
+            }),
+          ),
+        ),
+      }))
+      .filter((rule) => Boolean(rule.nuvemshopPromotionId));
+  } catch {
+    return [] as CompanyCartDiscountRule[];
   }
 }
 
@@ -367,6 +489,12 @@ function buildCompanyDiscountProductOptions(products: NuvemshopProduct[]) {
           product.images && product.images[0] && typeof product.images[0].src === "string"
             ? product.images[0].src
             : null,
+        matchIds: Array.from(
+          new Set([
+            String(product.id),
+            ...(product.variants || []).map((variant) => String(variant.id ?? "")),
+          ].filter(Boolean)),
+        ),
       };
     })
     .filter((product) => product.productId && product.productName && product.categoryIds.length > 0)
@@ -434,12 +562,23 @@ function rowToCompanyCartDiscountRule(
         : String(row.category_name ?? "").trim()
           ? [String(row.category_name ?? "").trim()]
           : [],
+    comboGroups: getDiscountGroupArrayValue(row.combo_groups),
     productIds: getTextArrayValue(row.product_ids),
     productNames: getTextArrayValue(row.product_names),
     minimumQuantity: Math.max(getIntegerValue(row.minimum_quantity), 1),
     discountAmount: Math.max(getNumberValue(row.discount_amount), 0),
     active: Boolean(row.active),
     notes: String(row.notes ?? ""),
+    nuvemshopPromotionId: getNullableTextValue(row.nuvemshop_promotion_id),
+    nuvemshopStatus: normalizeNuvemshopStatus(row.nuvemshop_status),
+    nuvemshopMessage:
+      String(row.nuvemshop_message ?? "").trim() ||
+      "Ainda nao sincronizada com a Nuvemshop.",
+    nuvemshopCallbackUrl: getNullableTextValue(row.nuvemshop_callback_url),
+    nuvemshopLastSyncedAt:
+      typeof row.nuvemshop_last_synced_at === "string"
+        ? row.nuvemshop_last_synced_at
+        : null,
     createdAt: typeof row.created_at === "string" ? row.created_at : null,
     updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
   };
@@ -452,6 +591,14 @@ function normalizeCompanyCartDiscountInput(input: unknown) {
   const categoryNames = getTextArrayValue(source.categoryNames).filter(Boolean);
   const fallbackCategoryId = String(source.categoryId ?? "").trim();
   const fallbackCategoryName = String(source.categoryName ?? "").trim();
+  const comboGroups = getDiscountGroupArrayValue(source.comboGroups);
+  const comboGroupProductIds = Array.from(
+    new Set(comboGroups.flatMap((group) => group.productIds)),
+  );
+  const comboGroupProductNames = Array.from(
+    new Set(comboGroups.flatMap((group) => group.productNames)),
+  );
+  const productIds = getTextArrayValue(source.productIds).filter(Boolean);
   const productNames = getTextArrayValue(source.productNames).filter(Boolean);
   const resolvedCategoryIds =
     categoryIds.length > 0
@@ -465,27 +612,50 @@ function normalizeCompanyCartDiscountInput(input: unknown) {
       : fallbackCategoryName
         ? [fallbackCategoryName]
         : [];
+  const resolvedProductIds =
+    productIds.length > 0 ? productIds : comboGroupProductIds;
+  const resolvedProductNames =
+    productNames.length > 0 ? productNames : comboGroupProductNames;
+  const resolvedMinimumQuantity =
+    comboGroups.length > 0
+      ? comboGroups.reduce((sum, group) => sum + group.minimumQuantity, 0)
+      : Math.max(getIntegerValue(source.minimumQuantity), 1);
 
   if (resolvedCategoryIds.length === 0) {
     throw new Error("Escolha pelo menos uma categoria da Nuvemshop para a promocao.");
   }
 
-  if (productNames.length === 0) {
+  if (resolvedProductNames.length === 0 || resolvedProductIds.length === 0) {
     throw new Error("Selecione pelo menos um produto participante da promocao.");
+  }
+
+  if (
+    ruleMode === "misto" &&
+    comboGroups.length > 0 &&
+    comboGroups.some(
+      (group) =>
+        !resolvedCategoryIds.includes(group.categoryId) ||
+        group.productIds.length === 0,
+    )
+  ) {
+    throw new Error(
+      "Revise os grupos da promocao composta para garantir categoria e produtos em cada bloco.",
+    );
   }
 
   return {
     title:
       String(source.title ?? "").trim() ||
-      `Leve ${Math.max(getIntegerValue(source.minimumQuantity), 1)} com desconto em ${resolvedCategoryNames.join(", ") || "categoria selecionada"}`,
+      `Leve ${resolvedMinimumQuantity} com desconto em ${resolvedCategoryNames.join(", ") || "categoria selecionada"}`,
     ruleMode,
     categoryId: resolvedCategoryIds[0] || "",
     categoryName: resolvedCategoryNames[0] || "",
     categoryIds: resolvedCategoryIds,
     categoryNames: resolvedCategoryNames,
-    productIds: getTextArrayValue(source.productIds).filter(Boolean),
-    productNames,
-    minimumQuantity: Math.max(getIntegerValue(source.minimumQuantity), 1),
+    comboGroups,
+    productIds: resolvedProductIds,
+    productNames: resolvedProductNames,
+    minimumQuantity: resolvedMinimumQuantity,
     discountAmount: Math.max(getNumberValue(source.discountAmount), 0),
     active: source.active === undefined ? true : Boolean(source.active),
     notes: String(source.notes ?? "").trim(),
@@ -546,6 +716,48 @@ function getTextArrayValue(value: unknown) {
     .filter((item) => item.length > 0);
 }
 
+function getDiscountGroupArrayValue(value: unknown): CompanyCartDiscountGroup[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      const source = isRecord(item) ? item : {};
+      return {
+        categoryId: String(source.categoryId ?? "").trim(),
+        categoryName: String(source.categoryName ?? "").trim(),
+        minimumQuantity: Math.max(getIntegerValue(source.minimumQuantity), 1),
+        productIds: getTextArrayValue(source.productIds).filter(Boolean),
+        productNames: getTextArrayValue(source.productNames).filter(Boolean),
+      };
+    })
+    .filter(
+      (group) =>
+        Boolean(group.categoryId) &&
+        Boolean(group.categoryName) &&
+        group.productIds.length > 0,
+    );
+}
+
+function getNullableTextValue(value: unknown) {
+  const text = String(value ?? "").trim();
+  return text ? text : null;
+}
+
+function normalizeNuvemshopStatus(value: unknown): CompanyNuvemshopStatus {
+  switch (String(value ?? "").trim().toLowerCase()) {
+    case "publicada":
+      return "publicada";
+    case "erro":
+      return "erro";
+    case "pausada":
+      return "pausada";
+    default:
+      return "pendente";
+  }
+}
+
 function normalizeRuleMode(value: unknown) {
   return String(value ?? "").trim().toLowerCase() === "misto"
     ? "misto"
@@ -577,4 +789,61 @@ function getIntegerValue(value: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+async function syncRuleSnapshot(
+  client: SupabaseClient,
+  rule: CompanyCartDiscountRule,
+  origin?: string,
+  previousRule?: CompanyCartDiscountRule | null,
+) {
+  if (!origin) {
+    return rule;
+  }
+
+  const syncResult = await syncCompanyRuleWithNuvemshop(
+    rule,
+    origin,
+    previousRule,
+  );
+
+  const { data, error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(COMPANY_CART_DISCOUNT_TABLE)
+    .update({
+      nuvemshop_promotion_id: syncResult.promotionId,
+      nuvemshop_status: syncResult.status,
+      nuvemshop_message: syncResult.message,
+      nuvemshop_callback_url: syncResult.callbackUrl,
+      nuvemshop_last_synced_at: syncResult.syncedAt,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", rule.id)
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    return {
+      ...rule,
+      nuvemshopPromotionId: syncResult.promotionId,
+      nuvemshopStatus: syncResult.status,
+      nuvemshopMessage: syncResult.message,
+      nuvemshopCallbackUrl: syncResult.callbackUrl,
+      nuvemshopLastSyncedAt: syncResult.syncedAt,
+    };
+  }
+
+  return rowToCompanyCartDiscountRule(data);
+}
+
+function buildSyncMessage(baseMessage: string, rule: CompanyCartDiscountRule) {
+  if (rule.nuvemshopStatus === "publicada" || rule.nuvemshopStatus === "pausada") {
+    return `${baseMessage} ${rule.nuvemshopMessage}`;
+  }
+
+  if (rule.nuvemshopStatus === "erro") {
+    return `${baseMessage} ${rule.nuvemshopMessage}`;
+  }
+
+  return baseMessage;
 }

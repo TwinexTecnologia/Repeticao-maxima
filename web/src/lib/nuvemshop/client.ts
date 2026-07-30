@@ -1,7 +1,11 @@
 import type {
   NuvemshopCategory,
+  NuvemshopCoupon,
   NuvemshopCredentials,
   NuvemshopOrder,
+  NuvemshopPromotion,
+  NuvemshopPromotionInput,
+  NuvemshopPromotionResponse,
   NuvemshopProduct,
 } from "./types";
 
@@ -72,17 +76,54 @@ export class NuvemshopClient {
 
   async listProducts(params: ListParams = {}) {
     const searchParams = this.buildPaginationParams(params);
-    return this.request<NuvemshopProduct[]>("/products", searchParams);
+    return this.requestJson<NuvemshopProduct[]>("/products", {
+      searchParams,
+    });
   }
 
   async listCategories(params: ListParams = {}) {
     const searchParams = this.buildPaginationParams(params);
-    return this.request<NuvemshopCategory[]>("/categories", searchParams);
+    return this.requestJson<NuvemshopCategory[]>("/categories", {
+      searchParams,
+    });
   }
 
   async listOrders(params: ListParams = {}) {
     const searchParams = this.buildPaginationParams(params);
-    return this.request<NuvemshopOrder[]>("/orders", searchParams);
+    return this.requestJson<NuvemshopOrder[]>("/orders", {
+      searchParams,
+    });
+  }
+
+  async listCoupons(params: ListParams = {}) {
+    const searchParams = this.buildPaginationParams(params);
+    return this.requestJson<NuvemshopCoupon[]>("/coupons", {
+      searchParams,
+    });
+  }
+
+  async createPromotion(input: NuvemshopPromotionInput) {
+    return this.requestJson<NuvemshopPromotionResponse>("/promotions", {
+      method: "POST",
+      body: input,
+      baseUrl: getNuvemshopDiscountsBaseUrl(this.credentials.baseUrl),
+    });
+  }
+
+  async updatePromotion(id: string, input: Partial<NuvemshopPromotionInput>) {
+    return this.requestJson<NuvemshopPromotionResponse>(`/promotions/${id}`, {
+      method: "PATCH",
+      body: input,
+      baseUrl: getNuvemshopDiscountsBaseUrl(this.credentials.baseUrl),
+    });
+  }
+
+  async updateDiscountsCallback(url: string) {
+    return this.requestJson<{ url?: string | null }>("/discounts/callbacks", {
+      method: "PUT",
+      body: { url },
+      baseUrl: getNuvemshopDiscountsBaseUrl(this.credentials.baseUrl),
+    });
   }
 
   private buildPaginationParams(params: ListParams) {
@@ -99,24 +140,37 @@ export class NuvemshopClient {
     return searchParams;
   }
 
-  private async request<T>(path: string, searchParams?: URLSearchParams) {
-    const base = this.credentials.baseUrl.replace(/\/$/, "");
+  private async requestJson<T>(
+    path: string,
+    options: {
+      method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+      searchParams?: URLSearchParams;
+      body?: unknown;
+      baseUrl?: string;
+    } = {},
+  ) {
+    const method = options.method || "GET";
+    const base = (options.baseUrl || this.credentials.baseUrl).replace(/\/$/, "");
     const url = new URL(
       `${base}/${this.credentials.storeId}${path.startsWith("/") ? path : `/${path}`}`,
     );
 
-    if (searchParams) {
-      url.search = searchParams.toString();
+    if (options.searchParams) {
+      url.search = options.searchParams.toString();
     }
 
+    const shouldCache = method === "GET" && !options.body;
     const response = await fetch(url, {
-      method: "GET",
+      method,
       headers: {
         Authentication: `bearer ${this.credentials.accessToken}`,
         "User-Agent": this.credentials.userAgent,
         Accept: "application/json",
+        ...(options.body ? { "Content-Type": "application/json" } : {}),
       },
-      cache: "no-store",
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      cache: shouldCache ? "force-cache" : "no-store",
+      ...(shouldCache ? { next: { revalidate: 30 } } : {}),
     });
 
     if (!response.ok) {
@@ -128,6 +182,29 @@ export class NuvemshopClient {
       );
     }
 
-    return (await response.json()) as T;
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    const responseText = await response.text();
+
+    if (!responseText.trim()) {
+      return undefined as T;
+    }
+
+    return JSON.parse(responseText) as T;
   }
+}
+
+export function getNuvemshopDiscountsBaseUrl(baseUrl?: string) {
+  const configured = process.env.NUVEMSHOP_DISCOUNTS_API_BASE_URL?.trim();
+
+  if (configured) {
+    return configured.replace(/\/$/, "");
+  }
+
+  const current = (baseUrl || DEFAULT_BASE_URL).replace(/\/$/, "");
+  return current.endsWith("/v1")
+    ? current.replace(/\/v1$/, "/2025-03")
+    : current;
 }

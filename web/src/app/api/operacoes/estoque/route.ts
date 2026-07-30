@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 
+import { authorizeApiAccess } from "@/lib/auth/access";
 import { createStockItem } from "@/lib/operacoes/repository";
 
 export async function POST(request: Request) {
+  const authorization = await authorizeApiAccess("estoque");
+
+  if (!authorization.ok) {
+    return authorization.response;
+  }
+
   try {
     const body = await request.json();
     const result = await createStockItem(body);
