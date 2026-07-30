@@ -110,6 +110,14 @@ function formatPercent(value: number) {
   return `${value.toFixed(1).replace(".", ",")}%`;
 }
 
+function formatCompactCurrency(value: number) {
+  if (Math.abs(value) >= 1000) {
+    return `R$ ${(value / 1000).toFixed(1).replace(".", ",")}k`;
+  }
+
+  return formatMoney(value);
+}
+
 function formatMonthInput(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
@@ -479,69 +487,88 @@ function MovementForm(props: {
   sheetId: string;
 }) {
   const isEntry = props.type === "entrada";
+  const monthLabel = getMonthRange(props.selectedMonth).monthLabel;
 
   return (
     <form action={registerMovementAction} className={styles.formStack}>
       <input type="hidden" name="redirectTo" value={props.redirectTo} />
       <input type="hidden" name="type" value={props.type} />
 
-      <label className={styles.filterField}>
-        <span>Categoria</span>
-        <select name="category" defaultValue={isEntry ? "Venda direta" : "Fornecedor"}>
-          {MOVEMENT_CATEGORIES.map((category) => (
-            <option key={category} value={category}>
-              {category}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className={styles.movementFormIntro}>
+        <span className={styles.movementFormBadge}>
+          {isEntry ? "Receita e recebimento" : "Despesa e pagamento"}
+        </span>
+        <p className={styles.movementFormText}>
+          {isEntry
+            ? "Preencha a entrada exatamente como ela apareceu no banco."
+            : "Registre a saida com categoria, pagamento e observacoes do lancamento."}
+        </p>
+      </div>
 
-      <label className={styles.filterField}>
-        <span>Descricao</span>
-        <input
-          type="text"
-          name="title"
-          placeholder={
-            isEntry
-              ? "Ex.: Venda via Instagram, Pix recebido, aporte"
-              : "Ex.: Compra de DTF, fornecedor, embalagem"
-          }
-          required
-        />
-      </label>
+      <div className={styles.movementFormGrid}>
+        <label className={styles.filterField}>
+          <span>Competencia</span>
+          <input type="text" value={monthLabel} readOnly />
+        </label>
 
-      <label className={styles.filterField}>
-        <span>Valor</span>
-        <input type="number" name="amount" min="0" step="0.01" placeholder="0,00" required />
-      </label>
+        <label className={styles.filterField}>
+          <span>Categoria</span>
+          <select name="category" defaultValue={isEntry ? "Venda direta" : "Fornecedor"}>
+            {MOVEMENT_CATEGORIES.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
+          </select>
+        </label>
 
-      <label className={styles.filterField}>
-        <span>Pagamento</span>
-        <select name="paymentMethod" defaultValue="pix">
-          {PAYMENT_METHOD_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
+        <label className={`${styles.filterField} ${styles.movementFieldWide}`}>
+          <span>Descricao</span>
+          <input
+            type="text"
+            name="title"
+            placeholder={
+              isEntry
+                ? "Ex.: Venda via Instagram, Pix recebido, aporte"
+                : "Ex.: Compra de DTF, fornecedor, embalagem"
+            }
+            required
+          />
+        </label>
 
-      <label className={styles.filterField}>
-        <span>Data</span>
-        <input
-          type="date"
-          name="movementDate"
-          defaultValue={getDefaultMovementDateForMonth(props.selectedMonth)}
-          required
-        />
-      </label>
+        <label className={styles.filterField}>
+          <span>Valor</span>
+          <input type="number" name="amount" min="0" step="0.01" placeholder="0,00" required />
+        </label>
 
-      <label className={styles.filterField}>
-        <span>Observacao</span>
-        <input type="text" name="notes" placeholder="Opcional" />
-      </label>
+        <label className={styles.filterField}>
+          <span>Pagamento</span>
+          <select name="paymentMethod" defaultValue="pix">
+            {PAYMENT_METHOD_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
 
-      <div className={styles.filterActions}>
+        <label className={styles.filterField}>
+          <span>Data</span>
+          <input
+            type="date"
+            name="movementDate"
+            defaultValue={getDefaultMovementDateForMonth(props.selectedMonth)}
+            required
+          />
+        </label>
+
+        <label className={`${styles.filterField} ${styles.movementFieldWide}`}>
+          <span>Observacao</span>
+          <input type="text" name="notes" placeholder="Opcional" />
+        </label>
+      </div>
+
+      <div className={`${styles.filterActions} ${styles.movementFormActions}`}>
         <button type="submit" className={styles.primaryButton}>
           {isEntry ? "Salvar entrada" : "Salvar saida"}
         </button>
@@ -600,6 +627,7 @@ export default async function PedidosPage({ searchParams }: PageProps) {
         .map((day) => day),
     ),
   );
+  const trendLabelDays = new Set(keyDays);
 
   return (
     <AppShell
@@ -646,9 +674,14 @@ export default async function PedidosPage({ searchParams }: PageProps) {
 
             <div className={styles.sheetPanel}>
               <div className={styles.sheetHeader}>
-                <div className={styles.sheetTitle}>Registrar movimentacao</div>
-                <label htmlFor={movementSheetId} className={styles.sheetClose}>
-                  Fechar
+                <div>
+                  <div className={styles.sheetTitle}>Registrar movimentacao</div>
+                  <p className={styles.sheetSubtitle}>
+                    Escolha o tipo de movimentacao e continue.
+                  </p>
+                </div>
+                <label htmlFor={movementSheetId} className={styles.sheetClose} aria-label="Fechar">
+                  ×
                 </label>
               </div>
 
@@ -661,7 +694,10 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                   defaultChecked
                 />
                 <label htmlFor={openingModeId} className={styles.movementTypeLabel}>
-                  Saldo inicial
+                  <span className={styles.movementTypeCopy}>
+                    <strong>Saldo inicial</strong>
+                    <span>Definir saldo de abertura</span>
+                  </span>
                 </label>
 
                 <input
@@ -671,7 +707,10 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                   className={`${styles.movementTypeInput} ${styles.movementTypeEntry}`}
                 />
                 <label htmlFor={entryModeId} className={styles.movementTypeLabel}>
-                  Entrada
+                  <span className={styles.movementTypeCopy}>
+                    <strong>Entrada</strong>
+                    <span>Receitas e recebimentos</span>
+                  </span>
                 </label>
 
                 <input
@@ -681,43 +720,56 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                   className={`${styles.movementTypeInput} ${styles.movementTypeExpense}`}
                 />
                 <label htmlFor={expenseModeId} className={styles.movementTypeLabel}>
-                  Saida
+                  <span className={styles.movementTypeCopy}>
+                    <strong>Saida</strong>
+                    <span>Despesas e pagamentos</span>
+                  </span>
                 </label>
 
                 <div className={styles.movementPanels}>
                   <div className={`${styles.movementPanel} ${styles.movementPanelOpening}`}>
-                    <p className={styles.movementHelper}>
-                      Defina o primeiro valor do mes para o saldo andar corretamente no extrato e
-                      nos graficos.
-                    </p>
+                    <div className={styles.movementFormIntro}>
+                      <span className={styles.movementFormBadge}>Base do mes</span>
+                      <p className={styles.movementFormText}>
+                        Defina o primeiro valor do mes para o saldo andar corretamente no extrato e
+                        nos graficos.
+                      </p>
+                    </div>
 
                     <form action={saveOpeningBalanceAction} className={styles.formStack}>
                       <input type="hidden" name="redirectTo" value={redirectTo} />
                       <input type="hidden" name="selectedMonth" value={selectedMonth} />
 
-                      <label className={styles.filterField}>
-                        <span>Saldo inicial</span>
-                        <input
-                          type="number"
-                          name="openingBalance"
-                          min="0"
-                          step="0.01"
-                          defaultValue={openingBalance.toFixed(2)}
-                          required
-                        />
-                      </label>
+                      <div className={styles.movementFormGrid}>
+                        <label className={styles.filterField}>
+                          <span>Competencia</span>
+                          <input type="text" value={monthLabel} readOnly />
+                        </label>
 
-                      <label className={styles.filterField}>
-                        <span>Observacao</span>
-                        <input
-                          type="text"
-                          name="notes"
-                          placeholder="Opcional"
-                          defaultValue={manualFinanceData.balance?.notes || ""}
-                        />
-                      </label>
+                        <label className={styles.filterField}>
+                          <span>Saldo inicial</span>
+                          <input
+                            type="number"
+                            name="openingBalance"
+                            min="0"
+                            step="0.01"
+                            defaultValue={openingBalance.toFixed(2)}
+                            required
+                          />
+                        </label>
 
-                      <div className={styles.filterActions}>
+                        <label className={`${styles.filterField} ${styles.movementFieldWide}`}>
+                          <span>Observacao</span>
+                          <input
+                            type="text"
+                            name="notes"
+                            placeholder="Opcional"
+                            defaultValue={manualFinanceData.balance?.notes || ""}
+                          />
+                        </label>
+                      </div>
+
+                      <div className={`${styles.filterActions} ${styles.movementFormActions}`}>
                         <button type="submit" className={styles.primaryButton}>
                           Salvar saldo inicial
                         </button>
@@ -842,6 +894,15 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                     className={styles.financeTrendPoint}
                   />
                 ))}
+                {trendPoints
+                  .filter((point) => trendLabelDays.has(point.day))
+                  .map((point) => (
+                    <g key={`trend-label-${point.day}`} transform={`translate(${point.x}, ${point.y - 7})`}>
+                      <text className={styles.financeTrendLabel} textAnchor="middle">
+                        {formatCompactCurrency(point.value)}
+                      </text>
+                    </g>
+                  ))}
               </svg>
             </div>
 
@@ -866,10 +927,16 @@ export default async function PedidosPage({ searchParams }: PageProps) {
               {weeklyRows.map((row) => (
                 <div key={row.label} className={styles.financeWeekCard}>
                   <div className={styles.financeWeekBars}>
+                    <span className={`${styles.financeWeekValue} ${styles.financeWeekValueEntry}`}>
+                      {row.entryAmount > 0 ? formatCompactCurrency(row.entryAmount) : "-"}
+                    </span>
                     <span
                       className={`${styles.financeWeekBar} ${styles.financeWeekBarEntry}`}
                       style={{ height: `${row.entryHeight}%` }}
                     />
+                    <span className={`${styles.financeWeekValue} ${styles.financeWeekValueExit}`}>
+                      {row.exitAmount > 0 ? formatCompactCurrency(row.exitAmount) : "-"}
+                    </span>
                     <span
                       className={`${styles.financeWeekBar} ${styles.financeWeekBarExit}`}
                       style={{ height: `${row.exitHeight}%` }}
@@ -902,10 +969,12 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                       <div
                         className={`${styles.chartBar} ${styles.chartBarExit}`}
                         style={{ width: `${row.width}%` }}
-                      />
+                      >
+                        <span className={styles.chartBarLabel}>{formatMoney(row.amount)}</span>
+                      </div>
                     </div>
                     <div className={styles.chartValue}>
-                      {formatMoney(row.amount)} · {formatPercent(row.share)}
+                      {formatPercent(row.share)}
                     </div>
                   </div>
                 ))}
@@ -933,10 +1002,12 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                       <div
                         className={`${styles.chartBar} ${styles.chartBarEntry}`}
                         style={{ width: `${row.width}%` }}
-                      />
+                      >
+                        <span className={styles.chartBarLabel}>{formatMoney(row.amount)}</span>
+                      </div>
                     </div>
                     <div className={styles.chartValue}>
-                      {formatMoney(row.amount)} · {formatPercent(row.share)}
+                      {formatPercent(row.share)}
                     </div>
                   </div>
                 ))}
