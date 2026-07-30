@@ -207,7 +207,16 @@ function mapOrderToFinanceFlow(order: NuvemshopOrder): FinanceFlowOrder {
     hasCoupon: Boolean(couponCode),
     couponCode,
     discountTotal: parseMoney(order.discount),
+    itemQuantity: getOrderItemQuantity(order),
+    destinationState: null,
   };
+}
+
+function getOrderItemQuantity(order: NuvemshopOrder) {
+  return (order.products ?? []).reduce((sum, product) => {
+    const quantity = Number.parseInt(String(product.quantity ?? "1"), 10);
+    return sum + (Number.isFinite(quantity) ? Math.max(quantity, 0) : 0);
+  }, 0);
 }
 
 function mapDebtToFinanceFlow(debt: InternalDebt): FinanceFlowDebt {
@@ -641,6 +650,12 @@ export default async function PedidosPage({ searchParams }: PageProps) {
       selectedMonth,
       monthLabel,
       orders,
+      allOrders: orders,
+      period: {
+        startDate: null,
+        endDate: null,
+        label: monthLabel,
+      },
       debts,
       nuvemshop: nuvemshopState,
       debtsSource: {
