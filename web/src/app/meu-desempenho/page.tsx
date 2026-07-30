@@ -4,7 +4,6 @@ import { AppShell } from "@/components/app-shell";
 import styles from "@/components/panel.module.css";
 import {
   ATHLETE_SUPPORT_MINIMUM_REDEMPTION,
-  ATHLETE_SUPPORT_PERCENT,
   formatDateOnly,
   formatDateTime,
   formatMoney,
@@ -358,6 +357,11 @@ export default async function MeuDesempenhoPage({
                     <div className={styles.sectionSubtitle}>
                       {formatDateOnly(featuredCampaign.startDate)} ate {formatDateOnly(featuredCampaign.endDate)}
                     </div>
+                    {featuredCampaign.description ? (
+                      <div className={styles.sectionSubtitle} style={{ marginTop: 8 }}>
+                        {featuredCampaign.description}
+                      </div>
+                    ) : null}
                   </div>
                   <span className={`${styles.pill} ${styles.pillMedium}`}>
                     {!featuredCampaign.showRanking
@@ -399,28 +403,6 @@ export default async function MeuDesempenhoPage({
               </article>
             ) : null}
 
-            <article className={styles.heroCard} style={{ marginTop: featuredCampaign ? 12 : 0 }}>
-              <div className={styles.sectionTitle}>🎯 Meta atual</div>
-              <div className={styles.sectionSubtitle} style={{ marginTop: 6 }}>
-                {performance.data.row.monthlyCreditPercent}% em roupa
-                {profile.role === "atleta" ? ` + ${ATHLETE_SUPPORT_PERCENT}% em apoio` : ""}
-              </div>
-              <div style={{ marginTop: 14, fontWeight: 800, color: "#241535" }}>
-                {formatMoney(performance.data.row.netRevenue)} / {formatMoney(performance.data.row.monthlyGoal)}
-              </div>
-              <div className={styles.progressTrack} style={{ marginTop: 12 }}>
-                <div
-                  className={styles.progressFill}
-                  style={{ width: `${Math.min(Math.max(windowProgressPercent, 0), 100)}%` }}
-                />
-              </div>
-              <div className={styles.mobileListMeta} style={{ marginTop: 12 }}>
-                <span>Faltam {formatMoney(performance.data.row.monthlyAmountToGoal)}</span>
-                <span>
-                  {windowDaysRemaining > 0 ? `${windowDaysRemaining} dias restantes` : "Encerrando hoje"}
-                </span>
-              </div>
-            </article>
           </section>
 
           <section className={`${styles.section} ${styles.mobileOnly}`}>
@@ -488,11 +470,6 @@ export default async function MeuDesempenhoPage({
                 <div className={styles.mobileCardLabel}>Voce ja vendeu</div>
                 <div className={styles.mobileCardValue}>{formatMoney(performance.data.row.netRevenue)}</div>
                 <div className={styles.mobileCardHint}>Liquido na janela</div>
-              </div>
-              <div className={styles.mobileCard}>
-                <div className={styles.mobileCardLabel}>Meta atual</div>
-                <div className={styles.mobileCardValue}>{formatMoney(performance.data.row.monthlyGoal)}</div>
-                <div className={styles.mobileCardHint}>{performance.data.row.monthlyCreditPercent}% em roupa</div>
               </div>
               <div className={styles.mobileCard}>
                 <div className={styles.mobileCardLabel}>Termina em</div>
