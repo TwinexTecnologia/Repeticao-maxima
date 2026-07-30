@@ -1521,6 +1521,12 @@
   padding: 16px 12px 12px;
 }
 
+.financeTrendCanvas {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
 .financeTrendChart svg {
   width: 100%;
   height: 100%;
@@ -1539,18 +1545,33 @@
   stroke-width: 0.5;
 }
 
-.financeTrendLabelBox {
-  fill: rgba(15, 23, 42, 0.88);
-  stroke: rgba(168, 85, 247, 0.34);
-  stroke-width: 0.4;
+.financeTrendLabel {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  color: #f5f3ff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.24);
+  transform: translate(-50%, calc(-100% - 8px));
+  pointer-events: none;
 }
 
-.financeTrendLabel {
-  fill: #f5f3ff;
-  font-size: 4px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  dominant-baseline: middle;
+.financeTrendLabelAbove {
+  transform: translate(-50%, calc(-100% - 8px));
+}
+
+.financeTrendLabelBelow {
+  transform: translate(-50%, 8px);
 }
 
 .financeTrendAxis {

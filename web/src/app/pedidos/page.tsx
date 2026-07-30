@@ -189,16 +189,6 @@ function getTrendLabelPoints(points: TrendPoint[]) {
   return Array.from(selected.values()).sort((left, right) => left.day - right.day);
 }
 
-function getTrendLabelY(point: TrendPoint, index: number) {
-  const isAbove = index % 2 === 0;
-  const desired = isAbove ? point.y - 8 : point.y + 10;
-  return Math.max(8, Math.min(93, desired));
-}
-
-function getTrendLabelBoxWidth(label: string) {
-  return Math.max(16, label.length * 2.75);
-}
-
 function formatMonthInput(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
@@ -961,40 +951,43 @@ export default async function PedidosPage({ searchParams }: PageProps) {
             </div>
 
             <div className={styles.financeTrendChart}>
-              <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                <polyline
-                  points={trendPath}
-                  className={styles.financeTrendLine}
-                  vectorEffect="non-scaling-stroke"
-                />
-                {trendPoints.map((point) => (
-                  <circle
-                    key={`trend-${point.day}`}
-                    cx={point.x}
-                    cy={point.y}
-                    r="1.4"
-                    className={styles.financeTrendPoint}
+              <div className={styles.financeTrendCanvas}>
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                  <polyline
+                    points={trendPath}
+                    className={styles.financeTrendLine}
+                    vectorEffect="non-scaling-stroke"
                   />
-                ))}
-                {trendLabelPoints.map((point, index) => (
-                  <g
-                    key={`trend-label-${point.day}`}
-                    transform={`translate(${point.x}, ${getTrendLabelY(point, index)})`}
-                  >
-                    <rect
-                      x={getTrendLabelBoxWidth(formatTrendPointLabel(point.value)) / -2}
-                      y="-3.9"
-                      width={getTrendLabelBoxWidth(formatTrendPointLabel(point.value))}
-                      height="7.8"
-                      rx="2.8"
-                      className={styles.financeTrendLabelBox}
+                  {trendPoints.map((point) => (
+                    <circle
+                      key={`trend-${point.day}`}
+                      cx={point.x}
+                      cy={point.y}
+                      r="1.4"
+                      className={styles.financeTrendPoint}
                     />
-                    <text className={styles.financeTrendLabel} textAnchor="middle">
+                  ))}
+                </svg>
+
+                {trendLabelPoints.map((point, index) => {
+                  const isAbove = index % 2 === 0;
+
+                  return (
+                    <span
+                      key={`trend-label-${point.day}`}
+                      className={`${styles.financeTrendLabel} ${
+                        isAbove ? styles.financeTrendLabelAbove : styles.financeTrendLabelBelow
+                      }`}
+                      style={{
+                        left: `${point.x}%`,
+                        top: `${point.y}%`,
+                      }}
+                    >
                       {formatTrendPointLabel(point.value)}
-                    </text>
-                  </g>
-                ))}
-              </svg>
+                    </span>
+                  );
+                })}
+              </div>
             </div>
 
             <div className={styles.financeTrendAxis}>
