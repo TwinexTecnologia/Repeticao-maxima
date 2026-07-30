@@ -118,6 +118,14 @@ function formatCompactCurrency(value: number) {
   return formatMoney(value);
 }
 
+function formatTrendPointLabel(value: number) {
+  if (Math.abs(value) >= 1000) {
+    return `${(value / 1000).toFixed(1).replace(".", ",")}k`;
+  }
+
+  return Math.round(value).toLocaleString("pt-BR");
+}
+
 function getTrendSummary(points: TrendPoint[]) {
   if (points.length === 0) {
     return {
@@ -136,6 +144,23 @@ function getTrendSummary(points: TrendPoint[]) {
     highest,
     lowest,
   };
+}
+
+function getTrendLabelPoints(points: TrendPoint[]) {
+  return points.filter((point, index) => {
+    if (index === 0 || index === points.length - 1) {
+      return true;
+    }
+
+    const previous = points[index - 1];
+    return Math.round(previous?.value ?? point.value) !== Math.round(point.value);
+  });
+}
+
+function getTrendLabelY(point: TrendPoint, index: number) {
+  const isAbove = index % 2 === 0;
+  const desired = isAbove ? point.y - 4.5 : point.y + 6.5;
+  return Math.max(7, Math.min(95, desired));
 }
 
 function formatMonthInput(date: Date) {
@@ -639,6 +664,7 @@ export default async function PedidosPage({ searchParams }: PageProps) {
     selectedMonth,
   );
   const trendPath = buildTrendPath(trendPoints);
+  const trendLabelPoints = getTrendLabelPoints(trendPoints);
   const weeklyRows = buildWeeklyRows(manualFinanceData.movements, selectedMonth);
   const trendSummary = getTrendSummary(trendPoints);
   const keyDays = Array.from(
@@ -914,16 +940,16 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                     className={styles.financeTrendPoint}
                   />
                 ))}
-                {trendSummary.latest ? (
+                {trendLabelPoints.map((point, index) => (
                   <g
-                    key={`trend-label-${trendSummary.latest.day}`}
-                    transform={`translate(${trendSummary.latest.x}, ${trendSummary.latest.y - 7})`}
+                    key={`trend-label-${point.day}`}
+                    transform={`translate(${point.x}, ${getTrendLabelY(point, index)})`}
                   >
                     <text className={styles.financeTrendLabel} textAnchor="middle">
-                      {formatCompactCurrency(trendSummary.latest.value)}
+                      {formatTrendPointLabel(point.value)}
                     </text>
                   </g>
-                ) : null}
+                ))}
               </svg>
             </div>
 
