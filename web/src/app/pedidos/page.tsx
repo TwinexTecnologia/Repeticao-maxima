@@ -120,10 +120,10 @@ function formatCompactCurrency(value: number) {
 
 function formatTrendPointLabel(value: number) {
   if (Math.abs(value) >= 1000) {
-    return `${(value / 1000).toFixed(1).replace(".", ",")}k`;
+    return `R$ ${(value / 1000).toFixed(1).replace(".", ",")}k`;
   }
 
-  return Math.round(value).toLocaleString("pt-BR");
+  return `R$ ${Math.round(value).toLocaleString("pt-BR")}`;
 }
 
 function getTrendSummary(points: TrendPoint[]) {
@@ -147,20 +147,56 @@ function getTrendSummary(points: TrendPoint[]) {
 }
 
 function getTrendLabelPoints(points: TrendPoint[]) {
-  return points.filter((point, index) => {
+  if (points.length === 0) {
+    return [];
+  }
+
+  const selected = new Map<number, TrendPoint>();
+  const firstPoint = points[0];
+  const lastPoint = points[points.length - 1];
+  const highestPoint = points.reduce((best, point) => (point.value > best.value ? point : best), points[0]);
+  const lowestPoint = points.reduce((best, point) => (point.value < best.value ? point : best), points[0]);
+
+  [firstPoint, lastPoint, highestPoint, lowestPoint].forEach((point) => {
+    selected.set(point.day, point);
+  });
+
+  let lastSelectedDay = firstPoint.day;
+
+  points.forEach((point, index) => {
     if (index === 0 || index === points.length - 1) {
-      return true;
+      return;
     }
 
     const previous = points[index - 1];
-    return Math.round(previous?.value ?? point.value) !== Math.round(point.value);
+    const next = points[index + 1];
+    const deltaFromPrevious = Math.abs(point.value - (previous?.value ?? point.value));
+    const deltaToNext = Math.abs((next?.value ?? point.value) - point.value);
+    const isTurningPoint =
+      previous != null &&
+      next != null &&
+      ((point.value >= previous.value && point.value >= next.value) ||
+        (point.value <= previous.value && point.value <= next.value));
+
+    const isRelevantMove = deltaFromPrevious >= 120 || deltaToNext >= 120 || isTurningPoint;
+
+    if (isRelevantMove && point.day - lastSelectedDay >= 2) {
+      selected.set(point.day, point);
+      lastSelectedDay = point.day;
+    }
   });
+
+  return Array.from(selected.values()).sort((left, right) => left.day - right.day);
 }
 
 function getTrendLabelY(point: TrendPoint, index: number) {
   const isAbove = index % 2 === 0;
-  const desired = isAbove ? point.y - 4.5 : point.y + 6.5;
-  return Math.max(7, Math.min(95, desired));
+  const desired = isAbove ? point.y - 8 : point.y + 10;
+  return Math.max(8, Math.min(93, desired));
+}
+
+function getTrendLabelBoxWidth(label: string) {
+  return Math.max(16, label.length * 2.75);
 }
 
 function formatMonthInput(date: Date) {
@@ -945,6 +981,14 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                     key={`trend-label-${point.day}`}
                     transform={`translate(${point.x}, ${getTrendLabelY(point, index)})`}
                   >
+                    <rect
+                      x={getTrendLabelBoxWidth(formatTrendPointLabel(point.value)) / -2}
+                      y="-3.9"
+                      width={getTrendLabelBoxWidth(formatTrendPointLabel(point.value))}
+                      height="7.8"
+                      rx="2.8"
+                      className={styles.financeTrendLabelBox}
+                    />
                     <text className={styles.financeTrendLabel} textAnchor="middle">
                       {formatTrendPointLabel(point.value)}
                     </text>

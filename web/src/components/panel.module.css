@@ -1539,15 +1539,18 @@
   stroke-width: 0.5;
 }
 
+.financeTrendLabelBox {
+  fill: rgba(15, 23, 42, 0.88);
+  stroke: rgba(168, 85, 247, 0.34);
+  stroke-width: 0.4;
+}
+
 .financeTrendLabel {
-  fill: rgba(245, 243, 255, 0.96);
-  font-size: 3.3px;
+  fill: #f5f3ff;
+  font-size: 4px;
   font-weight: 700;
-  paint-order: stroke;
-  stroke: rgba(15, 23, 42, 0.92);
-  stroke-width: 1.2px;
-  stroke-linejoin: round;
   letter-spacing: 0.02em;
+  dominant-baseline: middle;
 }
 
 .financeTrendAxis {
