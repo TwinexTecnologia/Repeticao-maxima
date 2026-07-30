@@ -118,6 +118,26 @@ function formatCompactCurrency(value: number) {
   return formatMoney(value);
 }
 
+function getTrendSummary(points: TrendPoint[]) {
+  if (points.length === 0) {
+    return {
+      latest: null as TrendPoint | null,
+      highest: null as TrendPoint | null,
+      lowest: null as TrendPoint | null,
+    };
+  }
+
+  const latest = points[points.length - 1] ?? null;
+  const highest = points.reduce((best, point) => (point.value > best.value ? point : best), points[0]);
+  const lowest = points.reduce((best, point) => (point.value < best.value ? point : best), points[0]);
+
+  return {
+    latest,
+    highest,
+    lowest,
+  };
+}
+
 function formatMonthInput(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
@@ -620,6 +640,7 @@ export default async function PedidosPage({ searchParams }: PageProps) {
   );
   const trendPath = buildTrendPath(trendPoints);
   const weeklyRows = buildWeeklyRows(manualFinanceData.movements, selectedMonth);
+  const trendSummary = getTrendSummary(trendPoints);
   const keyDays = Array.from(
     new Set(
       [1, 7, 14, 21, totalDays]
@@ -627,7 +648,6 @@ export default async function PedidosPage({ searchParams }: PageProps) {
         .map((day) => day),
     ),
   );
-  const trendLabelDays = new Set(keyDays);
 
   return (
     <AppShell
@@ -894,15 +914,16 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                     className={styles.financeTrendPoint}
                   />
                 ))}
-                {trendPoints
-                  .filter((point) => trendLabelDays.has(point.day))
-                  .map((point) => (
-                    <g key={`trend-label-${point.day}`} transform={`translate(${point.x}, ${point.y - 7})`}>
-                      <text className={styles.financeTrendLabel} textAnchor="middle">
-                        {formatCompactCurrency(point.value)}
-                      </text>
-                    </g>
-                  ))}
+                {trendSummary.latest ? (
+                  <g
+                    key={`trend-label-${trendSummary.latest.day}`}
+                    transform={`translate(${trendSummary.latest.x}, ${trendSummary.latest.y - 7})`}
+                  >
+                    <text className={styles.financeTrendLabel} textAnchor="middle">
+                      {formatCompactCurrency(trendSummary.latest.value)}
+                    </text>
+                  </g>
+                ) : null}
               </svg>
             </div>
 
@@ -910,6 +931,18 @@ export default async function PedidosPage({ searchParams }: PageProps) {
               {keyDays.map((day) => (
                 <span key={`axis-${day}`}>{`${String(day).padStart(2, "0")}/${selectedMonth.slice(-2)}`}</span>
               ))}
+            </div>
+
+            <div className={styles.financeTrendMeta}>
+              <span className={styles.financeTrendChip}>
+                Atual {trendSummary.latest ? formatMoney(trendSummary.latest.value) : "-"}
+              </span>
+              <span className={styles.financeTrendChip}>
+                Maior {trendSummary.highest ? formatMoney(trendSummary.highest.value) : "-"}
+              </span>
+              <span className={styles.financeTrendChip}>
+                Menor {trendSummary.lowest ? formatMoney(trendSummary.lowest.value) : "-"}
+              </span>
             </div>
           </article>
 
@@ -927,16 +960,10 @@ export default async function PedidosPage({ searchParams }: PageProps) {
               {weeklyRows.map((row) => (
                 <div key={row.label} className={styles.financeWeekCard}>
                   <div className={styles.financeWeekBars}>
-                    <span className={`${styles.financeWeekValue} ${styles.financeWeekValueEntry}`}>
-                      {row.entryAmount > 0 ? formatCompactCurrency(row.entryAmount) : "-"}
-                    </span>
                     <span
                       className={`${styles.financeWeekBar} ${styles.financeWeekBarEntry}`}
                       style={{ height: `${row.entryHeight}%` }}
                     />
-                    <span className={`${styles.financeWeekValue} ${styles.financeWeekValueExit}`}>
-                      {row.exitAmount > 0 ? formatCompactCurrency(row.exitAmount) : "-"}
-                    </span>
                     <span
                       className={`${styles.financeWeekBar} ${styles.financeWeekBarExit}`}
                       style={{ height: `${row.exitHeight}%` }}
@@ -944,6 +971,14 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                   </div>
                   <strong>{row.label}</strong>
                   <span>{row.rangeLabel}</span>
+                  <div className={styles.financeWeekMeta}>
+                    <span className={`${styles.financeWeekChip} ${styles.financeWeekChipEntry}`}>
+                      E {row.entryAmount > 0 ? formatCompactCurrency(row.entryAmount) : "-"}
+                    </span>
+                    <span className={`${styles.financeWeekChip} ${styles.financeWeekChipExit}`}>
+                      S {row.exitAmount > 0 ? formatCompactCurrency(row.exitAmount) : "-"}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -969,12 +1004,11 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                       <div
                         className={`${styles.chartBar} ${styles.chartBarExit}`}
                         style={{ width: `${row.width}%` }}
-                      >
-                        <span className={styles.chartBarLabel}>{formatMoney(row.amount)}</span>
-                      </div>
+                      />
                     </div>
                     <div className={styles.chartValue}>
-                      {formatPercent(row.share)}
+                      <strong>{formatMoney(row.amount)}</strong>
+                      <span className={styles.chartValueSub}>{formatPercent(row.share)}</span>
                     </div>
                   </div>
                 ))}
@@ -1002,12 +1036,11 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                       <div
                         className={`${styles.chartBar} ${styles.chartBarEntry}`}
                         style={{ width: `${row.width}%` }}
-                      >
-                        <span className={styles.chartBarLabel}>{formatMoney(row.amount)}</span>
-                      </div>
+                      />
                     </div>
                     <div className={styles.chartValue}>
-                      {formatPercent(row.share)}
+                      <strong>{formatMoney(row.amount)}</strong>
+                      <span className={styles.chartValueSub}>{formatPercent(row.share)}</span>
                     </div>
                   </div>
                 ))}
