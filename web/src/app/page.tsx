@@ -187,7 +187,7 @@ export default async function Home({ searchParams }: PageProps) {
     comboRules: companyModule.rules,
     unitPrice: config.unitPrice,
     config,
-    openingBalance: manualFinance.balance?.openingBalance ?? DEFAULT_BANK_BALANCE,
+    openingBalance: manualFinance.effectiveOpeningBalance ?? DEFAULT_BANK_BALANCE,
     manualEntries: manualFinance.movements
       .filter((movement) => movement.type === "entrada")
       .reduce((sum, movement) => sum + movement.amount, 0),

@@ -216,6 +216,10 @@ function getMonthRange(selectedMonth: string) {
   };
 }
 
+function formatMonthLabel(selectedMonth: string) {
+  return getMonthRange(selectedMonth).monthLabel;
+}
+
 function getMonthStartDate(selectedMonth: string) {
   return `${selectedMonth}-01`;
 }
@@ -666,10 +670,14 @@ export default async function PedidosPage({ searchParams }: PageProps) {
 
   const manualFinanceData = await loadManualFinanceModuleData(selectedMonth);
   const openingBalance =
-    manualFinanceData.balance?.openingBalance ??
+    manualFinanceData.effectiveOpeningBalance ??
     (selectedMonth === currentMonth ? DEFAULT_CURRENT_BANK_BALANCE : 0);
   const usedDefaultOpeningBalance =
-    !manualFinanceData.balance && selectedMonth === currentMonth;
+    manualFinanceData.openingBalanceSource === "none" && selectedMonth === currentMonth;
+  const usesInheritedOpeningBalance = manualFinanceData.openingBalanceSource === "previous_month";
+  const inheritedMonthLabel = manualFinanceData.inheritedFromMonthRef
+    ? formatMonthLabel(manualFinanceData.inheritedFromMonthRef)
+    : "";
   const totalEntries = manualFinanceData.movements.reduce(
     (sum, movement) => sum + (movement.type === "entrada" ? movement.amount : 0),
     0,
@@ -893,8 +901,20 @@ export default async function PedidosPage({ searchParams }: PageProps) {
           <div className={styles.callout}>
             <h3>Saldo inicial sugerido</h3>
             <p>
-              Usei {formatMoney(DEFAULT_CURRENT_BANK_BALANCE)} como saldo inicial padrao deste mes.
-              Se quiser, salve esse valor no mesmo botao de movimentacao.
+              Usei {formatMoney(DEFAULT_CURRENT_BANK_BALANCE)} como saldo inicial padrao deste mes
+              porque ainda nao existe saldo fixado nem fechamento anterior para herdar. Se quiser,
+              salve esse valor no mesmo botao de movimentacao.
+            </p>
+          </div>
+        ) : null}
+
+        {usesInheritedOpeningBalance ? (
+          <div className={styles.callout}>
+            <h3>Saldo inicial herdado</h3>
+            <p>
+              Este mes comecou com {formatMoney(openingBalance)}, que veio do fechamento de{" "}
+              {inheritedMonthLabel}. Se voce lancar algo retroativo em {inheritedMonthLabel}, este
+              valor recalcula sozinho.
             </p>
           </div>
         ) : null}
@@ -903,7 +923,13 @@ export default async function PedidosPage({ searchParams }: PageProps) {
           <article className={styles.financeMetricCard}>
             <span className={styles.financeMetricLabel}>Saldo atual</span>
             <strong className={styles.financeMetricValue}>{formatMoney(currentBalance)}</strong>
-            <span className={styles.financeMetricHint}>Saldo inicial + entradas - saidas</span>
+            <span className={styles.financeMetricHint}>
+              {manualFinanceData.openingBalanceSource === "manual"
+                ? `Saldo inicial manual de ${monthLabel} + entradas - saidas`
+                : manualFinanceData.openingBalanceSource === "previous_month"
+                  ? `Saldo herdado de ${inheritedMonthLabel} + entradas - saidas`
+                  : "Saldo inicial + entradas - saidas"}
+            </span>
           </article>
 
           <article className={styles.financeMetricCard}>
