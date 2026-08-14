@@ -126,7 +126,10 @@ export type StoreProductSelectionOption = {
   optionLabel: string;
 };
 
-export type DtfArtType = "minimalista" | "full" | "outro";
+export type DtfArtType =
+  | "minimalista"
+  | "full"
+  | "outro";
 
 export type DtfCatalogProduct = {
   productId: string;
