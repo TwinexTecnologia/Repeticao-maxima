@@ -167,7 +167,7 @@ export type StoreProductSelectionOption = {
   optionLabel: string;
 };
 
-export type DtfArtType =
+export type OperationalDtfArtType =
   | "minimalista"
   | "full"
   | "outro";
@@ -183,7 +183,7 @@ export type DtfStockItem = {
   id: string;
   nuvemshopProductId: string;
   productName: string;
-  artType: DtfArtType;
+  artType: OperationalDtfArtType;
   availableQty: number;
   reorderPoint: number;
   leadTimeDays: number;
@@ -2211,7 +2211,7 @@ function normalizeDebtBillingFrequency(value: unknown): DebtBillingFrequency {
   return "mensal";
 }
 
-function normalizeDtfArtType(value: unknown): DtfArtType {
+function normalizeDtfArtType(value: unknown): OperationalDtfArtType {
   const normalized = String(value ?? "").trim().toLowerCase();
 
   if (
