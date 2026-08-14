@@ -155,6 +155,20 @@ export type SiteArtSelectionOption = {
   publishedStock: number;
 };
 
+export type StoreProductSelectionOption = {
+  id: string;
+  productName: string;
+  productId: string;
+  variantId: string;
+  sku: string;
+  color: string;
+  size: string;
+  publishedStock: number;
+  optionLabel: string;
+};
+
+export type DtfArtType = "minimalista" | "full" | "outro";
+
 export type DtfArtType = "minimalista" | "full" | "outro";
 
 export type DtfCatalogProduct = {
@@ -1026,7 +1040,6 @@ async function upsertStockRowForRecalculation(
     })
     .select("id")
     .single();
-
   if (error || !data) {
     throw error || new Error("Nao foi possivel recriar a base do estoque apos recalcular.");
   }
@@ -1311,6 +1324,25 @@ async function resolveStockArtSelection(
     artName: selected.artName,
     artProductId: selected.productId,
   };
+}
+
+export async function loadStoreProductSelectionOptions() {
+  const credentials = getNuvemshopCredentials();
+
+  if (!credentials.ok) {
+    return [] as StoreProductSelectionOption[];
+  }
+
+  try {
+    const client = new NuvemshopClient(credentials.credentials);
+    const products = await fetchAllNuvemshopPages((params) =>
+      client.listProducts(params),
+    );
+
+    return buildStoreProductSelectionOptions(products);
+  } catch {
+    return [] as StoreProductSelectionOption[];
+  }
 }
 
 export async function createDebt(input: unknown) {
@@ -2727,6 +2759,58 @@ function buildSiteArtSelectionOptions(products: NuvemshopProduct[]) {
     const rightKey = `${right.artName}-${right.sku}-${normalizeColor(right.color)}-${normalizeSize(right.size)}`;
     return leftKey.localeCompare(rightKey);
   });
+}
+
+function buildStoreProductSelectionOptions(products: NuvemshopProduct[]) {
+  const items: StoreProductSelectionOption[] = [];
+
+  for (const product of products) {
+    const productName = getLocalizedText(product.name).trim();
+
+    if (!productName || product.published === false) {
+      continue;
+    }
+
+    const attributeNames = (product.attributes || []).map((value) =>
+      getLocalizedText(value),
+    );
+
+    for (const variant of product.variants || []) {
+      const variantId = String(variant.id ?? "").trim();
+
+      if (!variantId) {
+        continue;
+      }
+
+      const { color, size } = getVariantColorAndSize(
+        attributeNames,
+        variant.values || [],
+      );
+      const fallbackDetail = String(variant.sku ?? "").trim();
+      const publishedStock = getVariantStockValue(variant);
+      const resolvedColor = color || "Cor unica";
+      const resolvedSize = size || fallbackDetail || "Tam. unico";
+      const resolvedSku = fallbackDetail || "-";
+
+      items.push({
+        id: `${String(product.id)}:${variantId}`,
+        productName,
+        productId: String(product.id),
+        variantId,
+        sku: resolvedSku,
+        color: resolvedColor,
+        size: resolvedSize,
+        publishedStock,
+        optionLabel: `${productName} · ${resolvedColor} · ${resolvedSize}`,
+      });
+    }
+  }
+
+  return items.sort((left, right) =>
+    `${left.productName}-${left.color}-${left.size}`.localeCompare(
+      `${right.productName}-${right.color}-${right.size}`,
+    ),
+  );
 }
 
 function getVariantColorAndSize(
