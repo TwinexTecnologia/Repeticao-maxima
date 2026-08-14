@@ -37,6 +37,15 @@ type PartnerApiResponse = {
   generatedPassword?: string | null;
 };
 
+type EmployeeFormState = {
+  fullName: string;
+  email: string;
+  password: string;
+  active: boolean;
+  notes: string;
+  permissions: UserMenuPermissions;
+};
+
 const MENU_OPTIONS: Array<{
   key: UserMenuPermissionKey;
   label: string;
@@ -64,6 +73,17 @@ const DEFAULT_PERMISSIONS: UserMenuPermissions = {
   usuarios: false,
 };
 
+function getDefaultEmployeeForm(): EmployeeFormState {
+  return {
+    fullName: "",
+    email: "",
+    password: "",
+    active: true,
+    notes: "",
+    permissions: { ...DEFAULT_PERMISSIONS },
+  };
+}
+
 export function UsuariosClient({
   initialEmployees,
   initialPartners,
@@ -81,14 +101,9 @@ export function UsuariosClient({
   const [partnerGeneratedPassword, setPartnerGeneratedPassword] = useState("");
   const [isSavingEmployee, setIsSavingEmployee] = useState(false);
   const [isSavingPartner, setIsSavingPartner] = useState(false);
+  const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
   const [editingPartnerId, setEditingPartnerId] = useState<string | null>(null);
-  const [employeeForm, setEmployeeForm] = useState({
-    fullName: "",
-    email: "",
-    password: "",
-    notes: "",
-    permissions: { ...DEFAULT_PERMISSIONS },
-  });
+  const [employeeForm, setEmployeeForm] = useState<EmployeeFormState>(getDefaultEmployeeForm);
   const [partnerForm, setPartnerForm] = useState({
     linkedPartnerId: "",
     partnerType: "influenciador" as PartnerUserType,
@@ -173,49 +188,90 @@ export function UsuariosClient({
     initialPartnerOptions.find((item) => item.id === partnerForm.linkedPartnerId) || null;
   const partnerAge = partnerForm.birthDate ? getAgeFromDate(partnerForm.birthDate) : null;
 
-  async function handleCreateEmployee() {
+  async function handleSaveEmployee() {
+    if (!employeeForm.fullName.trim()) {
+      setEmployeeFeedback("Informe o nome do funcionario.");
+      return;
+    }
+
+    if (!editingEmployeeId && !employeeForm.email.trim()) {
+      setEmployeeFeedback("Informe o e-mail de login do funcionario.");
+      return;
+    }
+
     setIsSavingEmployee(true);
     setEmployeeFeedback("");
 
     try {
-      const response = await fetch("/api/usuarios/funcionarios", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const response = await fetch(
+        editingEmployeeId
+          ? `/api/usuarios/funcionarios/${editingEmployeeId}`
+          : "/api/usuarios/funcionarios",
+        {
+          method: editingEmployeeId ? "PUT" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(employeeForm),
         },
-        body: JSON.stringify(employeeForm),
-      });
+      );
       const result = (await response.json()) as EmployeeApiResponse;
 
       if (!response.ok || !result.ok || !result.employee) {
-        throw new Error(result.message || "Nao foi possivel criar o funcionario.");
+        throw new Error(
+          result.message ||
+            (editingEmployeeId
+              ? "Nao foi possivel atualizar o funcionario."
+              : "Nao foi possivel criar o funcionario."),
+        );
       }
 
       setEmployees((current) =>
-        [...current, result.employee!].sort((left, right) =>
-          left.fullName.localeCompare(right.fullName),
+        [...current.filter((item) => item.id !== result.employee!.id), result.employee!].sort(
+          (left, right) => left.fullName.localeCompare(right.fullName),
         ),
       );
       if (result.persistence) {
         setPersistence(result.persistence);
       }
-      setEmployeeForm({
-        fullName: "",
-        email: "",
-        password: "",
-        notes: "",
-        permissions: { ...DEFAULT_PERMISSIONS },
-      });
-      setEmployeeFeedback(result.message || "Funcionario criado com sucesso.");
+      setEmployeeForm(getDefaultEmployeeForm());
+      setEditingEmployeeId(null);
+      setEmployeeFeedback(
+        result.message ||
+          (editingEmployeeId
+            ? "Acessos do funcionario atualizados com sucesso."
+            : "Funcionario criado com sucesso."),
+      );
     } catch (error) {
       setEmployeeFeedback(
         error instanceof Error
           ? error.message
-          : "Nao foi possivel criar o funcionario.",
+          : editingEmployeeId
+            ? "Nao foi possivel atualizar o funcionario."
+            : "Nao foi possivel criar o funcionario.",
       );
     } finally {
       setIsSavingEmployee(false);
     }
+  }
+
+  function handleEditEmployee(employee: EmployeeAccessUser) {
+    setEditingEmployeeId(employee.id);
+    setEmployeeFeedback("");
+    setEmployeeForm({
+      fullName: employee.fullName,
+      email: employee.email,
+      password: "",
+      active: employee.active,
+      notes: employee.notes,
+      permissions: { ...employee.permissions },
+    });
+  }
+
+  function handleCancelEmployeeEdit() {
+    setEditingEmployeeId(null);
+    setEmployeeFeedback("");
+    setEmployeeForm(getDefaultEmployeeForm());
   }
 
   async function handleCreatePartner() {
@@ -406,6 +462,7 @@ export function UsuariosClient({
                 <div className={styles.sectionTitle}>Funcionario e login</div>
                 <p className={styles.sectionSubtitle}>
                   Cria o usuario interno com e-mail, senha e menus liberados.
+                  Tambem permite editar os acessos e o status de quem ja existe.
                 </p>
               </div>
             </div>
@@ -428,6 +485,7 @@ export function UsuariosClient({
                 <input
                   type="email"
                   value={employeeForm.email}
+                  disabled={Boolean(editingEmployeeId)}
                   onChange={(event) =>
                     setEmployeeForm((current) => ({
                       ...current,
@@ -436,19 +494,25 @@ export function UsuariosClient({
                   }
                 />
               </label>
-              <label className={styles.filterField}>
-                <span>Senha</span>
-                <input
-                  type="password"
-                  value={employeeForm.password}
-                  onChange={(event) =>
-                    setEmployeeForm((current) => ({
-                      ...current,
-                      password: event.target.value,
-                    }))
-                  }
-                />
-              </label>
+              {editingEmployeeId ? (
+                <div className={styles.metricHint}>
+                  O login atual continua no mesmo e-mail. Aqui voce esta editando os acessos.
+                </div>
+              ) : (
+                <label className={styles.filterField}>
+                  <span>Senha</span>
+                  <input
+                    type="password"
+                    value={employeeForm.password}
+                    onChange={(event) =>
+                      setEmployeeForm((current) => ({
+                        ...current,
+                        password: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              )}
               <label className={styles.filterField}>
                 <span>Observacao</span>
                 <input
@@ -461,6 +525,21 @@ export function UsuariosClient({
                   }
                   placeholder="Ex.: gerente operacional"
                 />
+              </label>
+              <label className={styles.filterField}>
+                <span>Status</span>
+                <select
+                  value={employeeForm.active ? "ativo" : "inativo"}
+                  onChange={(event) =>
+                    setEmployeeForm((current) => ({
+                      ...current,
+                      active: event.target.value === "ativo",
+                    }))
+                  }
+                >
+                  <option value="ativo">Ativo</option>
+                  <option value="inativo">Inativo</option>
+                </select>
               </label>
             </div>
 
@@ -490,11 +569,25 @@ export function UsuariosClient({
               <button
                 type="button"
                 className={styles.primaryButton}
-                onClick={handleCreateEmployee}
+                onClick={handleSaveEmployee}
                 disabled={!persistence.enabled || isSavingEmployee}
               >
-                {isSavingEmployee ? "Salvando..." : "Criar funcionario"}
+                {isSavingEmployee
+                  ? "Salvando..."
+                  : editingEmployeeId
+                    ? "Salvar acessos"
+                    : "Criar funcionario"}
               </button>
+              {editingEmployeeId ? (
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  onClick={handleCancelEmployeeEdit}
+                  disabled={isSavingEmployee}
+                >
+                  Cancelar
+                </button>
+              ) : null}
             </div>
           </article>
 
@@ -759,6 +852,7 @@ export function UsuariosClient({
                 <th>Status</th>
                 <th>Menus</th>
                 <th>Observacao</th>
+                <th>Acoes</th>
               </tr>
             </thead>
             <tbody>
@@ -770,11 +864,20 @@ export function UsuariosClient({
                     <td>{employee.active ? "Ativo" : "Inativo"}</td>
                     <td>{formatPermissions(employee.permissions)}</td>
                     <td>{employee.notes || "-"}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        onClick={() => handleEditEmployee(employee)}
+                      >
+                        Editar acessos
+                      </button>
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5}>Nenhum funcionario cadastrado ainda.</td>
+                  <td colSpan={6}>Nenhum funcionario cadastrado ainda.</td>
                 </tr>
               )}
             </tbody>
