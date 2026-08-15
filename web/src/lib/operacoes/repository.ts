@@ -86,6 +86,8 @@ export type ManualFinanceMovement = {
   updatedAt: string | null;
 };
 
+export type ManualFinanceOpeningBalanceSource = "manual" | "previous_month" | "none";
+
 export type BaseStockItem = {
   id: string;
   sku: string;
@@ -153,6 +155,23 @@ export type SiteArtSelectionOption = {
   publishedStock: number;
 };
 
+export type StoreProductSelectionOption = {
+  id: string;
+  productName: string;
+  productId: string;
+  variantId: string;
+  sku: string;
+  color: string;
+  size: string;
+  publishedStock: number;
+  optionLabel: string;
+};
+
+export type OperationalDtfArtType =
+  | "minimalista"
+  | "full"
+  | "outro";
+
 export type DtfArtType = "minimalista" | "full" | "outro";
 
 export type DtfCatalogProduct = {
@@ -164,7 +183,7 @@ export type DtfStockItem = {
   id: string;
   nuvemshopProductId: string;
   productName: string;
-  artType: DtfArtType;
+  artType: OperationalDtfArtType;
   availableQty: number;
   reorderPoint: number;
   leadTimeDays: number;
@@ -247,6 +266,9 @@ export async function loadManualFinanceModuleData(selectedMonth: string) {
   if (!supabase.ok) {
     return {
       balance: null as MonthlyOpeningBalance | null,
+      effectiveOpeningBalance: null as number | null,
+      openingBalanceSource: "none" as ManualFinanceOpeningBalanceSource,
+      inheritedFromMonthRef: null as string | null,
       movements: [] as ManualFinanceMovement[],
       persistence: buildDisabledState(
         `Persistencia desativada. Configure ${supabase.missing.join(" e ")} para salvar o financeiro manual no Supabase.`,
@@ -261,13 +283,12 @@ export async function loadManualFinanceModuleData(selectedMonth: string) {
           .schema(OPERATIONS_SCHEMA)
           .from(FINANCE_BALANCES_TABLE)
           .select("*")
-          .eq("month_ref", monthStart)
-          .maybeSingle(),
+          .lte("month_ref", monthStart)
+          .order("month_ref", { ascending: true }),
         supabase.client
           .schema(OPERATIONS_SCHEMA)
           .from(FINANCE_MOVEMENTS_TABLE)
           .select("*")
-          .gte("movement_date", monthStart)
           .lte("movement_date", monthEnd)
           .order("movement_date", { ascending: true })
           .order("created_at", { ascending: true }),
@@ -281,20 +302,75 @@ export async function loadManualFinanceModuleData(selectedMonth: string) {
       throw movementError;
     }
 
-    const movements = (movementData ?? []).map(rowToManualFinanceMovement);
+    const allBalances: MonthlyOpeningBalance[] = (balanceData ?? []).map((row: Record<string, unknown>) =>
+      rowToMonthlyOpeningBalance(row as Record<string, unknown>),
+    );
+    const allMovements: ManualFinanceMovement[] = (movementData ?? []).map((row: Record<string, unknown>) =>
+      rowToManualFinanceMovement(row as Record<string, unknown>),
+    );
+    const balanceByMonth = new Map<string, MonthlyOpeningBalance>(
+      allBalances.map((balance: MonthlyOpeningBalance) => [balance.monthRef, balance]),
+    );
+    const movementNetByMonth = new Map<string, number>();
+
+    for (const movement of allMovements) {
+      const movementMonthRef = movement.movementDate.slice(0, 7);
+      const currentNet = movementNetByMonth.get(movementMonthRef) ?? 0;
+      const signedAmount = movement.type === "entrada" ? movement.amount : -movement.amount;
+      movementNetByMonth.set(movementMonthRef, currentNet + signedAmount);
+    }
+
+    const currentBalance = balanceByMonth.get(monthRef) ?? null;
+    const movements = allMovements.filter(
+      (movement: ManualFinanceMovement) => movement.movementDate.slice(0, 7) === monthRef,
+    );
+    const previousMonthRef = getPreviousMonthReference(monthRef);
+    const monthsWithHistory = Array.from(
+      new Set([
+        ...allBalances.map((balance: MonthlyOpeningBalance) => balance.monthRef),
+        ...allMovements.map((movement: ManualFinanceMovement) => movement.movementDate.slice(0, 7)),
+      ]),
+    )
+      .filter((value: string) => value < monthRef)
+      .sort();
+
+    let effectiveOpeningBalance: number | null = currentBalance?.openingBalance ?? null;
+    let openingBalanceSource: ManualFinanceOpeningBalanceSource =
+      currentBalance ? "manual" : "none";
+    let inheritedFromMonthRef: string | null = null;
+
+    if (!currentBalance && previousMonthRef && monthsWithHistory.length > 0) {
+      const monthsToProcess = buildMonthSequence(monthsWithHistory[0]!, previousMonthRef);
+      let carriedBalance = 0;
+
+      for (const processedMonthRef of monthsToProcess) {
+        const manualOpeningBalance = balanceByMonth.get(processedMonthRef)?.openingBalance;
+        const monthOpeningBalance = manualOpeningBalance ?? carriedBalance;
+        const monthNet = movementNetByMonth.get(processedMonthRef) ?? 0;
+        carriedBalance = monthOpeningBalance + monthNet;
+      }
+
+      effectiveOpeningBalance = carriedBalance;
+      openingBalanceSource = "previous_month";
+      inheritedFromMonthRef = previousMonthRef;
+    }
+
     const latestUpdatedAt = getLatestUpdatedAt([
-      ...(balanceData ? [balanceData as Record<string, unknown>] : []),
+      ...((balanceData ?? []) as Array<Record<string, unknown>>),
       ...((movementData ?? []) as Array<Record<string, unknown>>),
     ]);
 
     return {
-      balance: balanceData ? rowToMonthlyOpeningBalance(balanceData) : null,
+      balance: currentBalance,
+      effectiveOpeningBalance,
+      openingBalanceSource,
+      inheritedFromMonthRef,
       movements,
       persistence: {
         enabled: true,
         source: "supabase" as const,
         message:
-          balanceData || movements.length > 0
+          currentBalance || movements.length > 0
             ? "Financeiro manual carregado do Supabase."
             : "Supabase conectado. Ainda nao existem saldo inicial nem movimentacoes para este mes.",
         updatedAt: latestUpdatedAt,
@@ -303,6 +379,9 @@ export async function loadManualFinanceModuleData(selectedMonth: string) {
   } catch (error) {
     return {
       balance: null as MonthlyOpeningBalance | null,
+      effectiveOpeningBalance: null as number | null,
+      openingBalanceSource: "none" as ManualFinanceOpeningBalanceSource,
+      inheritedFromMonthRef: null as string | null,
       movements: [] as ManualFinanceMovement[],
       persistence: buildDisabledState(getErrorMessage(error)),
     };
@@ -964,7 +1043,6 @@ async function upsertStockRowForRecalculation(
     })
     .select("id")
     .single();
-
   if (error || !data) {
     throw error || new Error("Nao foi possivel recriar a base do estoque apos recalcular.");
   }
@@ -1249,6 +1327,25 @@ async function resolveStockArtSelection(
     artName: selected.artName,
     artProductId: selected.productId,
   };
+}
+
+export async function loadStoreProductSelectionOptions() {
+  const credentials = getNuvemshopCredentials();
+
+  if (!credentials.ok) {
+    return [] as StoreProductSelectionOption[];
+  }
+
+  try {
+    const client = new NuvemshopClient(credentials.credentials);
+    const products = await fetchAllNuvemshopPages((params) =>
+      client.listProducts(params),
+    );
+
+    return buildStoreProductSelectionOptions(products);
+  } catch {
+    return [] as StoreProductSelectionOption[];
+  }
 }
 
 export async function createDebt(input: unknown) {
@@ -2114,7 +2211,7 @@ function normalizeDebtBillingFrequency(value: unknown): DebtBillingFrequency {
   return "mensal";
 }
 
-function normalizeDtfArtType(value: unknown): DtfArtType {
+function normalizeDtfArtType(value: unknown): OperationalDtfArtType {
   const normalized = String(value ?? "").trim().toLowerCase();
 
   if (
@@ -2667,6 +2764,58 @@ function buildSiteArtSelectionOptions(products: NuvemshopProduct[]) {
   });
 }
 
+function buildStoreProductSelectionOptions(products: NuvemshopProduct[]) {
+  const items: StoreProductSelectionOption[] = [];
+
+  for (const product of products) {
+    const productName = getLocalizedText(product.name).trim();
+
+    if (!productName || product.published === false) {
+      continue;
+    }
+
+    const attributeNames = (product.attributes || []).map((value) =>
+      getLocalizedText(value),
+    );
+
+    for (const variant of product.variants || []) {
+      const variantId = String(variant.id ?? "").trim();
+
+      if (!variantId) {
+        continue;
+      }
+
+      const { color, size } = getVariantColorAndSize(
+        attributeNames,
+        variant.values || [],
+      );
+      const fallbackDetail = String(variant.sku ?? "").trim();
+      const publishedStock = getVariantStockValue(variant);
+      const resolvedColor = color || "Cor unica";
+      const resolvedSize = size || fallbackDetail || "Tam. unico";
+      const resolvedSku = fallbackDetail || "-";
+
+      items.push({
+        id: `${String(product.id)}:${variantId}`,
+        productName,
+        productId: String(product.id),
+        variantId,
+        sku: resolvedSku,
+        color: resolvedColor,
+        size: resolvedSize,
+        publishedStock,
+        optionLabel: `${productName} · ${resolvedColor} · ${resolvedSize}`,
+      });
+    }
+  }
+
+  return items.sort((left, right) =>
+    `${left.productName}-${left.color}-${left.size}`.localeCompare(
+      `${right.productName}-${right.color}-${right.size}`,
+    ),
+  );
+}
+
 function getVariantColorAndSize(
   attributeNames: string[],
   values: NuvemshopLocalizedText[],
@@ -3061,6 +3210,47 @@ function getTodayDate() {
 function getCurrentMonthReference() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function getPreviousMonthReference(monthRef: string) {
+  const [yearText, monthText] = monthRef.split("-");
+  const year = Number.parseInt(yearText || "", 10);
+  const monthIndex = Number.parseInt(monthText || "", 10) - 1;
+
+  if (!Number.isFinite(year) || !Number.isFinite(monthIndex)) {
+    return "";
+  }
+
+  const previousMonth = new Date(year, monthIndex - 1, 1);
+  return `${previousMonth.getFullYear()}-${String(previousMonth.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function buildMonthSequence(startMonthRef: string, endMonthRef: string) {
+  if (startMonthRef > endMonthRef) {
+    return [] as string[];
+  }
+
+  const [startYearText, startMonthText] = startMonthRef.split("-");
+  const startYear = Number.parseInt(startYearText || "", 10);
+  const startMonthIndex = Number.parseInt(startMonthText || "", 10) - 1;
+
+  if (!Number.isFinite(startYear) || !Number.isFinite(startMonthIndex)) {
+    return [] as string[];
+  }
+
+  const sequence: string[] = [];
+  const cursor = new Date(startYear, startMonthIndex, 1);
+
+  while (true) {
+    const monthRef = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
+    sequence.push(monthRef);
+
+    if (monthRef >= endMonthRef) {
+      return sequence;
+    }
+
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
 }
 
 function getMonthEndDate(monthRef: string) {

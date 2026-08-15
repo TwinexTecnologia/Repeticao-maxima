@@ -10,7 +10,7 @@ import type {
   PartnerRedemption,
 } from "@/lib/parceiros/repository";
 import type {
-  SiteArtSelectionOption,
+  StoreProductSelectionOption,
   StockSelectionOption,
 } from "@/lib/operacoes/repository";
 
@@ -23,7 +23,7 @@ type PartnerRedemptionManagerProps = {
   initialRedemptions: PartnerRedemption[];
   initialPersistence: PartnerPersistenceState;
   stockOptions: StockSelectionOption[];
-  artOptions: SiteArtSelectionOption[];
+  storeProductOptions: StoreProductSelectionOption[];
   selectedCouponCode: string;
 };
 
@@ -40,6 +40,7 @@ type RedemptionFormState = {
   stockItemId: string;
   artName: string;
   customArtName: string;
+  productSelectionId: string;
   quantity: string;
   unitCost: string;
   grantedAt: string;
@@ -54,7 +55,7 @@ export function PartnerRedemptionManager({
   initialRedemptions,
   initialPersistence,
   stockOptions,
-  artOptions,
+  storeProductOptions,
   selectedCouponCode,
 }: PartnerRedemptionManagerProps) {
   const router = useRouter();
@@ -72,6 +73,7 @@ export function PartnerRedemptionManager({
     useState<PartnerPersistenceState>(initialPersistence);
   const [feedback, setFeedback] = useState(initialPersistence.message);
   const [isSaving, setIsSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState("");
   useEffect(() => {
     setRedemptions(initialRedemptions);
   }, [initialRedemptions]);
@@ -90,6 +92,7 @@ export function PartnerRedemptionManager({
     stockItemId: stockOptions.find((item) => item.plain > 0)?.id || "",
     artName: "",
     customArtName: "",
+    productSelectionId: storeProductOptions[0]?.id || "",
     quantity: "1",
     unitCost: String(FULL_COST),
     grantedAt: getTodayDate(),
@@ -132,6 +135,8 @@ export function PartnerRedemptionManager({
       }))
       .sort((left, right) => left.artName.localeCompare(right.artName));
   }, [artOptions, selectedStock]);
+  const selectedProduct =
+    storeProductOptions.find((item) => item.id === form.productSelectionId) || null;
   const selectedCouponHistory = useMemo(() => {
     const couponCode = selectedProfile?.couponCode || selectedCouponCode;
 
@@ -166,22 +171,27 @@ export function PartnerRedemptionManager({
           ...current,
           artName: "",
           customArtName: "",
+    if (storeProductOptions.length === 0) {
+      if (form.productSelectionId) {
+        setForm((current) => ({
+          ...current,
+          productSelectionId: "",
         }));
       }
       return;
     }
 
-    const hasSelectedArt = availableArtOptions.some(
-      (item) => item.artName === form.artName,
+    const hasSelectedProduct = storeProductOptions.some(
+      (item) => item.id === form.productSelectionId,
     );
 
-    if (!hasSelectedArt) {
+    if (!hasSelectedProduct) {
       setForm((current) => ({
         ...current,
-        artName: availableArtOptions[0]?.artName || "",
+        productSelectionId: storeProductOptions[0]?.id || "",
       }));
     }
-  }, [availableArtOptions, form.artName]);
+  }, [form.productSelectionId, storeProductOptions]);
 
   function applyCostPreset(value: "full" | "minimalista") {
     setForm((current) => ({
@@ -197,6 +207,7 @@ export function PartnerRedemptionManager({
       stockItemId: stockOptions.find((item) => item.plain > 0)?.id || "",
       artName: "",
       customArtName: "",
+      productSelectionId: storeProductOptions[0]?.id || "",
       quantity: "1",
       unitCost: String(FULL_COST),
       grantedAt: getTodayDate(),
@@ -222,6 +233,10 @@ export function PartnerRedemptionManager({
       stockItemId: redemption.stockItemId || "",
       artName: matchedArt ? matchedArt.artName : OTHER_ART_OPTION,
       customArtName: matchedArt ? "" : savedArtName,
+      productSelectionId:
+        storeProductOptions.find(
+          (item) => item.optionLabel === getProductLabel(redemption.notes),
+        )?.id || "",
       quantity: String(redemption.quantity),
       unitCost: String(redemption.unitCost),
       grantedAt: redemption.grantedAt || getTodayDate(),
@@ -243,13 +258,14 @@ export function PartnerRedemptionManager({
       setFeedback("Selecione uma base de lisa em estoque para baixar.");
       return;
     }
-
     if (!selectedArtName) {
       setFeedback(
         form.artName === OTHER_ART_OPTION
           ? "Informe qual foi o outro item entregue nesse resgate."
           : "Selecione uma arte disponivel no site para registrar esse resgate.",
       );
+    if (!selectedProduct) {
+      setFeedback("Selecione o produto da loja para registrar esse resgate.");
       return;
     }
 
@@ -273,6 +289,7 @@ export function PartnerRedemptionManager({
         adjustStock: form.adjustStock,
         createMarketingDebt: form.createMarketingDebt,
         artName: selectedArtName,
+        productLabel: selectedProduct.optionLabel,
         notes: form.notes,
         status: "entregue",
       };
@@ -316,6 +333,52 @@ export function PartnerRedemptionManager({
       );
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleDeleteRedemption(redemption: PartnerRedemption) {
+    const confirmed = window.confirm(
+      `Excluir o resgate de ${redemption.partnerName} em ${formatDate(redemption.grantedAt)}?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingId(redemption.id);
+    setFeedback("");
+
+    try {
+      const response = await fetch("/api/influenciadores/resgates", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: redemption.id }),
+      });
+      const result = (await response.json()) as RedemptionApiResponse;
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.message || "Nao foi possivel excluir o resgate.");
+      }
+
+      setRedemptions((current) => current.filter((item) => item.id !== redemption.id));
+      if (form.editingId === redemption.id) {
+        resetForm();
+      }
+      if (result.persistence) {
+        setPersistence(result.persistence);
+      }
+      setFeedback(result.message || "Resgate excluido com sucesso.");
+      router.refresh();
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : "Nao foi possivel excluir o resgate.",
+      );
+    } finally {
+      setDeletingId("");
     }
   }
 
@@ -392,26 +455,27 @@ export function PartnerRedemptionManager({
             </label>
 
             <label className={styles.filterField}>
-              <span>Arte</span>
+              <span>Produto da loja</span>
               <select
-                value={form.artName}
+                value={form.productSelectionId}
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
                     artName: event.target.value,
                     customArtName:
                       event.target.value === OTHER_ART_OPTION ? current.customArtName : "",
+                    productSelectionId: event.target.value,
                   }))
                 }
               >
                 <option value="">
-                  {availableArtOptions.length > 0
-                    ? "Selecione a arte"
+                  {storeProductOptions.length > 0
+                    ? "Selecione o produto"
                     : "Nenhum produto disponivel no site agora"}
                 </option>
-                {availableArtOptions.map((item) => (
-                  <option key={item.artName} value={item.artName}>
-                    {item.artName} · {item.publishedStock} no site
+                {storeProductOptions.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.optionLabel} · {item.publishedStock} no site
                   </option>
                 ))}
                 <option value={OTHER_ART_OPTION}>Outro</option>
@@ -611,6 +675,7 @@ export function PartnerRedemptionManager({
               <div className={styles.metricHint}>
                 {selectedStock
                   ? `${selectedArtName || "Arte nao selecionada"} · ${selectedStock.sku} · ${selectedStock.plain} lisa(s) disponiveis`
+                  ? `${selectedProduct?.optionLabel || "Produto nao selecionado"} · ${selectedStock.sku} · ${selectedStock.plain} lisa(s) disponiveis`
                   : "Escolha a linha da lisa usada como referencia para esse resgate."}
               </div>
             </article>
@@ -657,7 +722,8 @@ export function PartnerRedemptionManager({
                     <div>{item.couponCode}</div>
                   </td>
                   <td>
-                    {getArtName(item.notes)} · {item.sku} · {item.color} · {item.size}
+                    <strong>{getProductLabel(item.notes)}</strong>
+                    <div>{item.sku} · {item.color} · {item.size}</div>
                   </td>
                   <td>{item.quantity}</td>
                   <td>{formatMoney(item.totalCost)}</td>
@@ -666,13 +732,24 @@ export function PartnerRedemptionManager({
                   <td>{item.status}</td>
                   <td>{getCleanNotes(item.notes) || "-"}</td>
                   <td>
-                    <button
-                      type="button"
-                      className={styles.secondaryButton}
-                      onClick={() => handleEditRedemption(item)}
-                    >
-                      Editar
-                    </button>
+                    <div className={styles.filterActions}>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        onClick={() => handleEditRedemption(item)}
+                        disabled={deletingId === item.id}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        onClick={() => handleDeleteRedemption(item)}
+                        disabled={deletingId === item.id}
+                      >
+                        {deletingId === item.id ? "Excluindo..." : "Excluir"}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -721,13 +798,20 @@ function formatDate(value: string | null) {
   }).format(parsed);
 }
 
-function getArtName(notes: string) {
-  const match = notes.match(/^\[arte\]\s*(.+)$/im);
-  return match?.[1]?.trim() || "Arte nao informada";
+function getProductLabel(notes: string) {
+  const productMatch = notes.match(/^\[produto\]\s*(.+)$/im);
+
+  if (productMatch?.[1]?.trim()) {
+    return productMatch[1].trim();
+  }
+
+  const legacyMatch = notes.match(/^\[arte\]\s*(.+)$/im);
+  return legacyMatch?.[1]?.trim() || "Produto nao informado";
 }
 
 function getCleanNotes(notes: string) {
   return notes
+    .replace(/^\[produto\]\s*.+$/im, "")
     .replace(/^\[arte\]\s*.+$/im, "")
     .replace(/^\[estoque\]\s*.+$/im, "")
     .replace(/^\s+|\s+$/g, "");
