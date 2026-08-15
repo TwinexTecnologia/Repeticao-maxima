@@ -661,7 +661,7 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
                 Criar campanha
               </a>
               <a href="/influenciadores/poupanca-atleta" className={styles.secondaryButton}>
-                Poupanca do atleta
+                Conferir resgates
               </a>
             </div>
           </div>

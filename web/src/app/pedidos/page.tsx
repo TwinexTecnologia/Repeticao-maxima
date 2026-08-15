@@ -76,6 +76,8 @@ type WeeklyRow = {
   exitHeight: number;
 };
 
+const EXPENSE_CATEGORIES = ["Saida manual", "Estorno de venda"] as const;
+
 function getSearchValue(
   searchParams: Record<string, string | string[] | undefined>,
   key: string,
@@ -493,6 +495,7 @@ async function registerMovementAction(formData: FormData) {
 
   const redirectTo = String(formData.get("redirectTo") ?? "/pedidos").trim() || "/pedidos";
   const title = String(formData.get("title") ?? "").trim();
+  const category = String(formData.get("category") ?? "Saida manual").trim() || "Saida manual";
   const amount = Number.parseFloat(String(formData.get("amount") ?? "0").replace(",", "."));
   const type = String(formData.get("type") ?? "saida").trim().toLowerCase() === "entrada"
     ? "entrada"
@@ -528,6 +531,12 @@ async function registerMovementAction(formData: FormData) {
     category,
     amount,
     paymentMethod,
+    installments,
+    dueDate,
+    category,
+    status: "aberta",
+    billingFrequency: "mensal",
+    impact: "",
     movementDate,
     notes,
   });
@@ -837,7 +846,6 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                             required
                           />
                         </label>
-
                         <label className={`${styles.filterField} ${styles.movementFieldWide}`}>
                           <span>Observacao</span>
                           <input
