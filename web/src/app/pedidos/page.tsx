@@ -52,6 +52,8 @@ type LedgerRow = {
   exitAmount: number;
 };
 
+const EXPENSE_CATEGORIES = ["Saida manual", "Estorno de venda"] as const;
+
 function getSearchValue(
   searchParams: Record<string, string | string[] | undefined>,
   key: string,
@@ -299,6 +301,7 @@ async function registerExpenseAction(formData: FormData) {
   const redirectTo = String(formData.get("redirectTo") ?? "/pedidos").trim() || "/pedidos";
   const selectedMonth = String(formData.get("selectedMonth") ?? "").trim();
   const title = String(formData.get("title") ?? "").trim();
+  const category = String(formData.get("category") ?? "Saida manual").trim() || "Saida manual";
   const amount = Number.parseFloat(String(formData.get("amount") ?? "0").replace(",", "."));
   const paymentMethod = String(formData.get("paymentMethod") ?? "outro").trim();
   const installments = Math.max(
@@ -323,7 +326,7 @@ async function registerExpenseAction(formData: FormData) {
     paymentMethod,
     installments,
     dueDate,
-    category: "Saida manual",
+    category,
     status: "aberta",
     billingFrequency: "mensal",
     impact: "",
@@ -826,6 +829,17 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                             placeholder="0,00"
                             required
                           />
+                        </label>
+
+                        <label className={styles.filterField}>
+                          <span>Categoria</span>
+                          <select name="category" defaultValue="Saida manual">
+                            {EXPENSE_CATEGORIES.map((category) => (
+                              <option key={category} value={category}>
+                                {category}
+                              </option>
+                            ))}
+                          </select>
                         </label>
 
                         <label className={styles.filterField}>

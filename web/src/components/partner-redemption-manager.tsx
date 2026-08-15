@@ -16,6 +16,7 @@ import type {
 
 const FULL_COST = 52;
 const MINIMAL_COST = 32;
+const OTHER_ART_OPTION = "__other__";
 
 type PartnerRedemptionManagerProps = {
   initialProfiles: CouponPartnerProfile[];
@@ -38,6 +39,7 @@ type RedemptionFormState = {
   partnerId: string;
   stockItemId: string;
   artName: string;
+  customArtName: string;
   quantity: string;
   unitCost: string;
   grantedAt: string;
@@ -87,6 +89,7 @@ export function PartnerRedemptionManager({
     partnerId: defaultPartnerId,
     stockItemId: stockOptions.find((item) => item.plain > 0)?.id || "",
     artName: "",
+    customArtName: "",
     quantity: "1",
     unitCost: String(FULL_COST),
     grantedAt: getTodayDate(),
@@ -113,6 +116,8 @@ export function PartnerRedemptionManager({
     activeProfiles.find((profile) => profile.id === form.partnerId) || null;
   const selectedStock =
     availableStockOptions.find((item) => item.id === form.stockItemId) || null;
+  const selectedArtName =
+    form.artName === OTHER_ART_OPTION ? form.customArtName.trim() : form.artName.trim();
   const availableArtOptions = useMemo(() => {
     const artMap = new Map<string, number>();
 
@@ -156,10 +161,11 @@ export function PartnerRedemptionManager({
 
   useEffect(() => {
     if (availableArtOptions.length === 0) {
-      if (form.artName) {
+      if (form.artName || form.customArtName) {
         setForm((current) => ({
           ...current,
           artName: "",
+          customArtName: "",
         }));
       }
       return;
@@ -190,6 +196,7 @@ export function PartnerRedemptionManager({
       partnerId: defaultPartnerId,
       stockItemId: stockOptions.find((item) => item.plain > 0)?.id || "",
       artName: "",
+      customArtName: "",
       quantity: "1",
       unitCost: String(FULL_COST),
       grantedAt: getTodayDate(),
@@ -201,6 +208,9 @@ export function PartnerRedemptionManager({
   }
 
   function handleEditRedemption(redemption: PartnerRedemption) {
+    const savedArtName = getArtName(redemption.notes);
+    const matchedArt = availableArtOptions.find((item) => item.artName === savedArtName);
+
     const linkedProfile =
       activeProfiles.find((item) => item.id === redemption.partnerId) ||
       activeProfiles.find((item) => item.couponCode === redemption.couponCode) ||
@@ -210,7 +220,8 @@ export function PartnerRedemptionManager({
       editingId: redemption.id,
       partnerId: linkedProfile?.id || "",
       stockItemId: redemption.stockItemId || "",
-      artName: getArtName(redemption.notes),
+      artName: matchedArt ? matchedArt.artName : OTHER_ART_OPTION,
+      customArtName: matchedArt ? "" : savedArtName,
       quantity: String(redemption.quantity),
       unitCost: String(redemption.unitCost),
       grantedAt: redemption.grantedAt || getTodayDate(),
@@ -233,8 +244,12 @@ export function PartnerRedemptionManager({
       return;
     }
 
-    if (!form.artName.trim()) {
-      setFeedback("Selecione uma arte disponivel no site para registrar esse resgate.");
+    if (!selectedArtName) {
+      setFeedback(
+        form.artName === OTHER_ART_OPTION
+          ? "Informe qual foi o outro item entregue nesse resgate."
+          : "Selecione uma arte disponivel no site para registrar esse resgate.",
+      );
       return;
     }
 
@@ -257,7 +272,7 @@ export function PartnerRedemptionManager({
         dueDate: form.dueDate,
         adjustStock: form.adjustStock,
         createMarketingDebt: form.createMarketingDebt,
-        artName: form.artName,
+        artName: selectedArtName,
         notes: form.notes,
         status: "entregue",
       };
@@ -384,6 +399,8 @@ export function PartnerRedemptionManager({
                   setForm((current) => ({
                     ...current,
                     artName: event.target.value,
+                    customArtName:
+                      event.target.value === OTHER_ART_OPTION ? current.customArtName : "",
                   }))
                 }
               >
@@ -397,8 +414,26 @@ export function PartnerRedemptionManager({
                     {item.artName} · {item.publishedStock} no site
                   </option>
                 ))}
+                <option value={OTHER_ART_OPTION}>Outro</option>
               </select>
             </label>
+
+            {form.artName === OTHER_ART_OPTION ? (
+              <label className={styles.filterField}>
+                <span>Qual item foi entregue</span>
+                <input
+                  type="text"
+                  placeholder="Ex.: Calca, coqueteleira, bone"
+                  value={form.customArtName}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      customArtName: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            ) : null}
 
             <div className={styles.filterGrid}>
               <label className={styles.filterField}>
@@ -575,7 +610,7 @@ export function PartnerRedemptionManager({
               </div>
               <div className={styles.metricHint}>
                 {selectedStock
-                  ? `${form.artName.trim() || "Arte nao selecionada"} · ${selectedStock.sku} · ${selectedStock.plain} lisa(s) disponiveis`
+                  ? `${selectedArtName || "Arte nao selecionada"} · ${selectedStock.sku} · ${selectedStock.plain} lisa(s) disponiveis`
                   : "Escolha a linha da lisa usada como referencia para esse resgate."}
               </div>
             </article>
