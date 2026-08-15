@@ -846,31 +846,6 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                             required
                           />
                         </label>
-                        <label className={styles.filterField}>
-                          <span>Categoria</span>
-                          <select name="category" defaultValue="Saida manual">
-                            {EXPENSE_CATEGORIES.map((category) => (
-                              <option key={category} value={category}>
-                                {category}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-
-                        <label className={styles.filterField}>
-                          <span>Como foi paga</span>
-                          <select name="paymentMethod" defaultValue="pix">
-                            <option value="pix">Pix</option>
-                            <option value="cartao">Cartao</option>
-                            <option value="boleto">Boleto</option>
-                            <option value="transferencia">Transferencia</option>
-                            <option value="dinheiro">Dinheiro</option>
-                            <option value="outro">Outro</option>
-                          </select>
-                        </label>
-
-                        <label className={styles.filterField}>
-                          <span>Em quantas vezes</span>
                         <label className={`${styles.filterField} ${styles.movementFieldWide}`}>
                           <span>Observacao</span>
                           <input
