@@ -189,6 +189,76 @@
   color: #241535;
 }
 
+.mobileModuleNav {
+  display: none;
+}
+
+.mobileModuleLink {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  color: #41255b;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(123, 44, 191, 0.12);
+  box-shadow: 0 12px 26px rgba(88, 28, 135, 0.08);
+}
+
+.mobileModuleLinkActive {
+  border-color: rgba(245, 158, 11, 0.44);
+  background:
+    linear-gradient(180deg, rgba(255, 250, 240, 0.98) 0%, rgba(255, 244, 227, 0.96) 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(245, 158, 11, 0.16),
+    0 14px 30px rgba(88, 28, 135, 0.12);
+}
+
+.mobileModuleIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #7b2cbf;
+  background: rgba(123, 44, 191, 0.08);
+  border: 1px solid rgba(123, 44, 191, 0.12);
+}
+
+.mobileModuleIcon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.mobileModuleLinkActive .mobileModuleIcon {
+  color: #d97706;
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.24);
+}
+
+.mobileModuleCopy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.mobileModuleCopy strong {
+  font-size: 0.94rem;
+  color: #37184d;
+}
+
+.mobileModuleCopy span {
+  font-size: 0.78rem;
+  color: #755b8d;
+}
+
+.mobileModuleLinkActive .mobileModuleCopy strong,
+.mobileModuleLinkActive .mobileModuleCopy span {
+  color: #7c2d12;
+}
+
 .titleBlock h1 {
   font-size: clamp(2rem, 4vw, 2.8rem);
   line-height: 1.1;
@@ -491,6 +561,104 @@
   grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
 }
 
+.geoGrid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
+}
+
+.geoCard {
+  padding: 20px;
+  border-radius: 22px;
+  background: #ffffff;
+  border: 1px solid rgba(123, 44, 191, 0.08);
+  box-shadow: 0 8px 22px rgba(88, 28, 135, 0.05);
+}
+
+.geoCardTop {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.geoLegend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #6f5b82;
+  font-size: 0.86rem;
+}
+
+.geoLegendDotLow,
+.geoLegendDotHigh {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.geoLegendDotLow {
+  background: #d8b4fe;
+}
+
+.geoLegendDotHigh {
+  background: #7b2cbf;
+}
+
+.geoMapWrap {
+  margin-top: 18px;
+  padding: 12px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(171, 195, 231, 0.45), rgba(171, 195, 231, 0.28));
+  border: 1px solid rgba(127, 154, 196, 0.22);
+}
+
+.geoMap {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.geoMapOcean {
+  fill: #a8bfdf;
+}
+
+.geoMapSilhouette {
+  fill: #f6f0e6;
+  stroke: rgba(84, 74, 60, 0.3);
+  stroke-width: 7px;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.geoMapCountryLabel {
+  fill: rgba(31, 41, 55, 0.72);
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.2rem;
+}
+
+.geoMapNeighborLabel {
+  fill: rgba(31, 41, 55, 0.48);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.06rem;
+}
+
+.geoMapStateCode {
+  fill: #2d1941;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.geoMapStateCount {
+  fill: #ffffff;
+  font-size: 0.96rem;
+  font-weight: 700;
+}
+
 .list {
   display: grid;
   gap: 14px;
@@ -575,6 +743,49 @@
 
 .table tbody tr:hover {
   background: rgba(123, 44, 191, 0.03);
+}
+
+.tableActionRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tableActionRow form {
+  margin: 0;
+}
+
+.tableActionButton,
+.tableActionDanger {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.84rem;
+  font-weight: 600;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.tableActionButton {
+  border: 1px solid rgba(123, 44, 191, 0.14);
+  background: #ffffff;
+  color: #4f2f6d;
+}
+
+.tableActionDanger {
+  border: 1px solid rgba(176, 90, 0, 0.16);
+  background: rgba(176, 90, 0, 0.08);
+  color: #8a4300;
+}
+
+.tableActionButton:hover,
+.tableActionDanger:hover {
+  transform: translateY(-1px);
 }
 
 .tableCellTight {
@@ -1206,6 +1417,45 @@
   gap: 12px;
 }
 
+.financeTopGrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(280px, 0.92fr) minmax(0, 1.08fr);
+}
+
+.financeActionCard {
+  padding: 20px;
+  border-radius: 22px;
+  background: #ffffff;
+  border: 1px solid rgba(123, 44, 191, 0.08);
+  box-shadow: 0 8px 22px rgba(88, 28, 135, 0.05);
+}
+
+.financeInlineValue {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #5e189f;
+}
+
+.financeChartGrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.financeInsightGrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.financeKeyValue {
+  margin-top: 8px;
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #241535;
+}
+
 .chartRow {
   display: grid;
   grid-template-columns: minmax(120px, 160px) minmax(0, 1fr) 140px;
@@ -1234,6 +1484,14 @@
   height: 100%;
   border-radius: 999px;
   background: linear-gradient(90deg, #5e189f 0%, #8e4700 100%);
+}
+
+.chartBarEntry {
+  background: linear-gradient(90deg, #16a34a 0%, #22c55e 100%);
+}
+
+.chartBarExit {
+  background: linear-gradient(90deg, #ef4444 0%, #f97316 100%);
 }
 
 .chartValue {
@@ -1709,6 +1967,57 @@
   transform: translateY(0);
 }
 
+.movementTypeGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.movementTypeInput {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.movementTypeLabel {
+  min-height: 46px;
+  padding: 0 14px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(123, 44, 191, 0.12);
+  background: rgba(123, 44, 191, 0.04);
+  color: #5d3b7b;
+  font-weight: 700;
+}
+
+.movementTypeEntry:checked + .movementTypeLabel,
+.movementTypeExpense:checked + .movementTypeLabel {
+  border-color: rgba(123, 44, 191, 0.3);
+  background: linear-gradient(135deg, rgba(123, 44, 191, 0.12), rgba(94, 24, 159, 0.16));
+  color: #37184d;
+  box-shadow: inset 0 0 0 1px rgba(123, 44, 191, 0.08);
+}
+
+.movementPanels {
+  grid-column: 1 / -1;
+}
+
+.movementPanel {
+  display: none;
+}
+
+.movementTypeEntry:checked ~ .movementPanels .movementPanelEntry,
+.movementTypeExpense:checked ~ .movementPanels .movementPanelExpense {
+  display: grid;
+}
+
+.movementHelper {
+  color: #6f5b82;
+  line-height: 1.6;
+}
+
 @media (max-width: 1180px) {
   .appShell {
     grid-template-columns: 1fr;
@@ -1747,9 +2056,13 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .financeTopGrid,
+  .financeChartGrid,
+  .financeInsightGrid,
   .hero,
   .heroCompact,
   .twoColumn,
+  .geoGrid,
   .integrationHero,
   .orderLayout {
     grid-template-columns: 1fr;
@@ -1835,6 +2148,12 @@
     display: flex;
   }
 
+  .mobileModuleNav {
+    display: grid;
+    gap: 10px;
+    margin: 4px 0 16px;
+  }
+
   .titleBlock h1 {
     font-size: 1.5rem;
   }
@@ -1872,8 +2191,19 @@
 
   .section,
   .heroCard,
-  .metricCard {
+  .metricCard,
+  .geoCard {
     padding: 12px;
+  }
+
+  .geoLegend {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .geoMapWrap {
+    padding: 8px;
   }
 
   .filterActions button,
@@ -1905,7 +2235,6 @@
     padding-bottom: 24px;
   }
 
-
   .metricGrid {
     grid-template-columns: 1fr;
   }
@@ -1926,6 +2255,12 @@
     grid-template-columns: 1fr;
   }
 
+  .financeTopGrid,
+  .financeChartGrid,
+  .financeInsightGrid {
+    grid-template-columns: 1fr;
+  }
+
   .filterActions,
   .catalogDetailHeader,
   .catalogMedia,
@@ -1941,6 +2276,14 @@
 
   .chartRow {
     display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .chartValue {
+    text-align: left;
+  }
+
+  .movementTypeGrid {
     grid-template-columns: 1fr;
   }
 
