@@ -530,12 +530,6 @@ async function registerMovementAction(formData: FormData) {
     category,
     amount,
     paymentMethod,
-    installments,
-    dueDate,
-    category,
-    status: "aberta",
-    billingFrequency: "mensal",
-    impact: "",
     movementDate,
     notes,
   });
