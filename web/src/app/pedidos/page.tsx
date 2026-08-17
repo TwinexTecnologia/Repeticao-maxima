@@ -500,7 +500,6 @@ async function registerMovementAction(formData: FormData) {
   const type = String(formData.get("type") ?? "saida").trim().toLowerCase() === "entrada"
     ? "entrada"
     : "saida";
-  const category = String(formData.get("category") ?? "").trim();
   const paymentMethod = String(formData.get("paymentMethod") ?? "outro").trim();
   const movementDate = String(formData.get("movementDate") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
