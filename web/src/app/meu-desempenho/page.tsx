@@ -4,7 +4,6 @@ import { AppShell } from "@/components/app-shell";
 import styles from "@/components/panel.module.css";
 import {
   ATHLETE_SUPPORT_MINIMUM_REDEMPTION,
-  ATHLETE_SUPPORT_PERCENT,
   formatDateOnly,
   formatDateTime,
   formatMoney,
@@ -29,6 +28,7 @@ type MeuDesempenhoPageProps = {
     month?: string;
     rangeStart?: string;
     rangeEnd?: string;
+    campaignId?: string;
   }>;
 };
 
@@ -50,6 +50,7 @@ export default async function MeuDesempenhoPage({
   const selectedMonth = params?.month || getCurrentMonthInput();
   const customRangeStart = normalizeDateParam(params?.rangeStart);
   const customRangeEnd = normalizeDateParam(params?.rangeEnd);
+  const selectedCampaignId = normalizeIdParam(params?.campaignId);
   const needsRedemptionData = tab === "inicio" || tab === "resgates";
   const needsRewardRequests = tab !== "campanhas";
   const [profilesData, campaignsData, rewardRequests, allRedemptions] = await Promise.all([
@@ -88,6 +89,8 @@ export default async function MeuDesempenhoPage({
       campaign.active &&
       campaign.participants.some((participant) => participant.partnerId === profile.id),
   );
+  const selectedCampaign =
+    partnerCampaigns.find((campaign) => campaign.id === selectedCampaignId) || null;
   const windowCampaign =
     partnerCampaigns
       .filter((campaign) => campaign.useCurrentWindow)
@@ -107,15 +110,20 @@ export default async function MeuDesempenhoPage({
         monthlyGoal: windowCampaign?.qualificationGoal,
       })
     : null;
-  const customPerformance =
-    needsPerformance && customRangeStart && customRangeEnd
-      ? await loadPartnerPerformanceSnapshot(profile, effectiveMonth, {
-          window: {
-            startDate: customRangeStart,
-            endDate: customRangeEnd,
-            label: `${formatDateOnly(customRangeStart)} a ${formatDateOnly(customRangeEnd)}`,
+  const summaryFilter = buildSummaryFilter({
+    campaign: selectedCampaign,
+    rangeStart: customRangeStart,
+    rangeEnd: customRangeEnd,
+  });
+  const summaryPerformance =
+    needsPerformance && summaryFilter.window
+      ? await loadPartnerPerformanceSnapshot(
+          profile,
+          summaryFilter.window.endDate.slice(0, 7) || effectiveMonth,
+          {
+            window: summaryFilter.window,
           },
-        })
+        )
       : null;
 
   const redemptions = needsRedemptionData
@@ -340,6 +348,22 @@ export default async function MeuDesempenhoPage({
     performance.data.row.netRevenue,
     performance.data.row.monthlyGoal,
   );
+  const summaryOrders =
+    summaryPerformance && summaryPerformance.ok
+      ? summaryPerformance.data.row.orders
+      : performance.data.row.lifetimeOrders;
+  const summaryRevenue =
+    summaryPerformance && summaryPerformance.ok
+      ? summaryPerformance.data.row.netRevenue
+      : performance.data.row.lifetimeNetRevenue;
+  const summaryLabel =
+    summaryPerformance && summaryPerformance.ok
+      ? summaryPerformance.data.rollingWindow.label
+      : "Historico completo";
+  const summaryCampaignLabel = selectedCampaign ? selectedCampaign.name : "Todas as campanhas";
+  const summaryMessage =
+    summaryFilter.message ||
+    (summaryPerformance && !summaryPerformance.ok ? summaryPerformance.message : null);
 
   return (
     <AppShell
@@ -358,6 +382,11 @@ export default async function MeuDesempenhoPage({
                     <div className={styles.sectionSubtitle}>
                       {formatDateOnly(featuredCampaign.startDate)} ate {formatDateOnly(featuredCampaign.endDate)}
                     </div>
+                    {featuredCampaign.description ? (
+                      <div className={styles.sectionSubtitle} style={{ marginTop: 8 }}>
+                        {featuredCampaign.description}
+                      </div>
+                    ) : null}
                   </div>
                   <span className={`${styles.pill} ${styles.pillMedium}`}>
                     {!featuredCampaign.showRanking
@@ -399,28 +428,6 @@ export default async function MeuDesempenhoPage({
               </article>
             ) : null}
 
-            <article className={styles.heroCard} style={{ marginTop: featuredCampaign ? 12 : 0 }}>
-              <div className={styles.sectionTitle}>🎯 Meta atual</div>
-              <div className={styles.sectionSubtitle} style={{ marginTop: 6 }}>
-                {performance.data.row.monthlyCreditPercent}% em roupa
-                {profile.role === "atleta" ? ` + ${ATHLETE_SUPPORT_PERCENT}% em apoio` : ""}
-              </div>
-              <div style={{ marginTop: 14, fontWeight: 800, color: "#241535" }}>
-                {formatMoney(performance.data.row.netRevenue)} / {formatMoney(performance.data.row.monthlyGoal)}
-              </div>
-              <div className={styles.progressTrack} style={{ marginTop: 12 }}>
-                <div
-                  className={styles.progressFill}
-                  style={{ width: `${Math.min(Math.max(windowProgressPercent, 0), 100)}%` }}
-                />
-              </div>
-              <div className={styles.mobileListMeta} style={{ marginTop: 12 }}>
-                <span>Faltam {formatMoney(performance.data.row.monthlyAmountToGoal)}</span>
-                <span>
-                  {windowDaysRemaining > 0 ? `${windowDaysRemaining} dias restantes` : "Encerrando hoje"}
-                </span>
-              </div>
-            </article>
           </section>
 
           <section className={`${styles.section} ${styles.mobileOnly}`}>
@@ -445,6 +452,17 @@ export default async function MeuDesempenhoPage({
                     <input type="hidden" name="tab" value="inicio" />
                     <input type="hidden" name="month" value={performance.data.selectedMonth} />
                     <label className={styles.filterField}>
+                      <span>Campanha</span>
+                      <select name="campaignId" defaultValue={selectedCampaign?.id || ""}>
+                        <option value="">Todas as campanhas</option>
+                        {partnerCampaigns.map((campaign) => (
+                          <option key={campaign.id} value={campaign.id}>
+                            {campaign.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className={styles.filterField}>
                       <span>Inicio</span>
                       <input type="date" name="rangeStart" defaultValue={customRangeStart || ""} />
                     </label>
@@ -458,20 +476,25 @@ export default async function MeuDesempenhoPage({
                       </button>
                     </div>
                   </form>
-                  {customPerformance && customPerformance.ok ? (
+                  {summaryPerformance && summaryPerformance.ok ? (
                     <div className={styles.mobileCardsGrid} style={{ marginTop: 14 }}>
                       <div className={styles.mobileCard}>
-                        <div className={styles.mobileCardLabel}>Vendas no periodo</div>
-                        <div className={styles.mobileCardValue}>{customPerformance.data.row.orders}</div>
-                        <div className={styles.mobileCardHint}>{customPerformance.data.rollingWindow.label}</div>
+                        <div className={styles.mobileCardLabel}>Vendas</div>
+                        <div className={styles.mobileCardValue}>{summaryPerformance.data.row.orders}</div>
+                        <div className={styles.mobileCardHint}>{summaryPerformance.data.rollingWindow.label}</div>
                       </div>
                       <div className={styles.mobileCard}>
-                        <div className={styles.mobileCardLabel}>Voce ja vendeu</div>
+                        <div className={styles.mobileCardLabel}>Valor vendido</div>
                         <div className={styles.mobileCardValue}>
-                          {formatMoney(customPerformance.data.row.netRevenue)}
+                          {formatMoney(summaryPerformance.data.row.netRevenue)}
                         </div>
-                        <div className={styles.mobileCardHint}>No intervalo escolhido</div>
+                        <div className={styles.mobileCardHint}>{summaryCampaignLabel}</div>
                       </div>
+                    </div>
+                  ) : summaryMessage ? (
+                    <div className={styles.warningPanel} style={{ marginTop: 14 }}>
+                      <div className={styles.warningTitle}>Nao foi possivel aplicar o filtro</div>
+                      <p className={styles.warningText}>{summaryMessage}</p>
                     </div>
                   ) : null}
                 </div>
@@ -480,26 +503,19 @@ export default async function MeuDesempenhoPage({
 
             <div className={styles.mobileCardsGrid}>
               <div className={styles.mobileCard}>
-                <div className={styles.mobileCardLabel}>Vendas na janela</div>
-                <div className={styles.mobileCardValue}>{performance.data.row.orders}</div>
-                <div className={styles.mobileCardHint}>Pedidos com seu cupom</div>
+                <div className={styles.mobileCardLabel}>Vendas</div>
+                <div className={styles.mobileCardValue}>{summaryOrders}</div>
+                <div className={styles.mobileCardHint}>{summaryLabel}</div>
               </div>
               <div className={styles.mobileCard}>
-                <div className={styles.mobileCardLabel}>Voce ja vendeu</div>
-                <div className={styles.mobileCardValue}>{formatMoney(performance.data.row.netRevenue)}</div>
-                <div className={styles.mobileCardHint}>Liquido na janela</div>
+                <div className={styles.mobileCardLabel}>Valor vendido</div>
+                <div className={styles.mobileCardValue}>{formatMoney(summaryRevenue)}</div>
+                <div className={styles.mobileCardHint}>{summaryCampaignLabel}</div>
               </div>
               <div className={styles.mobileCard}>
-                <div className={styles.mobileCardLabel}>Meta atual</div>
-                <div className={styles.mobileCardValue}>{formatMoney(performance.data.row.monthlyGoal)}</div>
-                <div className={styles.mobileCardHint}>{performance.data.row.monthlyCreditPercent}% em roupa</div>
-              </div>
-              <div className={styles.mobileCard}>
-                <div className={styles.mobileCardLabel}>Termina em</div>
-                <div className={styles.mobileCardValue}>{formatDateOnly(performance.data.rollingWindow.endDate)}</div>
-                <div className={styles.mobileCardHint}>
-                  {windowDaysRemaining > 0 ? `${windowDaysRemaining} dias restantes` : "Encerrando hoje"}
-                </div>
+                <div className={styles.mobileCardLabel}>Filtro ativo</div>
+                <div className={styles.mobileCardValue}>{summaryCampaignLabel}</div>
+                <div className={styles.mobileCardHint}>{summaryLabel}</div>
               </div>
             </div>
           </section>
@@ -508,6 +524,7 @@ export default async function MeuDesempenhoPage({
 
       <section className={`${styles.section} ${styles.desktopOnly}`}>
         <form className={styles.filterGrid} method="get">
+          <input type="hidden" name="tab" value={tab} />
           <label className={styles.filterField}>
             <span>Mes final da janela</span>
             <input
@@ -540,15 +557,27 @@ export default async function MeuDesempenhoPage({
       <section className={`${styles.section} ${styles.desktopOnly}`}>
         <div className={styles.sectionHeader}>
           <div>
-            <div className={styles.sectionTitle}>Filtrar periodo</div>
+            <div className={styles.sectionTitle}>Resumo geral</div>
             <p className={styles.sectionSubtitle}>
-              Escolha qualquer periodo para ver suas vendas, sem mexer na janela travada.
+              Acompanhe seu historico total ou filtre por campanha e periodo.
             </p>
           </div>
         </div>
 
         <form className={styles.filterGrid} method="get">
+          <input type="hidden" name="tab" value={tab} />
           <input type="hidden" name="month" value={performance.data.selectedMonth} />
+          <label className={styles.filterField}>
+            <span>Campanha</span>
+            <select name="campaignId" defaultValue={selectedCampaign?.id || ""}>
+              <option value="">Todas as campanhas</option>
+              {partnerCampaigns.map((campaign) => (
+                <option key={campaign.id} value={campaign.id}>
+                  {campaign.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className={styles.filterField}>
             <span>Inicio</span>
             <input type="date" name="rangeStart" defaultValue={customRangeStart || ""} />
@@ -564,29 +593,32 @@ export default async function MeuDesempenhoPage({
           </div>
         </form>
 
-        {customPerformance && customPerformance.ok ? (
-          <div className={styles.metricGrid} style={{ marginTop: 16 }}>
-            <article className={styles.metricCard}>
-              <div className={styles.metricLabel}>Vendas no periodo</div>
-              <div className={styles.metricValue}>{customPerformance.data.row.orders}</div>
-              <div className={styles.metricHint}>
-                {customPerformance.data.rollingWindow.label}
-              </div>
-            </article>
-            <article className={styles.metricCard}>
-              <div className={styles.metricLabel}>Receita liquida no periodo</div>
-              <div className={styles.metricValue}>
-                {formatMoney(customPerformance.data.row.netRevenue)}
-              </div>
-              <div className={styles.metricHint}>Somente no intervalo escolhido</div>
-            </article>
-          </div>
-        ) : customPerformance && !customPerformance.ok ? (
+        {summaryMessage ? (
           <div className={styles.warningPanel} style={{ marginTop: 16 }}>
-            <div className={styles.warningTitle}>Erro ao filtrar periodo</div>
-            <p className={styles.warningText}>{customPerformance.message}</p>
+            <div className={styles.warningTitle}>Nao foi possivel aplicar o filtro</div>
+            <p className={styles.warningText}>{summaryMessage}</p>
           </div>
         ) : null}
+
+        <div className={styles.metricGrid} style={{ marginTop: 16 }}>
+          <article className={styles.metricCard}>
+            <div className={styles.metricLabel}>Vendas</div>
+            <div className={styles.metricValue}>{summaryOrders}</div>
+            <div className={styles.metricHint}>{summaryLabel}</div>
+          </article>
+          <article className={styles.metricCard}>
+            <div className={styles.metricLabel}>Valor vendido</div>
+            <div className={styles.metricValue}>{formatMoney(summaryRevenue)}</div>
+            <div className={styles.metricHint}>{summaryCampaignLabel}</div>
+          </article>
+          <article className={styles.metricCard}>
+            <div className={styles.metricLabel}>Campanha</div>
+            <div className={styles.metricValue}>{summaryCampaignLabel}</div>
+            <div className={styles.metricHint}>
+              {selectedCampaign ? "Filtro por campanha aplicado" : "Leitura geral do cupom"}
+            </div>
+          </article>
+        </div>
       </section>
 
       <section className={`${styles.section} ${styles.desktopOnly}`}>
@@ -1221,6 +1253,11 @@ function normalizeDateParam(value: unknown) {
   return text;
 }
 
+function normalizeIdParam(value: unknown) {
+  const text = String(value ?? "").trim();
+  return text || null;
+}
+
 function normalizeTab(value: unknown) {
   const normalized = String(value ?? "").trim().toLowerCase();
 
@@ -1234,6 +1271,54 @@ function normalizeTab(value: unknown) {
   }
 
   return "inicio" as const;
+}
+
+function buildSummaryFilter(input: {
+  campaign: { name: string; startDate: string; endDate: string } | null;
+  rangeStart: string | null;
+  rangeEnd: string | null;
+}) {
+  const hasCampaign = Boolean(input.campaign);
+  const startDate =
+    hasCampaign && input.rangeStart
+      ? (input.rangeStart > input.campaign!.startDate ? input.rangeStart : input.campaign!.startDate)
+      : (input.rangeStart ?? input.campaign?.startDate ?? null);
+  const endDate =
+    hasCampaign && input.rangeEnd
+      ? (input.rangeEnd < input.campaign!.endDate ? input.rangeEnd : input.campaign!.endDate)
+      : (input.rangeEnd ?? input.campaign?.endDate ?? null);
+
+  if ((startDate && !endDate) || (!startDate && endDate)) {
+    return {
+      window: null,
+      message: "Preencha inicio e fim do periodo para aplicar o filtro.",
+    };
+  }
+
+  if (!startDate || !endDate) {
+    return {
+      window: null,
+      message: null,
+    };
+  }
+
+  if (startDate > endDate) {
+    return {
+      window: null,
+      message: "O inicio do periodo nao pode ser maior que o fim.",
+    };
+  }
+
+  return {
+    window: {
+      startDate,
+      endDate,
+      label: input.campaign
+        ? `${input.campaign.name} · ${formatDateOnly(startDate)} a ${formatDateOnly(endDate)}`
+        : `${formatDateOnly(startDate)} a ${formatDateOnly(endDate)}`,
+    },
+    message: null,
+  };
 }
 
 function getDaysRemaining(endDate: string) {

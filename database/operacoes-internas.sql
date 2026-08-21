@@ -99,7 +99,6 @@ ALTER TABLE repeticao_maxima.financeiro_movimentacoes
   ADD COLUMN IF NOT EXISTS subgroup_id UUID REFERENCES repeticao_maxima.financeiro_subgrupos(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS group_name TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS subgroup_name TEXT NOT NULL DEFAULT '';
-
 CREATE TABLE IF NOT EXISTS repeticao_maxima.estoque_base (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   sku TEXT NOT NULL,

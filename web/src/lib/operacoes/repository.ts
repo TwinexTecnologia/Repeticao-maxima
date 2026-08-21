@@ -23,6 +23,12 @@ const DTF_TABLE = "estoque_dtf";
 const NUVEMSHOP_PAGE_SIZE = 100;
 const NUVEMSHOP_MAX_PAGES = 6;
 
+type ServerSupabaseClient = ReturnType<typeof createSupabaseServerClient> extends infer T
+  ? T extends { ok: true; client: infer C }
+    ? C
+    : never
+  : never;
+
 export type OperationalPersistenceState = {
   enabled: boolean;
   source: "supabase" | "disabled";
@@ -59,7 +65,6 @@ export type InternalDebt = {
 };
 
 export type FinancialMovementType = "entrada" | "saida";
-
 export type FinanceCategorySubgroup = {
   id: string;
   groupId: string;
@@ -78,7 +83,6 @@ export type FinanceCategoryGroup = {
   updatedAt: string | null;
   subgroups: FinanceCategorySubgroup[];
 };
-
 export type MonthlyOpeningBalance = {
   id: string;
   monthRef: string;
@@ -186,6 +190,11 @@ export type StoreProductSelectionOption = {
   optionLabel: string;
 };
 
+export type OperationalDtfArtType =
+  | "minimalista"
+  | "full"
+  | "outro";
+
 export type DtfArtType = "minimalista" | "full" | "outro";
 
 export type DtfCatalogProduct = {
@@ -197,7 +206,7 @@ export type DtfStockItem = {
   id: string;
   nuvemshopProductId: string;
   productName: string;
-  artType: DtfArtType;
+  artType: OperationalDtfArtType;
   availableQty: number;
   reorderPoint: number;
   leadTimeDays: number;
@@ -271,6 +280,894 @@ export async function loadDebtModuleData() {
   }
 }
 
+export async function loadManualFinanceModuleData(selectedMonth: string) {
+  const supabase = createSupabaseServerClient();
+  const monthRef = normalizeMonthReference(selectedMonth) || getCurrentMonthReference();
+  const monthStart = `${monthRef}-01`;
+  const monthEnd = getMonthEndDate(monthRef);
+
+  if (!supabase.ok) {
+    return {
+      balance: null as MonthlyOpeningBalance | null,
+      effectiveOpeningBalance: null as number | null,
+      openingBalanceSource: "none" as ManualFinanceOpeningBalanceSource,
+      inheritedFromMonthRef: null as string | null,
+      movements: [] as ManualFinanceMovement[],
+      persistence: buildDisabledState(
+        `Persistencia desativada. Configure ${supabase.missing.join(" e ")} para salvar o financeiro manual no Supabase.`,
+      ),
+    };
+  }
+
+  try {
+    const [{ data: balanceData, error: balanceError }, { data: movementData, error: movementError }] =
+      await Promise.all([
+        supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(FINANCE_BALANCES_TABLE)
+          .select("*")
+          .lte("month_ref", monthStart)
+          .order("month_ref", { ascending: true }),
+        supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(FINANCE_MOVEMENTS_TABLE)
+          .select("*")
+          .lte("movement_date", monthEnd)
+          .order("movement_date", { ascending: true })
+          .order("created_at", { ascending: true }),
+      ]);
+
+    if (balanceError) {
+      throw balanceError;
+    }
+
+    if (movementError) {
+      throw movementError;
+    }
+
+    const allBalances: MonthlyOpeningBalance[] = (balanceData ?? []).map((row: Record<string, unknown>) =>
+      rowToMonthlyOpeningBalance(row as Record<string, unknown>),
+    );
+    const allMovements: ManualFinanceMovement[] = (movementData ?? []).map((row: Record<string, unknown>) =>
+      rowToManualFinanceMovement(row as Record<string, unknown>),
+    );
+    const balanceByMonth = new Map<string, MonthlyOpeningBalance>(
+      allBalances.map((balance: MonthlyOpeningBalance) => [balance.monthRef, balance]),
+    );
+    const movementNetByMonth = new Map<string, number>();
+
+    for (const movement of allMovements) {
+      const movementMonthRef = movement.movementDate.slice(0, 7);
+      const currentNet = movementNetByMonth.get(movementMonthRef) ?? 0;
+      const signedAmount = movement.type === "entrada" ? movement.amount : -movement.amount;
+      movementNetByMonth.set(movementMonthRef, currentNet + signedAmount);
+    }
+
+    const currentBalance = balanceByMonth.get(monthRef) ?? null;
+    const movements = allMovements.filter(
+      (movement: ManualFinanceMovement) => movement.movementDate.slice(0, 7) === monthRef,
+    );
+    const previousMonthRef = getPreviousMonthReference(monthRef);
+    const monthsWithHistory = Array.from(
+      new Set([
+        ...allBalances.map((balance: MonthlyOpeningBalance) => balance.monthRef),
+        ...allMovements.map((movement: ManualFinanceMovement) => movement.movementDate.slice(0, 7)),
+      ]),
+    )
+      .filter((value: string) => value < monthRef)
+      .sort();
+
+    let effectiveOpeningBalance: number | null = currentBalance?.openingBalance ?? null;
+    let openingBalanceSource: ManualFinanceOpeningBalanceSource =
+      currentBalance ? "manual" : "none";
+    let inheritedFromMonthRef: string | null = null;
+
+    if (!currentBalance && previousMonthRef && monthsWithHistory.length > 0) {
+      const monthsToProcess = buildMonthSequence(monthsWithHistory[0]!, previousMonthRef);
+      let carriedBalance = 0;
+
+      for (const processedMonthRef of monthsToProcess) {
+        const manualOpeningBalance = balanceByMonth.get(processedMonthRef)?.openingBalance;
+        const monthOpeningBalance = manualOpeningBalance ?? carriedBalance;
+        const monthNet = movementNetByMonth.get(processedMonthRef) ?? 0;
+        carriedBalance = monthOpeningBalance + monthNet;
+      }
+
+      effectiveOpeningBalance = carriedBalance;
+      openingBalanceSource = "previous_month";
+      inheritedFromMonthRef = previousMonthRef;
+    }
+
+    const latestUpdatedAt = getLatestUpdatedAt([
+      ...((balanceData ?? []) as Array<Record<string, unknown>>),
+      ...((movementData ?? []) as Array<Record<string, unknown>>),
+    ]);
+
+    return {
+      balance: currentBalance,
+      effectiveOpeningBalance,
+      openingBalanceSource,
+      inheritedFromMonthRef,
+      movements,
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          currentBalance || movements.length > 0
+            ? "Financeiro manual carregado do Supabase."
+            : "Supabase conectado. Ainda nao existem saldo inicial nem movimentacoes para este mes.",
+        updatedAt: latestUpdatedAt,
+      },
+    };
+  } catch (error) {
+    return {
+      balance: null as MonthlyOpeningBalance | null,
+      effectiveOpeningBalance: null as number | null,
+      openingBalanceSource: "none" as ManualFinanceOpeningBalanceSource,
+      inheritedFromMonthRef: null as string | null,
+      movements: [] as ManualFinanceMovement[],
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function saveMonthlyOpeningBalance(input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeMonthlyOpeningBalanceInput(input);
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_BALANCES_TABLE)
+      .upsert(
+        {
+          month_ref: `${row.monthRef}-01`,
+          opening_balance: row.openingBalance,
+          notes: row.notes,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: "month_ref",
+        },
+      )
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel salvar o saldo inicial do mes.");
+    }
+
+    return {
+      ok: true as const,
+      balance: rowToMonthlyOpeningBalance(data),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message: "Saldo inicial do mes salvo com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function createManualFinanceMovement(input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeManualFinanceMovementInput(input);
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_MOVEMENTS_TABLE)
+      .insert({
+        movement_date: row.movementDate,
+        movement_type: row.type,
+        title: row.title,
+        category: row.category,
+        amount: row.amount,
+        payment_method: row.paymentMethod,
+        notes: row.notes,
+        updated_at: new Date().toISOString(),
+      })
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel salvar a movimentacao financeira.");
+    }
+
+    return {
+      ok: true as const,
+      movement: rowToManualFinanceMovement(data),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          row.type === "entrada"
+            ? "Entrada manual registrada com sucesso."
+            : "Saida manual registrada com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function loadStockSelectionOptions() {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return [] as StockSelectionOption[];
+  }
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_TABLE)
+      .select("id, sku, color, size, total_qty, printed_qty, notes")
+      .order("sku", { ascending: true })
+      .order("color", { ascending: true })
+      .order("size", { ascending: true });
+
+    if (error) {
+      throw error;
+    }
+
+    return (data ?? []).map((row) => {
+      const total = getIntegerValue(row.total_qty);
+      const printedReal = Math.min(getIntegerValue(row.printed_qty), total);
+
+      return {
+        id: String(row.id ?? ""),
+        sku: String(row.sku ?? ""),
+        color: String(row.color ?? ""),
+        size: String(row.size ?? ""),
+        total,
+        printedReal,
+        plain: Math.max(total - printedReal, 0),
+        notes: String(row.notes ?? ""),
+      };
+    });
+  } catch {
+    return [] as StockSelectionOption[];
+  }
+}
+
+export async function loadSiteArtSelectionOptions() {
+  const credentials = getNuvemshopCredentials();
+
+  if (!credentials.ok) {
+    return [] as SiteArtSelectionOption[];
+  }
+
+  try {
+    const client = new NuvemshopClient(credentials.credentials);
+    const products = await fetchAllNuvemshopPages((params) =>
+      client.listProducts(params),
+    );
+
+    return buildSiteArtSelectionOptions(products);
+  } catch {
+    return [] as SiteArtSelectionOption[];
+  }
+}
+
+export async function loadStockLedgerModuleData(selectedMonth: string) {
+  const supabase = createSupabaseServerClient();
+  const monthRef = normalizeMonthReference(selectedMonth) || getCurrentMonthReference();
+  const monthStart = `${monthRef}-01`;
+  const monthEnd = getMonthEndDate(monthRef);
+
+  const [stockOptions, artOptions] = await Promise.all([
+    loadStockSelectionOptions(),
+    loadSiteArtSelectionOptions(),
+  ]);
+
+  if (!supabase.ok) {
+    return {
+      stockOptions,
+      artOptions,
+      movements: [] as StockMovement[],
+      persistence: buildDisabledState(
+        `Persistencia desativada. Configure ${supabase.missing.join(" e ")} para salvar as movimentacoes de estoque.`,
+      ),
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_MOVEMENTS_TABLE)
+      .select("*")
+      .gte("movement_date", monthStart)
+      .lte("movement_date", monthEnd)
+      .order("movement_date", { ascending: false })
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    const movements = (data ?? []).map(rowToStockMovement);
+
+    return {
+      stockOptions,
+      artOptions,
+      movements,
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          movements.length > 0
+            ? "Movimentacoes de estoque carregadas do Supabase."
+            : "Supabase conectado. Ainda nao existem movimentacoes de estoque neste mes.",
+        updatedAt: getLatestUpdatedAt((data ?? []) as Array<Record<string, unknown>>),
+      },
+    };
+  } catch (error) {
+    return {
+      stockOptions,
+      artOptions,
+      movements: [] as StockMovement[],
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function createManualStockEntry(input: unknown) {
+  return saveManualStockMovement("entrada", input);
+}
+
+export async function createManualStockExit(input: unknown) {
+  return saveManualStockMovement("saida", input);
+}
+
+export async function updateManualStockMovement(id: string, input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const movementId = String(id).trim();
+
+  if (!movementId) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Nao foi possivel identificar a movimentacao para editar."),
+    };
+  }
+
+  try {
+    const existingMovement = await loadStockMovementById(supabase.client, movementId);
+    const movementType = normalizeEditableStockMovementType(
+      isRecord(input) ? input.movementType : existingMovement.movementType,
+      existingMovement.movementType,
+    );
+    const row = normalizeManualStockMovementInput(movementType, input);
+
+    if (!row.sku || !row.color || !row.size) {
+      throw new Error("Selecione a base, a cor e o tamanho da camiseta.");
+    }
+
+    if (row.quantity <= 0) {
+      throw new Error("Informe uma quantidade valida para movimentar no estoque.");
+    }
+
+    const artDetails = await resolveStockArtSelection(row);
+    const movementPayload = buildManualStockMovementPayload(row, movementType, artDetails);
+    const currentMovement = {
+      ...existingMovement,
+      movementType,
+      sku: movementPayload.sku,
+      color: movementPayload.color,
+      size: movementPayload.size,
+      movementDate: movementPayload.movementDate,
+      quantity: movementPayload.quantity,
+      artName: movementPayload.artName,
+      artProductId: movementPayload.artProductId,
+      originType: movementPayload.originType,
+      originReference: movementPayload.originReference,
+      reasonCategory: movementPayload.reasonCategory,
+      reasonText: movementPayload.reasonText,
+      sourceModule: movementPayload.sourceModule,
+    } satisfies StockMovement;
+
+    const currentKey = buildStockKey(existingMovement.sku, existingMovement.color, existingMovement.size);
+    const nextKey = buildStockKey(currentMovement.sku, currentMovement.color, currentMovement.size);
+    const affectedBases = [
+      {
+        sku: existingMovement.sku,
+        color: existingMovement.color,
+        size: existingMovement.size,
+      },
+    ];
+
+    if (nextKey !== currentKey) {
+      affectedBases.push({
+        sku: currentMovement.sku,
+        color: currentMovement.color,
+        size: currentMovement.size,
+      });
+    }
+
+    const contexts = await loadStockMovementContexts(supabase.client, affectedBases);
+    const recalculatedPlans = buildStockRecalculationPlans(contexts, {
+      movementId,
+      mode: "update",
+      updatedMovement: currentMovement,
+    });
+
+    const nowIso = new Date().toISOString();
+    const { error: updateError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_MOVEMENTS_TABLE)
+      .update({
+        stock_item_id: null,
+        sku: currentMovement.sku,
+        color: currentMovement.color,
+        size: currentMovement.size,
+        movement_date: currentMovement.movementDate,
+        movement_type: currentMovement.movementType,
+        quantity: currentMovement.quantity,
+        art_name: currentMovement.artName,
+        art_product_id: currentMovement.artProductId,
+        origin_type: currentMovement.originType,
+        origin_reference: currentMovement.originReference,
+        reason_category: currentMovement.reasonCategory,
+        reason_text: currentMovement.reasonText,
+        source_module: currentMovement.sourceModule,
+      })
+      .eq("id", movementId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    await persistStockRecalculationPlans(supabase.client, recalculatedPlans, nowIso);
+
+    return {
+      ok: true as const,
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message: "Movimentacao de estoque atualizada com sucesso.",
+        updatedAt: nowIso,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+function buildManualStockMovementPayload(
+  row: ReturnType<typeof normalizeManualStockMovementInput>,
+  movementType: "entrada" | "saida",
+  artDetails: {
+    artName: string;
+    artProductId: string;
+  },
+) {
+  if (movementType === "saida" && row.originType === "venda" && !artDetails.artName) {
+    throw new Error("Selecione a arte vendida para registrar a saida da camiseta.");
+  }
+
+  const keepPlainStock = movementType === "saida" && row.alreadyPrinted;
+
+  return {
+    sku: row.sku,
+    color: row.color,
+    size: row.size,
+    movementDate: row.movementDate,
+    movementType,
+    quantity: row.quantity,
+    artName: artDetails.artName,
+    artProductId: artDetails.artProductId,
+    originType: row.originType,
+    originReference: row.originReference,
+    reasonCategory:
+      movementType === "entrada"
+        ? "entrada_manual_camiseta"
+        : keepPlainStock
+          ? "saida_ja_estampada_sem_baixa"
+          : "saida_manual_camiseta",
+    reasonText: keepPlainStock
+      ? [row.notes, "Ja estava estampada em outro lote; sem baixa da lisa."]
+          .filter(Boolean)
+          .join(" ")
+      : row.notes,
+    sourceModule: "estoque_manual",
+  };
+}
+
+async function loadStockMovementById(client: ServerSupabaseClient, movementId: string) {
+  const { data, error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(STOCK_MOVEMENTS_TABLE)
+    .select("*")
+    .eq("id", movementId)
+    .single();
+
+  if (error || !data) {
+    throw error || new Error("Nao foi possivel localizar a movimentacao de estoque.");
+  }
+
+  return rowToStockMovement(data);
+}
+
+async function loadStockMovementContexts(
+  client: ServerSupabaseClient,
+  bases: Array<{
+    sku: string;
+    color: string;
+    size: string;
+  }>,
+) {
+  const uniqueBases = Array.from(
+    new Map(
+      bases
+        .filter((base) => base.sku && base.color && base.size)
+        .map((base) => [buildStockKey(base.sku, base.color, base.size), base]),
+    ).values(),
+  );
+
+  return Promise.all(
+    uniqueBases.map((base) =>
+      loadStockMovementContextByBase(client, base.sku, base.color, base.size),
+    ),
+  );
+}
+
+async function loadStockMovementContextByBase(
+  client: ServerSupabaseClient,
+  sku: string,
+  color: string,
+  size: string,
+) {
+  const { data: movementRows, error: movementError } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(STOCK_MOVEMENTS_TABLE)
+    .select("*")
+    .eq("sku", sku)
+    .eq("color", color)
+    .eq("size", size)
+    .order("movement_date", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (movementError) {
+    throw movementError;
+  }
+
+  const firstMovement = movementRows?.[0] ?? null;
+  const resolvedSku = String(firstMovement?.sku ?? sku);
+  const resolvedColor = String(firstMovement?.color ?? color);
+  const resolvedSize = String(firstMovement?.size ?? size);
+  const { data: stockRow, error: stockError } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(STOCK_TABLE)
+    .select("id, sku, color, size, total_qty, printed_qty, notes, reorder_point, lead_time_days")
+    .eq("sku", resolvedSku)
+    .eq("color", resolvedColor)
+    .eq("size", resolvedSize)
+    .maybeSingle();
+
+  if (stockError) {
+    throw stockError;
+  }
+
+  return {
+    key: buildStockKey(resolvedSku, resolvedColor, resolvedSize),
+    sku: resolvedSku,
+    color: resolvedColor,
+    size: resolvedSize,
+    persistedMovements: (movementRows ?? []).map(rowToStockMovement),
+    stockRow: stockRow ? (stockRow as Record<string, unknown>) : null,
+  };
+}
+
+function buildStockRecalculationPlans(
+  contexts: Array<Awaited<ReturnType<typeof loadStockMovementContextByBase>>>,
+  params:
+    | {
+        movementId: string;
+        mode: "delete";
+      }
+    | {
+        movementId: string;
+        mode: "update";
+        updatedMovement: StockMovement;
+      },
+) {
+  return contexts.map((context) => {
+    const currentPlain = getCurrentPlainFromStockRow(context.stockRow);
+    const currentDelta = context.persistedMovements.reduce(
+      (sum, movement) => sum + getStockMovementDelta(movement),
+      0,
+    );
+    const startingPlain = currentPlain - currentDelta;
+
+    if (startingPlain < 0) {
+      throw new Error(
+        `O historico de ${context.sku} ${context.color} ${context.size} ficou inconsistente para recalcular o estoque.`,
+      );
+    }
+
+    const modifiedMovements =
+      params.mode === "update"
+        ? buildUpdatedMovementSet(context.persistedMovements, params.movementId, params.updatedMovement)
+        : context.persistedMovements.filter((movement) => movement.id !== params.movementId);
+
+    const recalculatedMovements = recalculateStockMovementSequence(modifiedMovements, startingPlain);
+    const printedQty = getPrintedQtyFromStockRow(context.stockRow);
+    const totalQty = recalculatedMovements.length
+      ? recalculatedMovements[recalculatedMovements.length - 1]?.plainAfter ?? startingPlain
+      : startingPlain;
+
+    return {
+      key: context.key,
+      sku: context.sku,
+      color: context.color,
+      size: context.size,
+      stockRow: context.stockRow,
+      printedQty,
+      totalQty: Math.max(totalQty + printedQty, 0),
+      movementUpdates: recalculatedMovements.map((movement) => ({
+        id: movement.id,
+        plainBefore: movement.plainBefore,
+        plainAfter: movement.plainAfter,
+      })),
+    };
+  });
+}
+
+function buildUpdatedMovementSet(
+  persistedMovements: StockMovement[],
+  movementId: string,
+  updatedMovement: StockMovement,
+) {
+  return persistedMovements.map((movement) => (movement.id === movementId ? updatedMovement : movement));
+}
+
+function recalculateStockMovementSequence(movements: StockMovement[], startingPlain: number) {
+  const orderedMovements = movements
+    .slice()
+    .sort(
+      (left, right) =>
+        left.movementDate.localeCompare(right.movementDate) ||
+        (left.createdAt || "").localeCompare(right.createdAt || "") ||
+        left.id.localeCompare(right.id),
+    );
+
+  let runningPlain = startingPlain;
+
+  return orderedMovements.map((movement) => {
+    const nextPlain = runningPlain + getStockMovementDelta(movement);
+
+    if (nextPlain < 0) {
+      throw new Error(
+        `A movimentacao ${movement.sku} ${movement.color} ${movement.size} deixaria o estoque negativo.`,
+      );
+    }
+
+    const recalculatedMovement = {
+      ...movement,
+      plainBefore: runningPlain,
+      plainAfter: nextPlain,
+    };
+
+    runningPlain = nextPlain;
+    return recalculatedMovement;
+  });
+}
+
+async function persistStockRecalculationPlans(
+  client: ServerSupabaseClient,
+  plans: ReturnType<typeof buildStockRecalculationPlans>,
+  nowIso: string,
+) {
+  for (const plan of plans) {
+    const stockItemId = await upsertStockRowForRecalculation(client, plan, nowIso);
+
+    for (const movement of plan.movementUpdates) {
+      const { error } = await client
+        .schema(OPERATIONS_SCHEMA)
+        .from(STOCK_MOVEMENTS_TABLE)
+        .update({
+          stock_item_id: stockItemId || null,
+          plain_before: movement.plainBefore,
+          plain_after: movement.plainAfter,
+        })
+        .eq("id", movement.id);
+
+      if (error) {
+        throw error;
+      }
+    }
+  }
+}
+
+async function upsertStockRowForRecalculation(
+  client: ServerSupabaseClient,
+  plan: ReturnType<typeof buildStockRecalculationPlans>[number],
+  nowIso: string,
+) {
+  if (plan.stockRow?.id) {
+    const { data, error } = await client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_TABLE)
+      .update({
+        total_qty: plan.totalQty,
+        updated_at: nowIso,
+      })
+      .eq("id", String(plan.stockRow.id))
+      .select("id")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel recalcular o saldo da base no estoque.");
+    }
+
+    return String(data.id ?? "");
+  }
+
+  if (plan.totalQty <= 0) {
+    return "";
+  }
+
+  const { data, error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(STOCK_TABLE)
+    .insert({
+      sku: plan.sku,
+      color: plan.color,
+      size: plan.size,
+      total_qty: plan.totalQty,
+      printed_qty: 0,
+      reorder_point: 0,
+      lead_time_days: 10,
+      notes: "",
+      updated_at: nowIso,
+    })
+    .select("id")
+    .single();
+  if (error || !data) {
+    throw error || new Error("Nao foi possivel recriar a base do estoque apos recalcular.");
+  }
+
+  return String(data.id ?? "");
+}
+
+function getCurrentPlainFromStockRow(row: Record<string, unknown> | null) {
+  const total = getIntegerValue(row?.total_qty);
+  const printed = Math.min(getIntegerValue(row?.printed_qty), total);
+  return Math.max(total - printed, 0);
+}
+
+function getPrintedQtyFromStockRow(row: Record<string, unknown> | null) {
+  const total = getIntegerValue(row?.total_qty);
+  return Math.min(getIntegerValue(row?.printed_qty), total);
+}
+
+function getStockMovementDelta(
+  movement: {
+    movementType: StockMovement["movementType"];
+    quantity: number;
+    reasonCategory?: string;
+    plainBefore?: number;
+    plainAfter?: number;
+  },
+) {
+  if (movement.movementType === "entrada") {
+    return movement.quantity;
+  }
+
+  if (movement.movementType === "saida") {
+    return movement.reasonCategory === "saida_ja_estampada_sem_baixa" ? 0 : movement.quantity * -1;
+  }
+
+  return (movement.plainAfter ?? 0) - (movement.plainBefore ?? 0);
+}
+
+export async function deleteManualStockMovement(id: string) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const movementId = String(id).trim();
+
+  if (!movementId) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Nao foi possivel identificar a movimentacao para excluir."),
+    };
+  }
+
+  try {
+    const existingMovement = await loadStockMovementById(supabase.client, movementId);
+    const contexts = await loadStockMovementContexts(supabase.client, [
+      {
+        sku: existingMovement.sku,
+        color: existingMovement.color,
+        size: existingMovement.size,
+      },
+    ]);
+    const recalculatedPlans = buildStockRecalculationPlans(contexts, {
+      movementId,
+      mode: "delete",
+    });
+    const nowIso = new Date().toISOString();
+
+    const { error: deleteError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_MOVEMENTS_TABLE)
+      .delete()
+      .eq("id", movementId);
+
+    if (deleteError) {
+      throw deleteError;
+    }
+
+    await persistStockRecalculationPlans(supabase.client, recalculatedPlans, nowIso);
+
+    return {
+      ok: true as const,
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message: "Movimentacao de estoque excluida com sucesso.",
+        updatedAt: nowIso,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
 export async function loadManualFinanceModuleData(selectedMonth: string) {
   const supabase = createSupabaseServerClient();
   const monthRef = normalizeMonthReference(selectedMonth) || getCurrentMonthReference();
@@ -602,46 +1499,190 @@ export async function createManualFinanceMovement(input: unknown) {
 }
 
 export async function loadStockSelectionOptions() {
+async function saveManualStockMovement(
+  movementType: "entrada" | "saida",
+  input: unknown,
+) {
   const supabase = createSupabaseServerClient();
 
   if (!supabase.ok) {
-    return [] as StockSelectionOption[];
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeManualStockMovementInput(movementType, input);
+
+  if (!row.sku || !row.color || !row.size) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Selecione a base, a cor e o tamanho da camiseta."),
+    };
+  }
+
+  if (row.quantity <= 0) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Informe uma quantidade valida para movimentar no estoque."),
+    };
   }
 
   try {
-    const { data, error } = await supabase.client
+    const artDetails = await resolveStockArtSelection(row);
+    const movementPayload = buildManualStockMovementPayload(row, movementType, artDetails);
+
+    const { data: existingRow, error: existingError } = await supabase.client
       .schema(OPERATIONS_SCHEMA)
       .from(STOCK_TABLE)
-      .select("id, sku, color, size, total_qty, printed_qty, notes")
-      .order("sku", { ascending: true })
-      .order("color", { ascending: true })
-      .order("size", { ascending: true });
+      .select(
+        "id, sku, color, size, total_qty, printed_qty, notes, reorder_point, lead_time_days, updated_at",
+      )
+      .eq("sku", row.sku)
+      .eq("color", row.color)
+      .eq("size", row.size)
+      .maybeSingle();
 
-    if (error) {
-      throw error;
+    if (existingError) {
+      throw existingError;
     }
 
-    return (data ?? []).map((row) => {
-      const total = getIntegerValue(row.total_qty);
-      const printedReal = Math.min(getIntegerValue(row.printed_qty), total);
+    const previousTotal = getIntegerValue(existingRow?.total_qty);
+    const previousPrinted = Math.min(getIntegerValue(existingRow?.printed_qty), previousTotal);
+    const previousPlain = Math.max(previousTotal - previousPrinted, 0);
+    const keepPlainStock = getStockMovementDelta(movementPayload) === 0;
 
-      return {
-        id: String(row.id ?? ""),
-        sku: String(row.sku ?? ""),
-        color: String(row.color ?? ""),
-        size: String(row.size ?? ""),
-        total,
-        printedReal,
-        plain: Math.max(total - printedReal, 0),
-        notes: String(row.notes ?? ""),
-      };
+    if (movementType === "saida" && !keepPlainStock && previousPlain < row.quantity) {
+      throw new Error(
+        `Nao ha lisa suficiente em estoque. Restam ${previousPlain} unidades para ${row.sku} ${row.color} ${row.size}.`,
+      );
+    }
+
+    const nextTotal = keepPlainStock
+      ? previousTotal
+      : movementType === "entrada"
+        ? previousTotal + row.quantity
+        : previousTotal - row.quantity;
+
+    let persistedRow = existingRow ?? null;
+
+    if (!keepPlainStock) {
+      const operation = existingRow?.id
+        ? supabase.client
+            .schema(OPERATIONS_SCHEMA)
+            .from(STOCK_TABLE)
+            .update({
+              total_qty: nextTotal,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", existingRow.id)
+        : supabase.client
+            .schema(OPERATIONS_SCHEMA)
+            .from(STOCK_TABLE)
+            .insert({
+              sku: row.sku,
+              color: row.color,
+              size: row.size,
+              total_qty: nextTotal,
+              printed_qty: 0,
+              reorder_point: 0,
+              lead_time_days: 10,
+              notes: "",
+            });
+
+      const { data, error } = await operation.select("*").single();
+
+      if (error || !data) {
+        throw error || new Error("Nao foi possivel atualizar o saldo de camisetas.");
+      }
+
+      persistedRow = data;
+    }
+
+    const nextTotalValue = getIntegerValue(persistedRow?.total_qty);
+    const nextPrinted = Math.min(getIntegerValue(persistedRow?.printed_qty), nextTotalValue);
+    const nextPlain = Math.max(nextTotalValue - nextPrinted, 0);
+    const stockItemId = String(persistedRow?.id ?? existingRow?.id ?? "");
+
+    await createStockMovement(supabase.client, {
+      stockItemId,
+      sku: movementPayload.sku,
+      color: movementPayload.color,
+      size: movementPayload.size,
+      movementDate: movementPayload.movementDate,
+      movementType: movementPayload.movementType,
+      quantity: movementPayload.quantity,
+      plainBefore: previousPlain,
+      plainAfter: nextPlain,
+      artName: movementPayload.artName,
+      artProductId: movementPayload.artProductId,
+      originType: movementPayload.originType,
+      originReference: movementPayload.originReference,
+      reasonCategory: movementPayload.reasonCategory,
+      reasonText: movementPayload.reasonText,
+      sourceModule: movementPayload.sourceModule,
     });
-  } catch {
-    return [] as StockSelectionOption[];
+
+    return {
+      ok: true as const,
+      item: {
+        id: stockItemId,
+        sku: row.sku,
+        color: row.color,
+        size: row.size,
+        total: nextTotalValue,
+        printedReal: nextPrinted,
+        plain: nextPlain,
+        notes: String(persistedRow?.notes ?? "").trim(),
+      } satisfies StockSelectionOption,
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          movementType === "entrada"
+            ? "Entrada de camisetas registrada com sucesso."
+            : keepPlainStock
+              ? "Saida registrada como ja estampada, sem baixar a lisa."
+            : "Saida de camisetas registrada com sucesso.",
+        updatedAt: typeof persistedRow?.updated_at === "string" ? persistedRow.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
   }
 }
 
-export async function loadSiteArtSelectionOptions() {
+async function resolveStockArtSelection(
+  row: ReturnType<typeof normalizeManualStockMovementInput>,
+) {
+  const fallback = {
+    artName: row.artName,
+    artProductId: row.artProductId,
+  };
+
+  if (!row.artSelectionId) {
+    return fallback;
+  }
+
+  const options = await loadSiteArtSelectionOptions();
+  const selected = options.find((option) => option.id === row.artSelectionId);
+
+  if (!selected) {
+    throw new Error("Nao foi possivel localizar a arte selecionada da Nuvem Shop.");
+  }
+
+  return {
+    artName: selected.artName,
+    artProductId: selected.productId,
+  };
+}
+
+export async function loadStoreProductSelectionOptions() {
   const credentials = getNuvemshopCredentials();
 
   if (!credentials.ok) {
@@ -909,6 +1950,8 @@ async function resolveStockArtSelection(
 
   if (!row.artSelectionId) {
     return fallback;
+    return [] as StoreProductSelectionOption[];
+
   }
 
   const options = await loadSiteArtSelectionOptions();
@@ -924,6 +1967,9 @@ async function resolveStockArtSelection(
     normalizeSize(selected.size) !== normalizeSize(row.size)
   ) {
     throw new Error("A arte selecionada nao bate com a base, cor e tamanho informados.");
+    return buildStoreProductSelectionOptions(products);
+  } catch {
+    return [] as StoreProductSelectionOption[];
   }
 
   return {
@@ -1539,6 +2585,7 @@ function rowToManualFinanceMovement(row: Record<string, unknown>): ManualFinance
     groupName: String(row.group_name ?? "").trim(),
     subgroupId: row.subgroup_id ? String(row.subgroup_id) : null,
     subgroupName: String(row.subgroup_name ?? "").trim(),
+    category: String(row.category ?? "").trim(),
     amount: Math.max(getNumberValue(row.amount), 0),
     paymentMethod: normalizeDebtPaymentMethod(row.payment_method),
     notes: String(row.notes ?? "").trim(),
@@ -1570,7 +2617,6 @@ function rowToFinanceCategorySubgroup(row: Record<string, unknown>): FinanceCate
     updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
   };
 }
-
 function rowToStockItem(
   row: Record<string, unknown>,
   publishedByBaseColorSize: Map<string, number>,
@@ -1846,7 +2892,7 @@ function normalizeDebtBillingFrequency(value: unknown): DebtBillingFrequency {
   return "mensal";
 }
 
-function normalizeDtfArtType(value: unknown): DtfArtType {
+function normalizeDtfArtType(value: unknown): OperationalDtfArtType {
   const normalized = String(value ?? "").trim().toLowerCase();
 
   if (
@@ -1868,6 +2914,19 @@ function normalizeStockMovementType(value: unknown): StockMovementType {
   }
 
   return "ajuste";
+}
+
+function normalizeEditableStockMovementType(
+  value: unknown,
+  fallback: StockMovementType,
+): "entrada" | "saida" {
+  const normalized = normalizeStockMovementType(value);
+
+  if (normalized === "entrada" || normalized === "saida") {
+    return normalized;
+  }
+
+  return fallback === "entrada" ? "entrada" : "saida";
 }
 
 function getFallbackDebts(): InternalDebt[] {
@@ -2386,6 +3445,58 @@ function buildSiteArtSelectionOptions(products: NuvemshopProduct[]) {
   });
 }
 
+function buildStoreProductSelectionOptions(products: NuvemshopProduct[]) {
+  const items: StoreProductSelectionOption[] = [];
+
+  for (const product of products) {
+    const productName = getLocalizedText(product.name).trim();
+
+    if (!productName || product.published === false) {
+      continue;
+    }
+
+    const attributeNames = (product.attributes || []).map((value) =>
+      getLocalizedText(value),
+    );
+
+    for (const variant of product.variants || []) {
+      const variantId = String(variant.id ?? "").trim();
+
+      if (!variantId) {
+        continue;
+      }
+
+      const { color, size } = getVariantColorAndSize(
+        attributeNames,
+        variant.values || [],
+      );
+      const fallbackDetail = String(variant.sku ?? "").trim();
+      const publishedStock = getVariantStockValue(variant);
+      const resolvedColor = color || "Cor unica";
+      const resolvedSize = size || fallbackDetail || "Tam. unico";
+      const resolvedSku = fallbackDetail || "-";
+
+      items.push({
+        id: `${String(product.id)}:${variantId}`,
+        productName,
+        productId: String(product.id),
+        variantId,
+        sku: resolvedSku,
+        color: resolvedColor,
+        size: resolvedSize,
+        publishedStock,
+        optionLabel: `${productName} · ${resolvedColor} · ${resolvedSize}`,
+      });
+    }
+  }
+
+  return items.sort((left, right) =>
+    `${left.productName}-${left.color}-${left.size}`.localeCompare(
+      `${right.productName}-${right.color}-${right.size}`,
+    ),
+  );
+}
+
 function getVariantColorAndSize(
   attributeNames: string[],
   values: NuvemshopLocalizedText[],
@@ -2794,7 +3905,6 @@ function getPreviousMonthReference(monthRef: string) {
   const previousMonth = new Date(year, monthIndex - 1, 1);
   return `${previousMonth.getFullYear()}-${String(previousMonth.getMonth() + 1).padStart(2, "0")}`;
 }
-
 function buildStoreProductSelectionOptions(products: NuvemshopProduct[]) {
   const items: StoreProductSelectionOption[] = [];
 
@@ -3104,6 +4214,10 @@ function buildDisabledState(message: string): OperationalPersistenceState {
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
+    return `Nao foi possivel acessar o Supabase: ${error.message}. Confirme que o schema repeticao_maxima foi adicionado em Settings > API > Exposed schemas e que o SQL foi executado com os GRANTs de acesso ao schema e as tabelas.`;
+  }
+
+  if (isRecord(error) && typeof error.message === "string" && error.message.trim()) {
     return `Nao foi possivel acessar o Supabase: ${error.message}. Confirme que o schema repeticao_maxima foi adicionado em Settings > API > Exposed schemas e que o SQL foi executado com os GRANTs de acesso ao schema e as tabelas.`;
   }
 
