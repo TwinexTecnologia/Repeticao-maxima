@@ -69,6 +69,36 @@ CREATE TABLE IF NOT EXISTS repeticao_maxima.financeiro_movimentacoes (
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.financeiro_movimentacoes TO anon, authenticated, service_role;
 
+CREATE TABLE IF NOT EXISTS repeticao_maxima.financeiro_grupos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  movement_type TEXT NOT NULL DEFAULT 'saida',
+  name TEXT NOT NULL DEFAULT '',
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (movement_type IN ('entrada', 'saida')),
+  UNIQUE (movement_type, name)
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.financeiro_grupos TO anon, authenticated, service_role;
+
+CREATE TABLE IF NOT EXISTS repeticao_maxima.financeiro_subgrupos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  group_id UUID NOT NULL REFERENCES repeticao_maxima.financeiro_grupos(id) ON DELETE CASCADE,
+  name TEXT NOT NULL DEFAULT '',
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (group_id, name)
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.financeiro_subgrupos TO anon, authenticated, service_role;
+
+ALTER TABLE repeticao_maxima.financeiro_movimentacoes
+  ADD COLUMN IF NOT EXISTS group_id UUID REFERENCES repeticao_maxima.financeiro_grupos(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS subgroup_id UUID REFERENCES repeticao_maxima.financeiro_subgrupos(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS group_name TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS subgroup_name TEXT NOT NULL DEFAULT '';
 CREATE TABLE IF NOT EXISTS repeticao_maxima.estoque_base (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   sku TEXT NOT NULL,
