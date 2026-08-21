@@ -1,10 +1,14 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { Fragment } from "react";
 
 import { AppShell } from "@/components/app-shell";
 import styles from "@/components/panel.module.css";
 import {
+  createFinanceCategoryGroup,
+  createFinanceCategorySubgroup,
   createManualFinanceMovement,
+  type FinanceCategoryGroup,
   loadManualFinanceModuleData,
   saveMonthlyOpeningBalance,
   type DebtPaymentMethod,
@@ -13,22 +17,6 @@ import {
 } from "@/lib/operacoes/repository";
 
 const DEFAULT_CURRENT_BANK_BALANCE = 331.34;
-
-const MOVEMENT_CATEGORIES = [
-  "Vendas TikTok",
-  "Vendas loja",
-  "Estorno de venda",
-  "DTF",
-  "Fornecedor",
-  "Marketing",
-  "Frete",
-  "Embalagem",
-  "Operacional",
-  "Imposto",
-  "Retirada",
-  "Transferencia",
-  "Outro",
-] as const;
 
 const PAYMENT_METHOD_OPTIONS: Array<{
   value: DebtPaymentMethod;
@@ -48,6 +36,17 @@ type PageProps = {
 
 type LedgerRow = ManualFinanceMovement & {
   balanceAfter: number;
+};
+
+type FinanceBreakdownGroup = {
+  key: string;
+  name: string;
+  total: number;
+  subgroups: Array<{
+    key: string;
+    name: string;
+    total: number;
+  }>;
 };
 
 function getSearchValue(
@@ -179,6 +178,65 @@ function buildLedgerRows(
   return rows.reverse();
 }
 
+function buildFinanceBreakdown(
+  movements: ManualFinanceMovement[],
+  type: FinancialMovementType,
+): FinanceBreakdownGroup[] {
+  const groups = new Map<
+    string,
+    {
+      key: string;
+      name: string;
+      total: number;
+      subgroups: Map<string, { key: string; name: string; total: number }>;
+    }
+  >();
+
+  for (const movement of movements) {
+    if (movement.type !== type) {
+      continue;
+    }
+
+    const groupName = movement.groupName.trim() || movement.category.trim() || "Sem grupo";
+    const groupKey = movement.groupId || groupName.toLowerCase();
+    const currentGroup = groups.get(groupKey) ?? {
+      key: groupKey,
+      name: groupName,
+      total: 0,
+      subgroups: new Map<string, { key: string; name: string; total: number }>(),
+    };
+
+    currentGroup.total += movement.amount;
+
+    const subgroupName = movement.subgroupName.trim();
+
+    if (subgroupName) {
+      const subgroupKey = movement.subgroupId || `${groupKey}:${subgroupName.toLowerCase()}`;
+      const currentSubgroup = currentGroup.subgroups.get(subgroupKey) ?? {
+        key: subgroupKey,
+        name: subgroupName,
+        total: 0,
+      };
+
+      currentSubgroup.total += movement.amount;
+      currentGroup.subgroups.set(subgroupKey, currentSubgroup);
+    }
+
+    groups.set(groupKey, currentGroup);
+  }
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      key: group.key,
+      name: group.name,
+      total: group.total,
+      subgroups: Array.from(group.subgroups.values()).sort(
+        (left, right) => right.total - left.total || left.name.localeCompare(right.name, "pt-BR"),
+      ),
+    }))
+    .sort((left, right) => right.total - left.total || left.name.localeCompare(right.name, "pt-BR"));
+}
+
 function appendFlashToRedirect(
   basePath: string,
   status: "success" | "error",
@@ -236,6 +294,75 @@ async function saveOpeningBalanceAction(formData: FormData) {
   redirect(appendFlashToRedirect(redirectTo, "success", "Saldo inicial salvo com sucesso."));
 }
 
+async function createFinanceGroupAction(formData: FormData) {
+  "use server";
+
+  const redirectTo = String(formData.get("redirectTo") ?? "/pedidos").trim() || "/pedidos";
+  const movementType =
+    String(formData.get("movementType") ?? "saida").trim().toLowerCase() === "entrada"
+      ? "entrada"
+      : "saida";
+  const name = String(formData.get("name") ?? "").trim();
+
+  if (!name) {
+    redirect(appendFlashToRedirect(redirectTo, "error", "Informe o nome do grupo."));
+  }
+
+  const result = await createFinanceCategoryGroup({
+    movementType,
+    name,
+  });
+
+  if (!result.ok) {
+    redirect(
+      appendFlashToRedirect(
+        redirectTo,
+        "error",
+        result.persistence.message || "Nao foi possivel cadastrar o grupo.",
+      ),
+    );
+  }
+
+  revalidatePath("/pedidos");
+  revalidatePath("/financeiro");
+  redirect(appendFlashToRedirect(redirectTo, "success", "Grupo cadastrado com sucesso."));
+}
+
+async function createFinanceSubgroupAction(formData: FormData) {
+  "use server";
+
+  const redirectTo = String(formData.get("redirectTo") ?? "/pedidos").trim() || "/pedidos";
+  const groupId = String(formData.get("groupId") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+
+  if (!groupId) {
+    redirect(appendFlashToRedirect(redirectTo, "error", "Selecione o grupo do subgrupo."));
+  }
+
+  if (!name) {
+    redirect(appendFlashToRedirect(redirectTo, "error", "Informe o nome do subgrupo."));
+  }
+
+  const result = await createFinanceCategorySubgroup({
+    groupId,
+    name,
+  });
+
+  if (!result.ok) {
+    redirect(
+      appendFlashToRedirect(
+        redirectTo,
+        "error",
+        result.persistence.message || "Nao foi possivel cadastrar o subgrupo.",
+      ),
+    );
+  }
+
+  revalidatePath("/pedidos");
+  revalidatePath("/financeiro");
+  redirect(appendFlashToRedirect(redirectTo, "success", "Subgrupo cadastrado com sucesso."));
+}
+
 async function registerMovementAction(formData: FormData) {
   "use server";
 
@@ -245,7 +372,8 @@ async function registerMovementAction(formData: FormData) {
   const type = String(formData.get("type") ?? "saida").trim().toLowerCase() === "entrada"
     ? "entrada"
     : "saida";
-  const category = String(formData.get("category") ?? "").trim();
+  const groupId = String(formData.get("groupId") ?? "").trim();
+  const subgroupId = String(formData.get("subgroupId") ?? "").trim();
   const paymentMethod = String(formData.get("paymentMethod") ?? "outro").trim();
   const movementDate = String(formData.get("movementDate") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
@@ -270,10 +398,21 @@ async function registerMovementAction(formData: FormData) {
     );
   }
 
+  if (!groupId) {
+    redirect(
+      appendFlashToRedirect(
+        redirectTo,
+        "error",
+        `Selecione um grupo para a ${type === "entrada" ? "entrada" : "saida"}.`,
+      ),
+    );
+  }
+
   const result = await createManualFinanceMovement({
     type,
     title,
-    category,
+    groupId,
+    subgroupId,
     amount,
     paymentMethod,
     movementDate,
@@ -308,8 +447,12 @@ function MovementForm(props: {
   redirectTo: string;
   selectedMonth: string;
   sheetId: string;
+  groups: FinanceCategoryGroup[];
 }) {
   const isEntry = props.type === "entrada";
+  const availableGroups = props.groups
+    .filter((group) => group.active && group.movementType === props.type)
+    .sort((left, right) => left.name.localeCompare(right.name, "pt-BR"));
 
   return (
     <form action={registerMovementAction} className={styles.formStack}>
@@ -331,13 +474,38 @@ function MovementForm(props: {
       </label>
 
       <label className={styles.filterField}>
-        <span>Categoria</span>
-        <select name="category" defaultValue={isEntry ? "Vendas TikTok" : "Operacional"}>
-          {MOVEMENT_CATEGORIES.map((category) => (
-            <option key={category} value={category}>
-              {category}
+        <span>Grupo</span>
+        <select name="groupId" defaultValue={availableGroups[0]?.id || ""} required>
+          <option value="">
+            {availableGroups.length > 0
+              ? "Selecione o grupo"
+              : "Cadastre um grupo antes de registrar"}
+          </option>
+          {availableGroups.map((group) => (
+            <option key={group.id} value={group.id}>
+              {group.name}
             </option>
           ))}
+        </select>
+      </label>
+
+      <label className={styles.filterField}>
+        <span>Subgrupo</span>
+        <select name="subgroupId" defaultValue="">
+          <option value="">Sem subgrupo</option>
+          {availableGroups.map((group) =>
+            group.subgroups.length > 0 ? (
+              <optgroup key={group.id} label={group.name}>
+                {group.subgroups
+                  .filter((subgroup) => subgroup.active)
+                  .map((subgroup) => (
+                    <option key={subgroup.id} value={subgroup.id}>
+                      {subgroup.name}
+                    </option>
+                  ))}
+              </optgroup>
+            ) : null,
+          )}
         </select>
       </label>
 
@@ -419,6 +587,9 @@ export default async function PedidosPage({ searchParams }: PageProps) {
   );
   const currentBalance = openingBalance + totalEntries - totalExpenses;
   const ledgerRows = buildLedgerRows(manualFinanceData.movements, openingBalance);
+  const activeGroups = manualFinanceData.groups.filter((group) => group.active);
+  const entryBreakdown = buildFinanceBreakdown(manualFinanceData.movements, "entrada");
+  const expenseBreakdown = buildFinanceBreakdown(manualFinanceData.movements, "saida");
 
   return (
     <AppShell
@@ -506,6 +677,73 @@ export default async function PedidosPage({ searchParams }: PageProps) {
           <article className={styles.configCard}>
             <div className={styles.sectionHeader}>
               <div>
+                <div className={styles.listTitle}>Grupos e subgrupos</div>
+                <p className={styles.sectionSubtitle}>
+                  Cadastre aqui a estrutura do financeiro para lancar cada entrada e saida de forma mais detalhada.
+                </p>
+              </div>
+            </div>
+
+            <div className={styles.formStack}>
+              <form action={createFinanceGroupAction} className={styles.formStack}>
+                <input type="hidden" name="redirectTo" value={redirectTo} />
+
+                <label className={styles.filterField}>
+                  <span>Tipo do grupo</span>
+                  <select name="movementType" defaultValue="saida">
+                    <option value="entrada">Entrada</option>
+                    <option value="saida">Saida</option>
+                  </select>
+                </label>
+
+                <label className={styles.filterField}>
+                  <span>Novo grupo</span>
+                  <input type="text" name="name" placeholder="Ex.: Fornecedor, Marketing, Vendas" required />
+                </label>
+
+                <div className={styles.filterActions}>
+                  <button type="submit" className={styles.primaryButton}>
+                    Cadastrar grupo
+                  </button>
+                </div>
+              </form>
+
+              <form action={createFinanceSubgroupAction} className={styles.formStack}>
+                <input type="hidden" name="redirectTo" value={redirectTo} />
+
+                <label className={styles.filterField}>
+                  <span>Grupo pai</span>
+                  <select name="groupId" defaultValue="">
+                    <option value="">
+                      {activeGroups.length > 0
+                        ? "Selecione o grupo"
+                        : "Cadastre um grupo antes do subgrupo"}
+                    </option>
+                    {activeGroups.map((group) => (
+                      <option key={group.id} value={group.id}>
+                        {labelForMovementType(group.movementType)} · {group.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className={styles.filterField}>
+                  <span>Novo subgrupo</span>
+                  <input type="text" name="name" placeholder="Ex.: Moletom, Trafego Meta, Shopee" required />
+                </label>
+
+                <div className={styles.filterActions}>
+                  <button type="submit" className={styles.secondaryButton}>
+                    Cadastrar subgrupo
+                  </button>
+                </div>
+              </form>
+            </div>
+          </article>
+
+          <article className={styles.configCard}>
+            <div className={styles.sectionHeader}>
+              <div>
                 <div className={styles.listTitle}>Movimentacoes manuais</div>
                 <p className={styles.sectionSubtitle}>
                   Registre qualquer entrada ou saida conforme o extrato real do banco.
@@ -533,6 +771,7 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                     redirectTo={redirectTo}
                     selectedMonth={selectedMonth}
                     sheetId={entrySheetId}
+                    groups={manualFinanceData.groups}
                   />
                 </div>
               </div>
@@ -556,6 +795,7 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                     redirectTo={redirectTo}
                     selectedMonth={selectedMonth}
                     sheetId={expenseSheetId}
+                    groups={manualFinanceData.groups}
                   />
                 </div>
               </div>
@@ -641,6 +881,102 @@ export default async function PedidosPage({ searchParams }: PageProps) {
             <div className={styles.metricHint}>Lancamentos manuais registrados no mes</div>
           </article>
         </div>
+
+        <div className={styles.configGrid}>
+          <article className={styles.configCard}>
+            <div className={styles.sectionHeader}>
+              <div>
+                <div className={styles.listTitle}>Saidas por grupo e subgrupo</div>
+                <p className={styles.sectionSubtitle}>
+                  Aqui voce enxerga quanto cada grupo e cada subgrupo consumiram no mes.
+                </p>
+              </div>
+            </div>
+
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Grupo</th>
+                    <th>Subgrupo</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {expenseBreakdown.length > 0 ? (
+                    expenseBreakdown.map((group) => (
+                      <Fragment key={group.key}>
+                        <tr>
+                          <td>{group.name}</td>
+                          <td>Total do grupo</td>
+                          <td className={styles.profitAttention}>{formatMoney(group.total)}</td>
+                        </tr>
+                        {group.subgroups.map((subgroup) => (
+                          <tr key={subgroup.key}>
+                            <td>{group.name}</td>
+                            <td>{subgroup.name}</td>
+                            <td>{formatMoney(subgroup.total)}</td>
+                          </tr>
+                        ))}
+                      </Fragment>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={3}>Nenhuma saida agrupada registrada neste mes.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </article>
+
+          <article className={styles.configCard}>
+            <div className={styles.sectionHeader}>
+              <div>
+                <div className={styles.listTitle}>Entradas por grupo e subgrupo</div>
+                <p className={styles.sectionSubtitle}>
+                  Aqui voce separa o que entrou por linha principal e tambem pelos detalhes.
+                </p>
+              </div>
+            </div>
+
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Grupo</th>
+                    <th>Subgrupo</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {entryBreakdown.length > 0 ? (
+                    entryBreakdown.map((group) => (
+                      <Fragment key={group.key}>
+                        <tr>
+                          <td>{group.name}</td>
+                          <td>Total do grupo</td>
+                          <td className={styles.profitPositive}>{formatMoney(group.total)}</td>
+                        </tr>
+                        {group.subgroups.map((subgroup) => (
+                          <tr key={subgroup.key}>
+                            <td>{group.name}</td>
+                            <td>{subgroup.name}</td>
+                            <td>{formatMoney(subgroup.total)}</td>
+                          </tr>
+                        ))}
+                      </Fragment>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={3}>Nenhuma entrada agrupada registrada neste mes.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </div>
       </section>
 
       <section className={styles.section}>
@@ -659,7 +995,8 @@ export default async function PedidosPage({ searchParams }: PageProps) {
               <tr>
                 <th>Data</th>
                 <th>Tipo</th>
-                <th>Categoria</th>
+                <th>Grupo</th>
+                <th>Subgrupo</th>
                 <th>Descricao</th>
                 <th>Pagamento</th>
                 <th>Entrada</th>
@@ -679,7 +1016,8 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                     >
                       {labelForMovementType(row.type)}
                     </td>
-                    <td>{row.category}</td>
+                    <td>{row.groupName || row.category || "-"}</td>
+                    <td>{row.subgroupName || "-"}</td>
                     <td>
                       {row.title}
                       {row.notes ? (
@@ -701,7 +1039,7 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={8}>Nenhuma movimentacao manual registrada neste mes.</td>
+                  <td colSpan={9}>Nenhuma movimentacao manual registrada neste mes.</td>
                 </tr>
               )}
             </tbody>
