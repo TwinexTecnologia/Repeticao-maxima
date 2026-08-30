@@ -13,6 +13,10 @@ import type {
 
 const OPERATIONS_SCHEMA = "repeticao_maxima";
 const DEBTS_TABLE = "dividas_internas";
+const FINANCE_BALANCES_TABLE = "financeiro_saldos_mensais";
+const FINANCE_MOVEMENTS_TABLE = "financeiro_movimentacoes";
+const FINANCE_GROUPS_TABLE = "financeiro_grupos";
+const FINANCE_SUBGROUPS_TABLE = "financeiro_subgrupos";
 const STOCK_TABLE = "estoque_base";
 const STOCK_MOVEMENTS_TABLE = "estoque_movimentacoes";
 const DTF_TABLE = "estoque_dtf";
@@ -53,6 +57,55 @@ export type InternalDebt = {
   createdAt: string | null;
   updatedAt: string | null;
 };
+
+export type FinancialMovementType = "entrada" | "saida";
+
+export type FinanceCategorySubgroup = {
+  id: string;
+  groupId: string;
+  name: string;
+  active: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type FinanceCategoryGroup = {
+  id: string;
+  movementType: FinancialMovementType;
+  name: string;
+  active: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+  subgroups: FinanceCategorySubgroup[];
+};
+
+export type MonthlyOpeningBalance = {
+  id: string;
+  monthRef: string;
+  openingBalance: number;
+  notes: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type ManualFinanceMovement = {
+  id: string;
+  movementDate: string;
+  type: FinancialMovementType;
+  title: string;
+  category: string;
+  groupId: string | null;
+  groupName: string;
+  subgroupId: string | null;
+  subgroupName: string;
+  amount: number;
+  paymentMethod: DebtPaymentMethod;
+  notes: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type ManualFinanceOpeningBalanceSource = "manual" | "previous_month" | "none";
 
 export type BaseStockItem = {
   id: string;
@@ -95,10 +148,15 @@ export type StockMovement = {
   sku: string;
   color: string;
   size: string;
+  movementDate: string;
   movementType: StockMovementType;
   quantity: number;
   plainBefore: number;
   plainAfter: number;
+  artName: string;
+  artProductId: string;
+  originType: string;
+  originReference: string;
   reasonCategory: string;
   reasonText: string;
   sourceModule: string;
@@ -108,10 +166,24 @@ export type StockMovement = {
 export type SiteArtSelectionOption = {
   id: string;
   artName: string;
+  productId: string;
+  variantId: string;
   sku: string;
   color: string;
   size: string;
   publishedStock: number;
+};
+
+export type StoreProductSelectionOption = {
+  id: string;
+  productName: string;
+  productId: string;
+  variantId: string;
+  sku: string;
+  color: string;
+  size: string;
+  publishedStock: number;
+  optionLabel: string;
 };
 
 export type DtfArtType = "minimalista" | "full" | "outro";
@@ -199,6 +271,453 @@ export async function loadDebtModuleData() {
   }
 }
 
+export async function loadManualFinanceModuleData(selectedMonth: string) {
+  const supabase = createSupabaseServerClient();
+  const monthRef = normalizeMonthReference(selectedMonth) || getCurrentMonthReference();
+  const monthStart = `${monthRef}-01`;
+  const monthEnd = getMonthEndDate(monthRef);
+
+  if (!supabase.ok) {
+    return {
+      balance: null as MonthlyOpeningBalance | null,
+      effectiveOpeningBalance: null as number | null,
+      openingBalanceSource: "none" as ManualFinanceOpeningBalanceSource,
+      inheritedFromMonthRef: null as string | null,
+      groups: [] as FinanceCategoryGroup[],
+      movements: [] as ManualFinanceMovement[],
+      persistence: buildDisabledState(
+        `Persistencia desativada. Configure ${supabase.missing.join(" e ")} para salvar o financeiro manual no Supabase.`,
+      ),
+    };
+  }
+
+  try {
+    const [
+      { data: balanceData, error: balanceError },
+      { data: movementData, error: movementError },
+      { data: groupData, error: groupError },
+      { data: subgroupData, error: subgroupError },
+    ] =
+      await Promise.all([
+        supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(FINANCE_BALANCES_TABLE)
+          .select("*")
+          .lte("month_ref", monthStart)
+          .order("month_ref", { ascending: true }),
+        supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(FINANCE_MOVEMENTS_TABLE)
+          .select("*")
+          .lte("movement_date", monthEnd)
+          .order("movement_date", { ascending: true })
+          .order("created_at", { ascending: true }),
+        supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(FINANCE_GROUPS_TABLE)
+          .select("*")
+          .order("movement_type", { ascending: true })
+          .order("name", { ascending: true }),
+        supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(FINANCE_SUBGROUPS_TABLE)
+          .select("*")
+          .order("name", { ascending: true }),
+      ]);
+
+    if (balanceError) {
+      throw balanceError;
+    }
+
+    if (movementError) {
+      throw movementError;
+    }
+
+    if (groupError) {
+      throw groupError;
+    }
+
+    if (subgroupError) {
+      throw subgroupError;
+    }
+
+    const allBalances = (balanceData ?? []).map((row) =>
+      rowToMonthlyOpeningBalance(row as Record<string, unknown>),
+    );
+    const allMovements = (movementData ?? []).map((row) =>
+      rowToManualFinanceMovement(row as Record<string, unknown>),
+    );
+    const allGroups = (groupData ?? []).map((row) =>
+      rowToFinanceCategoryGroupBase(row as Record<string, unknown>),
+    );
+    const allSubgroups = (subgroupData ?? []).map((row) =>
+      rowToFinanceCategorySubgroup(row as Record<string, unknown>),
+    );
+    const subgroupsByGroup = new Map<string, FinanceCategorySubgroup[]>();
+
+    for (const subgroup of allSubgroups) {
+      const current = subgroupsByGroup.get(subgroup.groupId) ?? [];
+      current.push(subgroup);
+      subgroupsByGroup.set(subgroup.groupId, current);
+    }
+
+    const groups = allGroups.map((group) => ({
+      ...group,
+      subgroups: (subgroupsByGroup.get(group.id) ?? []).sort((left, right) =>
+        left.name.localeCompare(right.name, "pt-BR"),
+      ),
+    }));
+    const balanceByMonth = new Map(allBalances.map((balance) => [balance.monthRef, balance]));
+    const movementNetByMonth = new Map<string, number>();
+
+    for (const movement of allMovements) {
+      const movementMonthRef = movement.movementDate.slice(0, 7);
+      const currentNet = movementNetByMonth.get(movementMonthRef) ?? 0;
+      const signedAmount = movement.type === "entrada" ? movement.amount : -movement.amount;
+      movementNetByMonth.set(movementMonthRef, currentNet + signedAmount);
+    }
+
+    const currentBalance = balanceByMonth.get(monthRef) ?? null;
+    const movements = allMovements.filter((movement) => movement.movementDate.slice(0, 7) === monthRef);
+    const previousMonthRef = getPreviousMonthReference(monthRef);
+    const monthsWithHistory = Array.from(
+      new Set([
+        ...allBalances.map((balance) => balance.monthRef),
+        ...allMovements.map((movement) => movement.movementDate.slice(0, 7)),
+      ]),
+    )
+      .filter((value) => value < monthRef)
+      .sort();
+
+    let effectiveOpeningBalance: number | null = currentBalance?.openingBalance ?? null;
+    let openingBalanceSource: ManualFinanceOpeningBalanceSource =
+      currentBalance ? "manual" : "none";
+    let inheritedFromMonthRef: string | null = null;
+
+    if (!currentBalance && previousMonthRef && monthsWithHistory.length > 0) {
+      const monthsToProcess = buildMonthSequence(monthsWithHistory[0]!, previousMonthRef);
+      let carriedBalance = 0;
+
+      for (const processedMonthRef of monthsToProcess) {
+        const manualOpeningBalance = balanceByMonth.get(processedMonthRef)?.openingBalance;
+        const monthOpeningBalance =
+          manualOpeningBalance ?? carriedBalance;
+        const monthNet = movementNetByMonth.get(processedMonthRef) ?? 0;
+        carriedBalance = monthOpeningBalance + monthNet;
+      }
+
+      effectiveOpeningBalance = carriedBalance;
+      openingBalanceSource = "previous_month";
+      inheritedFromMonthRef = previousMonthRef;
+    }
+
+    const latestUpdatedAt = getLatestUpdatedAt([
+      ...((balanceData ?? []) as Array<Record<string, unknown>>),
+      ...((movementData ?? []) as Array<Record<string, unknown>>),
+    ]);
+
+    return {
+      balance: currentBalance,
+      effectiveOpeningBalance,
+      openingBalanceSource,
+      inheritedFromMonthRef,
+      groups,
+      movements,
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          currentBalance || movements.length > 0
+            ? "Financeiro manual carregado do Supabase."
+            : "Supabase conectado. Ainda nao existem saldo inicial nem movimentacoes para este mes.",
+        updatedAt: latestUpdatedAt,
+      },
+    };
+  } catch (error) {
+    return {
+      balance: null as MonthlyOpeningBalance | null,
+      effectiveOpeningBalance: null as number | null,
+      openingBalanceSource: "none" as ManualFinanceOpeningBalanceSource,
+      inheritedFromMonthRef: null as string | null,
+      groups: [] as FinanceCategoryGroup[],
+      movements: [] as ManualFinanceMovement[],
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function saveMonthlyOpeningBalance(input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeMonthlyOpeningBalanceInput(input);
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_BALANCES_TABLE)
+      .upsert(
+        {
+          month_ref: `${row.monthRef}-01`,
+          opening_balance: row.openingBalance,
+          notes: row.notes,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: "month_ref",
+        },
+      )
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel salvar o saldo inicial do mes.");
+    }
+
+    return {
+      ok: true as const,
+      balance: rowToMonthlyOpeningBalance(data),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message: "Saldo inicial do mes salvo com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function createManualFinanceMovement(input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeManualFinanceMovementInput(input);
+
+  try {
+    if (!row.groupId) {
+      throw new Error("Selecione um grupo para salvar essa movimentacao.");
+    }
+
+    const { data: groupData, error: groupError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_GROUPS_TABLE)
+      .select("*")
+      .eq("id", row.groupId)
+      .single();
+
+    if (groupError || !groupData) {
+      throw groupError || new Error("Selecione um grupo valido para a movimentacao.");
+    }
+
+    const group = rowToFinanceCategoryGroupBase(groupData as Record<string, unknown>);
+
+    if (group.movementType !== row.type) {
+      throw new Error(
+        `Selecione um grupo de ${row.type === "entrada" ? "entrada" : "saida"} valido.`,
+      );
+    }
+
+    let subgroup: FinanceCategorySubgroup | null = null;
+
+    if (row.subgroupId) {
+      const { data: subgroupData, error: subgroupError } = await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(FINANCE_SUBGROUPS_TABLE)
+        .select("*")
+        .eq("id", row.subgroupId)
+        .eq("group_id", group.id)
+        .single();
+
+      if (subgroupError || !subgroupData) {
+        throw subgroupError || new Error("Selecione um subgrupo valido para esse grupo.");
+      }
+
+      subgroup = rowToFinanceCategorySubgroup(subgroupData as Record<string, unknown>);
+    }
+
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_MOVEMENTS_TABLE)
+      .insert({
+        movement_date: row.movementDate,
+        movement_type: row.type,
+        title: row.title,
+        category: subgroup?.name || group.name,
+        group_id: group.id,
+        subgroup_id: subgroup?.id || null,
+        group_name: group.name,
+        subgroup_name: subgroup?.name || "",
+        amount: row.amount,
+        payment_method: row.paymentMethod,
+        notes: row.notes,
+        updated_at: new Date().toISOString(),
+      })
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel salvar a movimentacao financeira.");
+    }
+
+    return {
+      ok: true as const,
+      movement: rowToManualFinanceMovement(data),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          row.type === "entrada"
+            ? "Entrada manual registrada com sucesso."
+            : "Saida manual registrada com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function updateManualFinanceMovement(id: string, input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeManualFinanceMovementInput(input);
+
+  try {
+    if (!id.trim()) {
+      throw new Error("Selecione uma movimentacao valida para editar.");
+    }
+
+    if (!row.groupId) {
+      throw new Error("Selecione um grupo para salvar essa movimentacao.");
+    }
+
+    const { data: existingMovement, error: existingMovementError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_MOVEMENTS_TABLE)
+      .select("id")
+      .eq("id", id)
+      .single();
+
+    if (existingMovementError || !existingMovement) {
+      throw existingMovementError || new Error("A movimentacao informada nao foi encontrada.");
+    }
+
+    const { data: groupData, error: groupError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_GROUPS_TABLE)
+      .select("*")
+      .eq("id", row.groupId)
+      .single();
+
+    if (groupError || !groupData) {
+      throw groupError || new Error("Selecione um grupo valido para a movimentacao.");
+    }
+
+    const group = rowToFinanceCategoryGroupBase(groupData as Record<string, unknown>);
+
+    if (group.movementType !== row.type) {
+      throw new Error(
+        `Selecione um grupo de ${row.type === "entrada" ? "entrada" : "saida"} valido.`,
+      );
+    }
+
+    let subgroup: FinanceCategorySubgroup | null = null;
+
+    if (row.subgroupId) {
+      const { data: subgroupData, error: subgroupError } = await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(FINANCE_SUBGROUPS_TABLE)
+        .select("*")
+        .eq("id", row.subgroupId)
+        .eq("group_id", group.id)
+        .single();
+
+      if (subgroupError || !subgroupData) {
+        throw subgroupError || new Error("Selecione um subgrupo valido para esse grupo.");
+      }
+
+      subgroup = rowToFinanceCategorySubgroup(subgroupData as Record<string, unknown>);
+    }
+
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_MOVEMENTS_TABLE)
+      .update({
+        movement_date: row.movementDate,
+        movement_type: row.type,
+        title: row.title,
+        category: subgroup?.name || group.name,
+        group_id: group.id,
+        subgroup_id: subgroup?.id || null,
+        group_name: group.name,
+        subgroup_name: subgroup?.name || "",
+        amount: row.amount,
+        payment_method: row.paymentMethod,
+        notes: row.notes,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel atualizar a movimentacao financeira.");
+    }
+
+    return {
+      ok: true as const,
+      movement: rowToManualFinanceMovement(data),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          row.type === "entrada"
+            ? "Entrada manual atualizada com sucesso."
+            : "Saida manual atualizada com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
 export async function loadStockSelectionOptions() {
   const supabase = createSupabaseServerClient();
 
@@ -256,6 +775,278 @@ export async function loadSiteArtSelectionOptions() {
   } catch {
     return [] as SiteArtSelectionOption[];
   }
+}
+
+export async function loadStockLedgerModuleData(selectedMonth: string) {
+  const supabase = createSupabaseServerClient();
+  const monthRef = normalizeMonthReference(selectedMonth) || getCurrentMonthReference();
+  const monthStart = `${monthRef}-01`;
+  const monthEnd = getMonthEndDate(monthRef);
+
+  const [stockOptions, artOptions] = await Promise.all([
+    loadStockSelectionOptions(),
+    loadSiteArtSelectionOptions(),
+  ]);
+
+  if (!supabase.ok) {
+    return {
+      stockOptions,
+      artOptions,
+      movements: [] as StockMovement[],
+      persistence: buildDisabledState(
+        `Persistencia desativada. Configure ${supabase.missing.join(" e ")} para salvar as movimentacoes de estoque.`,
+      ),
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_MOVEMENTS_TABLE)
+      .select("*")
+      .gte("movement_date", monthStart)
+      .lte("movement_date", monthEnd)
+      .order("movement_date", { ascending: false })
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    const movements = (data ?? []).map(rowToStockMovement);
+
+    return {
+      stockOptions,
+      artOptions,
+      movements,
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          movements.length > 0
+            ? "Movimentacoes de estoque carregadas do Supabase."
+            : "Supabase conectado. Ainda nao existem movimentacoes de estoque neste mes.",
+        updatedAt: getLatestUpdatedAt((data ?? []) as Array<Record<string, unknown>>),
+      },
+    };
+  } catch (error) {
+    return {
+      stockOptions,
+      artOptions,
+      movements: [] as StockMovement[],
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function createManualStockEntry(input: unknown) {
+  return saveManualStockMovement("entrada", input);
+}
+
+export async function createManualStockExit(input: unknown) {
+  return saveManualStockMovement("saida", input);
+}
+
+async function saveManualStockMovement(
+  movementType: "entrada" | "saida",
+  input: unknown,
+) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeManualStockMovementInput(movementType, input);
+
+  if (!row.sku || !row.color || !row.size) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Selecione a base, a cor e o tamanho da camiseta."),
+    };
+  }
+
+  if (row.quantity <= 0) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Informe uma quantidade valida para movimentar no estoque."),
+    };
+  }
+
+  try {
+    const artDetails = await resolveStockArtSelection(row);
+    if (movementType === "saida" && row.originType === "venda" && !artDetails.artName) {
+      throw new Error("Selecione a arte vendida para registrar a saida da camiseta.");
+    }
+
+    const { data: existingRow, error: existingError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_TABLE)
+      .select(
+        "id, sku, color, size, total_qty, printed_qty, notes, reorder_point, lead_time_days, updated_at",
+      )
+      .eq("sku", row.sku)
+      .eq("color", row.color)
+      .eq("size", row.size)
+      .maybeSingle();
+
+    if (existingError) {
+      throw existingError;
+    }
+
+    const previousTotal = getIntegerValue(existingRow?.total_qty);
+    const previousPrinted = Math.min(getIntegerValue(existingRow?.printed_qty), previousTotal);
+    const previousPlain = Math.max(previousTotal - previousPrinted, 0);
+    const keepPlainStock = movementType === "saida" && row.alreadyPrinted;
+
+    if (movementType === "saida" && !keepPlainStock && previousPlain < row.quantity) {
+      throw new Error(
+        `Nao ha lisa suficiente em estoque. Restam ${previousPlain} unidades para ${row.sku} ${row.color} ${row.size}.`,
+      );
+    }
+
+    const nextTotal = keepPlainStock
+      ? previousTotal
+      : movementType === "entrada"
+        ? previousTotal + row.quantity
+        : previousTotal - row.quantity;
+
+    let persistedRow = existingRow ?? null;
+
+    if (!keepPlainStock) {
+      const operation = existingRow?.id
+        ? supabase.client
+            .schema(OPERATIONS_SCHEMA)
+            .from(STOCK_TABLE)
+            .update({
+              total_qty: nextTotal,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", existingRow.id)
+        : supabase.client
+            .schema(OPERATIONS_SCHEMA)
+            .from(STOCK_TABLE)
+            .insert({
+              sku: row.sku,
+              color: row.color,
+              size: row.size,
+              total_qty: nextTotal,
+              printed_qty: 0,
+              reorder_point: 0,
+              lead_time_days: 10,
+              notes: "",
+            });
+
+      const { data, error } = await operation.select("*").single();
+
+      if (error || !data) {
+        throw error || new Error("Nao foi possivel atualizar o saldo de camisetas.");
+      }
+
+      persistedRow = data;
+    }
+
+    const nextTotalValue = getIntegerValue(persistedRow?.total_qty);
+    const nextPrinted = Math.min(getIntegerValue(persistedRow?.printed_qty), nextTotalValue);
+    const nextPlain = Math.max(nextTotalValue - nextPrinted, 0);
+    const stockItemId = String(persistedRow?.id ?? existingRow?.id ?? "");
+
+    await createStockMovement(supabase.client, {
+      stockItemId,
+      sku: row.sku,
+      color: row.color,
+      size: row.size,
+      movementDate: row.movementDate,
+      movementType,
+      quantity: row.quantity,
+      plainBefore: previousPlain,
+      plainAfter: nextPlain,
+      artName: artDetails.artName,
+      artProductId: artDetails.artProductId,
+      originType: row.originType,
+      originReference: row.originReference,
+      reasonCategory:
+        movementType === "entrada"
+          ? "entrada_manual_camiseta"
+          : keepPlainStock
+            ? "saida_ja_estampada_sem_baixa"
+            : "saida_manual_camiseta",
+      reasonText: keepPlainStock
+        ? [row.notes, "Ja estava estampada em outro lote; sem baixa da lisa."]
+            .filter(Boolean)
+            .join(" ")
+        : row.notes,
+      sourceModule: "estoque_manual",
+    });
+
+    return {
+      ok: true as const,
+      item: {
+        id: stockItemId,
+        sku: row.sku,
+        color: row.color,
+        size: row.size,
+        total: nextTotalValue,
+        printedReal: nextPrinted,
+        plain: nextPlain,
+        notes: String(persistedRow?.notes ?? "").trim(),
+      } satisfies StockSelectionOption,
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          movementType === "entrada"
+            ? "Entrada de camisetas registrada com sucesso."
+            : keepPlainStock
+              ? "Saida registrada como ja estampada, sem baixar a lisa."
+            : "Saida de camisetas registrada com sucesso.",
+        updatedAt: typeof persistedRow?.updated_at === "string" ? persistedRow.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+async function resolveStockArtSelection(
+  row: ReturnType<typeof normalizeManualStockMovementInput>,
+) {
+  const fallback = {
+    artName: row.artName,
+    artProductId: row.artProductId,
+  };
+
+  if (!row.artSelectionId) {
+    return fallback;
+  }
+
+  const options = await loadSiteArtSelectionOptions();
+  const selected = options.find((option) => option.id === row.artSelectionId);
+
+  if (!selected) {
+    throw new Error("Nao foi possivel localizar a arte selecionada da Nuvem Shop.");
+  }
+
+  if (
+    normalizeProductBase(selected.sku) !== normalizeProductBase(row.sku) ||
+    normalizeColor(selected.color) !== normalizeColor(row.color) ||
+    normalizeSize(selected.size) !== normalizeSize(row.size)
+  ) {
+    throw new Error("A arte selecionada nao bate com a base, cor e tamanho informados.");
+  }
+
+  return {
+    artName: selected.artName,
+    artProductId: selected.productId,
+  };
 }
 
 export async function createDebt(input: unknown) {
@@ -840,6 +1631,63 @@ function rowToDebt(row: Record<string, unknown>): InternalDebt {
   };
 }
 
+function rowToMonthlyOpeningBalance(row: Record<string, unknown>): MonthlyOpeningBalance {
+  return {
+    id: String(row.id ?? ""),
+    monthRef: String(row.month_ref ?? "").slice(0, 7),
+    openingBalance: getNumberValue(row.opening_balance),
+    notes: String(row.notes ?? "").trim(),
+    createdAt: typeof row.created_at === "string" ? row.created_at : null,
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+  };
+}
+
+function rowToManualFinanceMovement(row: Record<string, unknown>): ManualFinanceMovement {
+  return {
+    id: String(row.id ?? ""),
+    movementDate: normalizeDate(row.movement_date) || getTodayDate(),
+    type: normalizeFinancialMovementType(row.movement_type),
+    title: String(row.title ?? "").trim(),
+    category:
+      String(row.subgroup_name ?? "").trim() ||
+      String(row.group_name ?? "").trim() ||
+      String(row.category ?? "").trim(),
+    groupId: row.group_id ? String(row.group_id) : null,
+    groupName: String(row.group_name ?? "").trim(),
+    subgroupId: row.subgroup_id ? String(row.subgroup_id) : null,
+    subgroupName: String(row.subgroup_name ?? "").trim(),
+    amount: Math.max(getNumberValue(row.amount), 0),
+    paymentMethod: normalizeDebtPaymentMethod(row.payment_method),
+    notes: String(row.notes ?? "").trim(),
+    createdAt: typeof row.created_at === "string" ? row.created_at : null,
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+  };
+}
+
+function rowToFinanceCategoryGroupBase(
+  row: Record<string, unknown>,
+): Omit<FinanceCategoryGroup, "subgroups"> {
+  return {
+    id: String(row.id ?? ""),
+    movementType: normalizeFinancialMovementType(row.movement_type),
+    name: String(row.name ?? "").trim(),
+    active: Boolean(row.active ?? true),
+    createdAt: typeof row.created_at === "string" ? row.created_at : null,
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+  };
+}
+
+function rowToFinanceCategorySubgroup(row: Record<string, unknown>): FinanceCategorySubgroup {
+  return {
+    id: String(row.id ?? ""),
+    groupId: String(row.group_id ?? "").trim(),
+    name: String(row.name ?? "").trim(),
+    active: Boolean(row.active ?? true),
+    createdAt: typeof row.created_at === "string" ? row.created_at : null,
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+  };
+}
+
 function rowToStockItem(
   row: Record<string, unknown>,
   publishedByBaseColorSize: Map<string, number>,
@@ -891,10 +1739,15 @@ function rowToStockMovement(row: Record<string, unknown>): StockMovement {
     sku: String(row.sku ?? ""),
     color: String(row.color ?? ""),
     size: String(row.size ?? ""),
+    movementDate: normalizeDate(row.movement_date) || getTodayDate(),
     movementType: normalizeStockMovementType(row.movement_type),
     quantity: Math.max(getIntegerValue(row.quantity), 0),
     plainBefore: Math.max(getIntegerValue(row.plain_before), 0),
     plainAfter: Math.max(getIntegerValue(row.plain_after), 0),
+    artName: String(row.art_name ?? "").trim(),
+    artProductId: String(row.art_product_id ?? "").trim(),
+    originType: String(row.origin_type ?? "").trim(),
+    originReference: String(row.origin_reference ?? "").trim(),
     reasonCategory: String(row.reason_category ?? "").trim(),
     reasonText: String(row.reason_text ?? "").trim(),
     sourceModule: String(row.source_module ?? "").trim(),
@@ -947,6 +1800,51 @@ function normalizeDebtInput(input: unknown) {
   };
 }
 
+function normalizeMonthlyOpeningBalanceInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+  const monthRef = normalizeMonthReference(source.monthRef) || getCurrentMonthReference();
+
+  return {
+    monthRef,
+    openingBalance: getNumberValue(source.openingBalance),
+    notes: String(source.notes ?? "").trim(),
+  };
+}
+
+function normalizeManualFinanceMovementInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+
+  return {
+    movementDate: normalizeDate(source.movementDate) || getTodayDate(),
+    type: normalizeFinancialMovementType(source.type),
+    title: String(source.title ?? "").trim() || "Movimentacao manual",
+    category: String(source.category ?? "").trim() || "Operacional",
+    groupId: String(source.groupId ?? "").trim(),
+    subgroupId: String(source.subgroupId ?? "").trim(),
+    amount: Math.max(getNumberValue(source.amount), 0),
+    paymentMethod: normalizeDebtPaymentMethod(source.paymentMethod),
+    notes: String(source.notes ?? "").trim(),
+  };
+}
+
+function normalizeFinanceCategoryGroupInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+
+  return {
+    movementType: normalizeFinancialMovementType(source.movementType),
+    name: String(source.name ?? "").trim(),
+  };
+}
+
+function normalizeFinanceCategorySubgroupInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+
+  return {
+    groupId: String(source.groupId ?? "").trim(),
+    name: String(source.name ?? "").trim(),
+  };
+}
+
 function normalizeStockInput(input: unknown) {
   const source = isRecord(input) ? input : {};
   const total = Math.max(getIntegerValue(source.total), 0);
@@ -985,6 +1883,35 @@ function normalizeDtfInput(input: unknown) {
   };
 }
 
+function normalizeManualStockMovementInput(
+  movementType: "entrada" | "saida",
+  input: unknown,
+) {
+  const source = isRecord(input) ? input : {};
+  const alreadyPrintedValue = String(source.alreadyPrinted ?? "").trim().toLowerCase();
+
+  return {
+    sku: String(source.sku ?? "").trim(),
+    color: String(source.color ?? "").trim(),
+    size: String(source.size ?? "").trim(),
+    quantity: Math.max(getIntegerValue(source.quantity), 0),
+    movementDate: normalizeDate(source.movementDate) || getTodayDate(),
+    originType: String(source.originType ?? "").trim() || "manual",
+    originReference: String(source.originReference ?? "").trim(),
+    artSelectionId: String(source.artSelectionId ?? "").trim(),
+    artName: String(source.artName ?? "").trim(),
+    artProductId: String(source.artProductId ?? "").trim(),
+    alreadyPrinted:
+      movementType === "saida" &&
+      (alreadyPrintedValue === "true" ||
+        alreadyPrintedValue === "1" ||
+        alreadyPrintedValue === "on" ||
+        alreadyPrintedValue === "yes"),
+    notes: String(source.notes ?? "").trim(),
+    movementType,
+  };
+}
+
 function normalizeDebtStatus(value: unknown): DebtStatus {
   const normalized = String(value ?? "").trim().toLowerCase();
 
@@ -999,6 +1926,10 @@ function normalizeDebtStatus(value: unknown): DebtStatus {
   }
 
   return "aberta";
+}
+
+function normalizeFinancialMovementType(value: unknown): FinancialMovementType {
+  return String(value ?? "").trim().toLowerCase() === "entrada" ? "entrada" : "saida";
 }
 
 function normalizeDebtPaymentMethod(value: unknown): DebtPaymentMethod {
@@ -1546,7 +2477,7 @@ function buildSiteArtSelectionOptions(products: NuvemshopProduct[]) {
       );
       const publishedStock = getVariantStockValue(variant);
 
-      if (!color || !size || publishedStock <= 0) {
+      if (!color || !size) {
         continue;
       }
 
@@ -1554,6 +2485,8 @@ function buildSiteArtSelectionOptions(products: NuvemshopProduct[]) {
         items.push({
           id: `${String(product.id)}:${String(variant.id ?? "")}:${baseCategory}`,
           artName,
+          productId: String(product.id),
+          variantId: String(variant.id ?? ""),
           sku: baseCategory,
           color,
           size,
@@ -1860,6 +2793,15 @@ function normalizeDate(value: unknown) {
   return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : "";
 }
 
+function normalizeMonthReference(value: unknown) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const trimmed = value.trim();
+  return /^\d{4}-\d{2}$/.test(trimmed) ? trimmed : "";
+}
+
 function formatDebtMonth(value: string) {
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) {
@@ -1952,6 +2894,261 @@ function getTodayDate() {
   return formatDateForDb(new Date());
 }
 
+function getCurrentMonthReference() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function getPreviousMonthReference(monthRef: string) {
+  const [yearText, monthText] = monthRef.split("-");
+  const year = Number.parseInt(yearText || "", 10);
+  const monthIndex = Number.parseInt(monthText || "", 10) - 1;
+
+  if (!Number.isFinite(year) || !Number.isFinite(monthIndex)) {
+    return "";
+  }
+
+  const previousMonth = new Date(year, monthIndex - 1, 1);
+  return `${previousMonth.getFullYear()}-${String(previousMonth.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function buildStoreProductSelectionOptions(products: NuvemshopProduct[]) {
+  const items: StoreProductSelectionOption[] = [];
+
+  for (const product of products) {
+    const productName = getLocalizedText(product.name).trim();
+
+    if (!productName || product.published === false) {
+      continue;
+    }
+
+    const attributeNames = (product.attributes || []).map((value) =>
+      getLocalizedText(value),
+    );
+
+    for (const variant of product.variants || []) {
+      const variantId = String(variant.id ?? "").trim();
+
+      if (!variantId) {
+        continue;
+      }
+
+      const { color, size } = getVariantColorAndSize(
+        attributeNames,
+        variant.values || [],
+      );
+      const fallbackDetail = String(variant.sku ?? "").trim();
+      const publishedStock = getVariantStockValue(variant);
+      const resolvedColor = color || "Cor unica";
+      const resolvedSize = size || fallbackDetail || "Tam. unico";
+      const resolvedSku = fallbackDetail || "-";
+
+      items.push({
+        id: `${String(product.id)}:${variantId}`,
+        productName,
+        productId: String(product.id),
+        variantId,
+        sku: resolvedSku,
+        color: resolvedColor,
+        size: resolvedSize,
+        publishedStock,
+        optionLabel: `${productName} · ${resolvedColor} · ${resolvedSize}`,
+      });
+    }
+  }
+
+  return items.sort((left, right) =>
+    `${left.productName}-${left.color}-${left.size}`.localeCompare(
+      `${right.productName}-${right.color}-${right.size}`,
+    ),
+  );
+}
+
+function buildMonthSequence(startMonthRef: string, endMonthRef: string) {
+  if (startMonthRef > endMonthRef) {
+    return [] as string[];
+  }
+
+  const [startYearText, startMonthText] = startMonthRef.split("-");
+  const startYear = Number.parseInt(startYearText || "", 10);
+  const startMonthIndex = Number.parseInt(startMonthText || "", 10) - 1;
+
+  if (!Number.isFinite(startYear) || !Number.isFinite(startMonthIndex)) {
+    return [] as string[];
+  }
+
+  const sequence: string[] = [];
+  const cursor = new Date(startYear, startMonthIndex, 1);
+
+  while (true) {
+    const monthRef = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
+    sequence.push(monthRef);
+
+    if (monthRef >= endMonthRef) {
+      return sequence;
+    }
+
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+}
+
+export async function createFinanceCategoryGroup(input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeFinanceCategoryGroupInput(input);
+
+  if (!row.name) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Informe o nome do grupo."),
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_GROUPS_TABLE)
+      .insert({
+        movement_type: row.movementType,
+        name: row.name,
+        active: true,
+        updated_at: new Date().toISOString(),
+      })
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel cadastrar o grupo financeiro.");
+    }
+
+    return {
+      ok: true as const,
+      group: rowToFinanceCategoryGroupBase(data as Record<string, unknown>),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message: "Grupo financeiro cadastrado com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function createFinanceCategorySubgroup(input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeFinanceCategorySubgroupInput(input);
+
+  if (!row.groupId) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Selecione o grupo pai do subgrupo."),
+    };
+  }
+
+  if (!row.name) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Informe o nome do subgrupo."),
+    };
+  }
+
+  try {
+    const { data: groupData, error: groupError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_GROUPS_TABLE)
+      .select("id")
+      .eq("id", row.groupId)
+      .single();
+
+    if (groupError || !groupData) {
+      throw groupError || new Error("Selecione um grupo valido para o subgrupo.");
+    }
+
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_SUBGROUPS_TABLE)
+      .insert({
+        group_id: row.groupId,
+        name: row.name,
+        active: true,
+        updated_at: new Date().toISOString(),
+      })
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel cadastrar o subgrupo financeiro.");
+    }
+
+    return {
+      ok: true as const,
+      subgroup: rowToFinanceCategorySubgroup(data as Record<string, unknown>),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message: "Subgrupo financeiro cadastrado com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function loadStoreProductSelectionOptions() {
+  const credentials = getNuvemshopCredentials();
+
+  if (!credentials.ok) {
+    return [] as StoreProductSelectionOption[];
+  }
+
+  try {
+    const client = new NuvemshopClient(credentials.credentials);
+    const products = await fetchAllNuvemshopPages((params) =>
+      client.listProducts(params),
+    );
+
+    return buildStoreProductSelectionOptions(products);
+  } catch {
+    return [] as StoreProductSelectionOption[];
+  }
+}
+
+function getMonthEndDate(monthRef: string) {
+  const [yearText, monthText] = monthRef.split("-");
+  const year = Number.parseInt(yearText || "", 10);
+  const monthIndex = Number.parseInt(monthText || "", 10) - 1;
+  const endDate = new Date(year, monthIndex + 1, 0);
+  return formatDateForDb(endDate);
+}
+
 function getLatestUpdatedAt(rows: Array<Record<string, unknown>>) {
   const values = rows
     .map((row) => (typeof row.updated_at === "string" ? row.updated_at : null))
@@ -1972,10 +3169,15 @@ async function createStockMovement(
     sku: string;
     color: string;
     size: string;
+    movementDate?: string;
     movementType: StockMovementType;
     quantity: number;
     plainBefore: number;
     plainAfter: number;
+    artName?: string;
+    artProductId?: string;
+    originType?: string;
+    originReference?: string;
     reasonCategory: string;
     reasonText: string;
     sourceModule: string;
@@ -1989,10 +3191,15 @@ async function createStockMovement(
       sku: movement.sku,
       color: movement.color,
       size: movement.size,
+      movement_date: movement.movementDate || getTodayDate(),
       movement_type: movement.movementType,
       quantity: movement.quantity,
       plain_before: movement.plainBefore,
       plain_after: movement.plainAfter,
+      art_name: movement.artName || "",
+      art_product_id: movement.artProductId || "",
+      origin_type: movement.originType || "manual",
+      origin_reference: movement.originReference || "",
       reason_category: movement.reasonCategory || "ajuste_manual",
       reason_text: movement.reasonText,
       source_module: movement.sourceModule || "estoque",
