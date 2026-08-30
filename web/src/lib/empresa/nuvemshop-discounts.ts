@@ -80,14 +80,10 @@ export async function syncCompanyRuleWithNuvemshop(
     if (!rule.active) {
       if (rule.nuvemshopPromotionId) {
         try {
-          await client.updatePromotion(rule.nuvemshopPromotionId, {
-            active: false,
-            combines_with_quantity_discounts: false,
-            combines_with_free_shipping: false,
-            combines_with_cart_amount_discounts: false,
-            combines_with_app_discounts: false,
-            combines_with_price_discounts: false,
-          });
+          await client.updatePromotion(
+            rule.nuvemshopPromotionId,
+            getInactivePromotionUpdateSettings(),
+          );
         } catch (error) {
           if (
             error instanceof NuvemshopApiError &&
@@ -127,14 +123,10 @@ export async function syncCompanyRuleWithNuvemshop(
     if (rule.nuvemshopPromotionId) {
       if (titleChanged) {
         try {
-          await client.updatePromotion(rule.nuvemshopPromotionId, {
-            active: false,
-            combines_with_quantity_discounts: false,
-            combines_with_free_shipping: false,
-            combines_with_cart_amount_discounts: false,
-            combines_with_app_discounts: false,
-            combines_with_price_discounts: false,
-          });
+          await client.updatePromotion(
+            rule.nuvemshopPromotionId,
+            getInactivePromotionUpdateSettings(),
+          );
         } catch (error) {
           if (!(error instanceof NuvemshopApiError && error.status === 404)) {
             throw error;
@@ -246,16 +238,16 @@ function getActivePromotionCreateSettings(rule: CompanyCartDiscountRule) {
 }
 
 function getActivePromotionUpdateSettings(rule: CompanyCartDiscountRule) {
-  const allowCombining = rule.allowCombiningWithOtherPromotions;
-
   return {
     active: true,
-    combines_with_other_discounts: allowCombining,
-    combines_with_quantity_discounts: allowCombining,
-    combines_with_free_shipping: allowCombining,
-    combines_with_cart_amount_discounts: allowCombining,
-    combines_with_app_discounts: allowCombining,
-    combines_with_price_discounts: allowCombining,
+    combines_with_other_discounts: rule.allowCombiningWithOtherPromotions,
+  };
+}
+
+function getInactivePromotionUpdateSettings() {
+  return {
+    active: false,
+    combines_with_other_discounts: false,
   };
 }
 
