@@ -88,24 +88,59 @@ export async function AppShell({
 
       <div className={styles.content}>
         <header className={styles.topbar}>
-          {isPartner ? (
-            <div className={styles.mobileTopBrand}>
-              <Image
-                src="/logo-repeticao-maxima.png"
-                alt="Logo Repeticao Maxima"
-                width={38}
-                height={38}
-                className={styles.mobileTopLogo}
-              />
-              <div className={styles.mobileTopBrandName}>Repeticao Maxima</div>
-            </div>
-          ) : null}
+          <div className={styles.mobileTopBrand}>
+            <Image
+              src="/logo-repeticao-maxima.png"
+              alt="Logo Repeticao Maxima"
+              width={38}
+              height={38}
+              className={styles.mobileTopLogo}
+            />
+            <div className={styles.mobileTopBrandName}>Repeticao Maxima</div>
+          </div>
           <div className={styles.titleBlock}>
             <h1>{title}</h1>
             <p>{subtitle}</p>
           </div>
           <AuthUserMenu fullName={user.fullName} email={user.email} />
         </header>
+
+        {!isPartner && navigationItems.length > 0 ? (
+          <nav className={styles.mobileModuleNav} aria-label="Modulos liberados">
+            {navigationItems.map((item) => {
+              const isActive = isNavigationItemActive(currentPath, item.href);
+
+              return (
+                <Link
+                  key={`mobile-${item.href}`}
+                  href={item.href}
+                  className={`${styles.mobileModuleLink} ${
+                    isActive ? styles.mobileModuleLinkActive : ""
+                  }`}
+                >
+                  <span className={styles.mobileModuleIcon} aria-hidden="true">
+                    <NavigationIcon icon={item.icon} />
+                  </span>
+                  <span className={styles.mobileModuleCopy}>
+                    <strong>{item.label}</strong>
+                    <span>{item.hint}</span>
+                  </span>
+                  <span className={styles.navArrow} aria-hidden="true">
+                    <svg viewBox="0 0 20 20" fill="none">
+                      <path
+                        d="M7.5 4.5L13 10L7.5 15.5"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </span>
+                </Link>
+              );
+            })}
+          </nav>
+        ) : null}
 
         {children}
       </div>
