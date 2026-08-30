@@ -99,6 +99,7 @@ ALTER TABLE repeticao_maxima.financeiro_movimentacoes
   ADD COLUMN IF NOT EXISTS subgroup_id UUID REFERENCES repeticao_maxima.financeiro_subgrupos(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS group_name TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS subgroup_name TEXT NOT NULL DEFAULT '';
+
 CREATE TABLE IF NOT EXISTS repeticao_maxima.estoque_base (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   sku TEXT NOT NULL,
@@ -195,7 +196,6 @@ CREATE TABLE IF NOT EXISTS repeticao_maxima.promocoes_carrinho (
   minimum_quantity INTEGER NOT NULL DEFAULT 3,
   discount_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   active BOOLEAN NOT NULL DEFAULT TRUE,
-  allow_combining_with_other_promotions BOOLEAN NOT NULL DEFAULT FALSE,
   notes TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -271,7 +271,6 @@ ALTER TABLE repeticao_maxima.promocoes_carrinho
   ADD COLUMN IF NOT EXISTS minimum_quantity INTEGER NOT NULL DEFAULT 3,
   ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE,
-  ADD COLUMN IF NOT EXISTS allow_combining_with_other_promotions BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS nuvemshop_promotion_id TEXT,
   ADD COLUMN IF NOT EXISTS nuvemshop_status TEXT NOT NULL DEFAULT 'pendente',

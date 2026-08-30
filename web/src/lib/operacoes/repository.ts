@@ -15,6 +15,8 @@ const OPERATIONS_SCHEMA = "repeticao_maxima";
 const DEBTS_TABLE = "dividas_internas";
 const FINANCE_BALANCES_TABLE = "financeiro_saldos_mensais";
 const FINANCE_MOVEMENTS_TABLE = "financeiro_movimentacoes";
+const FINANCE_GROUPS_TABLE = "financeiro_grupos";
+const FINANCE_SUBGROUPS_TABLE = "financeiro_subgrupos";
 const STOCK_TABLE = "estoque_base";
 const STOCK_MOVEMENTS_TABLE = "estoque_movimentacoes";
 const DTF_TABLE = "estoque_dtf";
@@ -64,6 +66,25 @@ export type InternalDebt = {
 
 export type FinancialMovementType = "entrada" | "saida";
 
+export type FinanceCategorySubgroup = {
+  id: string;
+  groupId: string;
+  name: string;
+  active: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type FinanceCategoryGroup = {
+  id: string;
+  movementType: FinancialMovementType;
+  name: string;
+  active: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+  subgroups: FinanceCategorySubgroup[];
+};
+
 export type MonthlyOpeningBalance = {
   id: string;
   monthRef: string;
@@ -79,6 +100,10 @@ export type ManualFinanceMovement = {
   type: FinancialMovementType;
   title: string;
   category: string;
+  groupId: string | null;
+  groupName: string;
+  subgroupId: string | null;
+  subgroupName: string;
   amount: number;
   paymentMethod: DebtPaymentMethod;
   notes: string;
@@ -269,6 +294,7 @@ export async function loadManualFinanceModuleData(selectedMonth: string) {
       effectiveOpeningBalance: null as number | null,
       openingBalanceSource: "none" as ManualFinanceOpeningBalanceSource,
       inheritedFromMonthRef: null as string | null,
+      groups: [] as FinanceCategoryGroup[],
       movements: [] as ManualFinanceMovement[],
       persistence: buildDisabledState(
         `Persistencia desativada. Configure ${supabase.missing.join(" e ")} para salvar o financeiro manual no Supabase.`,
@@ -277,7 +303,12 @@ export async function loadManualFinanceModuleData(selectedMonth: string) {
   }
 
   try {
-    const [{ data: balanceData, error: balanceError }, { data: movementData, error: movementError }] =
+    const [
+      { data: balanceData, error: balanceError },
+      { data: movementData, error: movementError },
+      { data: groupData, error: groupError },
+      { data: subgroupData, error: subgroupError },
+    ] =
       await Promise.all([
         supabase.client
           .schema(OPERATIONS_SCHEMA)
@@ -292,6 +323,17 @@ export async function loadManualFinanceModuleData(selectedMonth: string) {
           .lte("movement_date", monthEnd)
           .order("movement_date", { ascending: true })
           .order("created_at", { ascending: true }),
+        supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(FINANCE_GROUPS_TABLE)
+          .select("*")
+          .order("movement_type", { ascending: true })
+          .order("name", { ascending: true }),
+        supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(FINANCE_SUBGROUPS_TABLE)
+          .select("*")
+          .order("name", { ascending: true }),
       ]);
 
     if (balanceError) {
@@ -302,12 +344,42 @@ export async function loadManualFinanceModuleData(selectedMonth: string) {
       throw movementError;
     }
 
-    const allBalances: MonthlyOpeningBalance[] = (balanceData ?? []).map((row: Record<string, unknown>) =>
-      rowToMonthlyOpeningBalance(row as Record<string, unknown>),
+    if (groupError) {
+      throw groupError;
+    }
+
+    if (subgroupError) {
+      throw subgroupError;
+    }
+
+    const allBalances: MonthlyOpeningBalance[] = (balanceData ?? []).map(
+      (row: Record<string, unknown>) =>
+        rowToMonthlyOpeningBalance(row as Record<string, unknown>),
     );
-    const allMovements: ManualFinanceMovement[] = (movementData ?? []).map((row: Record<string, unknown>) =>
-      rowToManualFinanceMovement(row as Record<string, unknown>),
+    const allMovements: ManualFinanceMovement[] = (movementData ?? []).map(
+      (row: Record<string, unknown>) =>
+        rowToManualFinanceMovement(row as Record<string, unknown>),
     );
+    const allGroups = (groupData ?? []).map((row) =>
+      rowToFinanceCategoryGroupBase(row as Record<string, unknown>),
+    );
+    const allSubgroups = (subgroupData ?? []).map((row) =>
+      rowToFinanceCategorySubgroup(row as Record<string, unknown>),
+    );
+    const subgroupsByGroup = new Map<string, FinanceCategorySubgroup[]>();
+
+    for (const subgroup of allSubgroups) {
+      const current = subgroupsByGroup.get(subgroup.groupId) ?? [];
+      current.push(subgroup);
+      subgroupsByGroup.set(subgroup.groupId, current);
+    }
+
+    const groups = allGroups.map((group) => ({
+      ...group,
+      subgroups: (subgroupsByGroup.get(group.id) ?? []).sort((left, right) =>
+        left.name.localeCompare(right.name, "pt-BR"),
+      ),
+    }));
     const balanceByMonth = new Map<string, MonthlyOpeningBalance>(
       allBalances.map((balance: MonthlyOpeningBalance) => [balance.monthRef, balance]),
     );
@@ -358,6 +430,8 @@ export async function loadManualFinanceModuleData(selectedMonth: string) {
     const latestUpdatedAt = getLatestUpdatedAt([
       ...((balanceData ?? []) as Array<Record<string, unknown>>),
       ...((movementData ?? []) as Array<Record<string, unknown>>),
+      ...((groupData ?? []) as Array<Record<string, unknown>>),
+      ...((subgroupData ?? []) as Array<Record<string, unknown>>),
     ]);
 
     return {
@@ -365,6 +439,7 @@ export async function loadManualFinanceModuleData(selectedMonth: string) {
       effectiveOpeningBalance,
       openingBalanceSource,
       inheritedFromMonthRef,
+      groups,
       movements,
       persistence: {
         enabled: true,
@@ -382,6 +457,7 @@ export async function loadManualFinanceModuleData(selectedMonth: string) {
       effectiveOpeningBalance: null as number | null,
       openingBalanceSource: "none" as ManualFinanceOpeningBalanceSource,
       inheritedFromMonthRef: null as string | null,
+      groups: [] as FinanceCategoryGroup[],
       movements: [] as ManualFinanceMovement[],
       persistence: buildDisabledState(getErrorMessage(error)),
     };
@@ -457,6 +533,47 @@ export async function createManualFinanceMovement(input: unknown) {
   const row = normalizeManualFinanceMovementInput(input);
 
   try {
+    if (!row.groupId) {
+      throw new Error("Selecione um grupo para salvar essa movimentacao.");
+    }
+
+    const { data: groupData, error: groupError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_GROUPS_TABLE)
+      .select("*")
+      .eq("id", row.groupId)
+      .single();
+
+    if (groupError || !groupData) {
+      throw groupError || new Error("Selecione um grupo valido para a movimentacao.");
+    }
+
+    const group = rowToFinanceCategoryGroupBase(groupData as Record<string, unknown>);
+
+    if (group.movementType !== row.type) {
+      throw new Error(
+        `Selecione um grupo de ${row.type === "entrada" ? "entrada" : "saida"} valido.`,
+      );
+    }
+
+    let subgroup: FinanceCategorySubgroup | null = null;
+
+    if (row.subgroupId) {
+      const { data: subgroupData, error: subgroupError } = await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(FINANCE_SUBGROUPS_TABLE)
+        .select("*")
+        .eq("id", row.subgroupId)
+        .eq("group_id", group.id)
+        .single();
+
+      if (subgroupError || !subgroupData) {
+        throw subgroupError || new Error("Selecione um subgrupo valido para esse grupo.");
+      }
+
+      subgroup = rowToFinanceCategorySubgroup(subgroupData as Record<string, unknown>);
+    }
+
     const { data, error } = await supabase.client
       .schema(OPERATIONS_SCHEMA)
       .from(FINANCE_MOVEMENTS_TABLE)
@@ -464,7 +581,11 @@ export async function createManualFinanceMovement(input: unknown) {
         movement_date: row.movementDate,
         movement_type: row.type,
         title: row.title,
-        category: row.category,
+        category: subgroup?.name || group.name,
+        group_id: group.id,
+        subgroup_id: subgroup?.id || null,
+        group_name: group.name,
+        subgroup_name: subgroup?.name || "",
         amount: row.amount,
         payment_method: row.paymentMethod,
         notes: row.notes,
@@ -487,6 +608,123 @@ export async function createManualFinanceMovement(input: unknown) {
           row.type === "entrada"
             ? "Entrada manual registrada com sucesso."
             : "Saida manual registrada com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function updateManualFinanceMovement(id: string, input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeManualFinanceMovementInput(input);
+
+  try {
+    if (!id.trim()) {
+      throw new Error("Selecione uma movimentacao valida para editar.");
+    }
+
+    if (!row.groupId) {
+      throw new Error("Selecione um grupo para salvar essa movimentacao.");
+    }
+
+    const { data: existingMovement, error: existingMovementError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_MOVEMENTS_TABLE)
+      .select("id")
+      .eq("id", id)
+      .single();
+
+    if (existingMovementError || !existingMovement) {
+      throw existingMovementError || new Error("A movimentacao informada nao foi encontrada.");
+    }
+
+    const { data: groupData, error: groupError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_GROUPS_TABLE)
+      .select("*")
+      .eq("id", row.groupId)
+      .single();
+
+    if (groupError || !groupData) {
+      throw groupError || new Error("Selecione um grupo valido para a movimentacao.");
+    }
+
+    const group = rowToFinanceCategoryGroupBase(groupData as Record<string, unknown>);
+
+    if (group.movementType !== row.type) {
+      throw new Error(
+        `Selecione um grupo de ${row.type === "entrada" ? "entrada" : "saida"} valido.`,
+      );
+    }
+
+    let subgroup: FinanceCategorySubgroup | null = null;
+
+    if (row.subgroupId) {
+      const { data: subgroupData, error: subgroupError } = await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(FINANCE_SUBGROUPS_TABLE)
+        .select("*")
+        .eq("id", row.subgroupId)
+        .eq("group_id", group.id)
+        .single();
+
+      if (subgroupError || !subgroupData) {
+        throw subgroupError || new Error("Selecione um subgrupo valido para esse grupo.");
+      }
+
+      subgroup = rowToFinanceCategorySubgroup(subgroupData as Record<string, unknown>);
+    }
+
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_MOVEMENTS_TABLE)
+      .update({
+        movement_date: row.movementDate,
+        movement_type: row.type,
+        title: row.title,
+        category: subgroup?.name || group.name,
+        group_id: group.id,
+        subgroup_id: subgroup?.id || null,
+        group_name: group.name,
+        subgroup_name: subgroup?.name || "",
+        amount: row.amount,
+        payment_method: row.paymentMethod,
+        notes: row.notes,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel atualizar a movimentacao financeira.");
+    }
+
+    return {
+      ok: true as const,
+      movement: rowToManualFinanceMovement(data),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          row.type === "entrada"
+            ? "Entrada manual atualizada com sucesso."
+            : "Saida manual atualizada com sucesso.",
         updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
       },
     };
@@ -1947,10 +2185,41 @@ function rowToManualFinanceMovement(row: Record<string, unknown>): ManualFinance
     movementDate: normalizeDate(row.movement_date) || getTodayDate(),
     type: normalizeFinancialMovementType(row.movement_type),
     title: String(row.title ?? "").trim(),
-    category: String(row.category ?? "").trim(),
+    category:
+      String(row.subgroup_name ?? "").trim() ||
+      String(row.group_name ?? "").trim() ||
+      String(row.category ?? "").trim(),
+    groupId: row.group_id ? String(row.group_id) : null,
+    groupName: String(row.group_name ?? "").trim(),
+    subgroupId: row.subgroup_id ? String(row.subgroup_id) : null,
+    subgroupName: String(row.subgroup_name ?? "").trim(),
     amount: Math.max(getNumberValue(row.amount), 0),
     paymentMethod: normalizeDebtPaymentMethod(row.payment_method),
     notes: String(row.notes ?? "").trim(),
+    createdAt: typeof row.created_at === "string" ? row.created_at : null,
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+  };
+}
+
+function rowToFinanceCategoryGroupBase(
+  row: Record<string, unknown>,
+): Omit<FinanceCategoryGroup, "subgroups"> {
+  return {
+    id: String(row.id ?? ""),
+    movementType: normalizeFinancialMovementType(row.movement_type),
+    name: String(row.name ?? "").trim(),
+    active: Boolean(row.active ?? true),
+    createdAt: typeof row.created_at === "string" ? row.created_at : null,
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+  };
+}
+
+function rowToFinanceCategorySubgroup(row: Record<string, unknown>): FinanceCategorySubgroup {
+  return {
+    id: String(row.id ?? ""),
+    groupId: String(row.group_id ?? "").trim(),
+    name: String(row.name ?? "").trim(),
+    active: Boolean(row.active ?? true),
     createdAt: typeof row.created_at === "string" ? row.created_at : null,
     updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
   };
@@ -2087,9 +2356,29 @@ function normalizeManualFinanceMovementInput(input: unknown) {
     type: normalizeFinancialMovementType(source.type),
     title: String(source.title ?? "").trim() || "Movimentacao manual",
     category: String(source.category ?? "").trim() || "Operacional",
+    groupId: String(source.groupId ?? "").trim(),
+    subgroupId: String(source.subgroupId ?? "").trim(),
     amount: Math.max(getNumberValue(source.amount), 0),
     paymentMethod: normalizeDebtPaymentMethod(source.paymentMethod),
     notes: String(source.notes ?? "").trim(),
+  };
+}
+
+function normalizeFinanceCategoryGroupInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+
+  return {
+    movementType: normalizeFinancialMovementType(source.movementType),
+    name: String(source.name ?? "").trim(),
+  };
+}
+
+function normalizeFinanceCategorySubgroupInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+
+  return {
+    groupId: String(source.groupId ?? "").trim(),
+    name: String(source.name ?? "").trim(),
   };
 }
 
@@ -3250,6 +3539,136 @@ function buildMonthSequence(startMonthRef: string, endMonthRef: string) {
     }
 
     cursor.setMonth(cursor.getMonth() + 1);
+  }
+}
+
+export async function createFinanceCategoryGroup(input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeFinanceCategoryGroupInput(input);
+
+  if (!row.name) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Informe o nome do grupo."),
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_GROUPS_TABLE)
+      .insert({
+        movement_type: row.movementType,
+        name: row.name,
+        active: true,
+        updated_at: new Date().toISOString(),
+      })
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel cadastrar o grupo financeiro.");
+    }
+
+    return {
+      ok: true as const,
+      group: rowToFinanceCategoryGroupBase(data as Record<string, unknown>),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message: "Grupo financeiro cadastrado com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function createFinanceCategorySubgroup(input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeFinanceCategorySubgroupInput(input);
+
+  if (!row.groupId) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Selecione o grupo pai do subgrupo."),
+    };
+  }
+
+  if (!row.name) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Informe o nome do subgrupo."),
+    };
+  }
+
+  try {
+    const { data: groupData, error: groupError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_GROUPS_TABLE)
+      .select("id")
+      .eq("id", row.groupId)
+      .single();
+
+    if (groupError || !groupData) {
+      throw groupError || new Error("Selecione um grupo valido para o subgrupo.");
+    }
+
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_SUBGROUPS_TABLE)
+      .insert({
+        group_id: row.groupId,
+        name: row.name,
+        active: true,
+        updated_at: new Date().toISOString(),
+      })
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel cadastrar o subgrupo financeiro.");
+    }
+
+    return {
+      ok: true as const,
+      subgroup: rowToFinanceCategorySubgroup(data as Record<string, unknown>),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message: "Subgrupo financeiro cadastrado com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
   }
 }
 
