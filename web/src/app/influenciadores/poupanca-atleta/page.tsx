@@ -7,7 +7,10 @@ import {
   getCurrentMonthInput,
   getRollingWindowRange,
 } from "@/lib/parceiros/performance";
-import { loadStockSelectionOptions, loadSiteArtSelectionOptions } from "@/lib/operacoes/repository";
+import {
+  loadStockSelectionOptions,
+  loadStoreProductSelectionOptions,
+} from "@/lib/operacoes/repository";
 import { loadCouponPartnerModuleData } from "@/lib/parceiros/repository";
 import { loadInfluenciadoresDashboard } from "@/lib/parceiros/influenciadores-dashboard";
 
@@ -29,10 +32,10 @@ export default async function PoupancaAtletaPage({ searchParams }: PageProps) {
     getSearchValue(resolvedSearchParams, "month") || getCurrentMonthInput();
   const rollingWindow = getRollingWindowRange(selectedMonth);
 
-  const [moduleData, stockOptions, artOptions] = await Promise.all([
+  const [moduleData, stockOptions, storeProductOptions] = await Promise.all([
     loadCouponPartnerModuleData(),
     loadStockSelectionOptions(),
-    loadSiteArtSelectionOptions(),
+    loadStoreProductSelectionOptions(),
   ]);
 
   const dashboard = await loadInfluenciadoresDashboard(
@@ -137,7 +140,7 @@ export default async function PoupancaAtletaPage({ searchParams }: PageProps) {
         initialRedemptions={moduleData.redemptions}
         initialPersistence={moduleData.redemptionState}
         stockOptions={stockOptions}
-        artOptions={artOptions}
+        storeProductOptions={storeProductOptions}
         selectedCouponCode=""
       />
     </AppShell>

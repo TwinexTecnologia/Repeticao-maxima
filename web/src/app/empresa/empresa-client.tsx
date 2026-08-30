@@ -52,6 +52,7 @@ export function EmpresaClient({
     categoryIds: defaultCategoryId ? [defaultCategoryId] : [],
     minimumQuantity: "3",
     discountAmount: "57",
+    allowCombiningWithOtherPromotions: false,
     notes: "",
   });
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
@@ -220,6 +221,8 @@ export function EmpresaClient({
             productNames: selectedProducts.map((product) => product.productName),
             minimumQuantity: String(computedMinimumQuantity),
             discountAmount: form.discountAmount,
+            allowCombiningWithOtherPromotions:
+              form.allowCombiningWithOtherPromotions,
             notes: form.notes,
           }),
         },
@@ -392,6 +395,8 @@ export function EmpresaClient({
             : [],
       minimumQuantity: String(rule.minimumQuantity),
       discountAmount: String(rule.discountAmount),
+      allowCombiningWithOtherPromotions:
+        rule.allowCombiningWithOtherPromotions,
       notes: rule.notes,
     });
     setSelectedProductIds(rule.productIds);
@@ -429,6 +434,7 @@ export function EmpresaClient({
       categoryIds: defaultCategoryId ? [defaultCategoryId] : [],
       minimumQuantity: "3",
       discountAmount: "57",
+      allowCombiningWithOtherPromotions: false,
       notes: "",
     });
   }
@@ -548,6 +554,11 @@ export function EmpresaClient({
                     <td>{formatMoney(rule.discountAmount)}</td>
                     <td>{rule.active ? "Ativa" : "Pausada"}</td>
                     <td>
+                      <div style={{ color: "#6f5b82", marginBottom: 6 }}>
+                        {rule.allowCombiningWithOtherPromotions
+                          ? "Combina com outras promocoes"
+                          : "Nao combina com outras promocoes"}
+                      </div>
                       <div
                         style={{
                           display: "inline-flex",
@@ -723,9 +734,26 @@ export function EmpresaClient({
                   />
                 </label>
 
+                <label className={styles.filterField}>
+                  <span>Combinar com outras promocoes</span>
+                  <select
+                    value={form.allowCombiningWithOtherPromotions ? "sim" : "nao"}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        allowCombiningWithOtherPromotions:
+                          event.target.value === "sim",
+                      }))
+                    }
+                  >
+                    <option value="nao">Nao permitir</option>
+                    <option value="sim">Permitir combinar</option>
+                  </select>
+                </label>
+
                 <label
                   className={styles.filterField}
-                  style={{ gridColumn: "span 2" }}
+                  style={{ gridColumn: "span 3" }}
                 >
                   <span>Observacao interna</span>
                   <input
