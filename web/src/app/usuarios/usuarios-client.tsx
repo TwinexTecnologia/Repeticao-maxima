@@ -789,7 +789,51 @@ export function UsuariosClient({
         </div>
       </section>
 
-      <section className={styles.section}>
+      <section className={`${styles.section} ${styles.mobileOnly}`}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Solicitacoes para o admin</div>
+            <p className={styles.sectionSubtitle}>
+              Resgates e pedidos de apoio em leitura adaptada para celular.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.mobileList}>
+          {pendingRequests.length > 0 ? (
+            pendingRequests.map((request) => (
+              <div key={request.id} className={styles.mobileListItem}>
+                <div className={styles.mobileListTitleRow}>
+                  <div className={styles.mobileListTitle}>{request.partnerName}</div>
+                  <span className={`${styles.pill} ${styles.pillMedium}`}>
+                    {request.requestType === "apoio" ? "Apoio" : "Roupa"}
+                  </span>
+                </div>
+                <div className={styles.mobileListMeta}>
+                  <span>{request.couponCode}</span>
+                  <span>{formatMoney(request.requestedAmount)}</span>
+                  <span>{formatDateTime(request.requestedAt)}</span>
+                </div>
+                <div className={styles.mobileKeyValueList}>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Destino</strong>
+                    <span>{request.supportGoal || "Cupom / roupa"}</span>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className={styles.warningPanel}>
+              <div className={styles.warningTitle}>Nenhuma solicitacao pendente</div>
+              <p className={styles.warningText}>
+                Quando um parceiro pedir roupa ou apoio, o item aparece aqui.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className={`${styles.section} ${styles.desktopOnly}`}>
         <div className={styles.sectionHeader}>
           <div>
             <div className={styles.sectionTitle}>Solicitacoes para o admin</div>
@@ -833,7 +877,59 @@ export function UsuariosClient({
         </div>
       </section>
 
-      <section className={styles.section}>
+      <section className={`${styles.section} ${styles.mobileOnly}`}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Funcionarios cadastrados</div>
+            <p className={styles.sectionSubtitle}>
+              Lista compacta com status, menus liberados e observacoes.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.mobileList}>
+          {employees.length > 0 ? (
+            employees.map((employee) => (
+              <details key={employee.id} className={styles.mobileListItem}>
+                <summary className={styles.mobileListSummary}>
+                  <div className={styles.mobileListTitleRow}>
+                    <div className={styles.mobileListTitle}>{employee.fullName}</div>
+                    <span
+                      className={`${styles.pill} ${
+                        employee.active ? styles.pillLow : styles.pillMedium
+                      }`}
+                    >
+                      {employee.active ? "Ativo" : "Inativo"}
+                    </span>
+                  </div>
+                  <div className={styles.mobileListMeta}>
+                    <span>{employee.email}</span>
+                  </div>
+                </summary>
+                <div className={styles.mobileKeyValueList}>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Menus</strong>
+                    <span>{formatPermissions(employee.permissions)}</span>
+                  </div>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Observacao</strong>
+                    <span>{employee.notes || "-"}</span>
+                  </div>
+                </div>
+              </details>
+            ))
+          ) : (
+            <div className={styles.warningPanel}>
+              <div className={styles.warningTitle}>Sem funcionarios cadastrados</div>
+              <p className={styles.warningText}>
+                Os acessos internos criados aparecem aqui automaticamente.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className={`${styles.section} ${styles.desktopOnly}`}>
         <div className={styles.sectionHeader}>
           <div>
             <div className={styles.sectionTitle}>Funcionarios cadastrados</div>
@@ -885,7 +981,79 @@ export function UsuariosClient({
         </div>
       </section>
 
-      <section className={styles.section}>
+      <section className={`${styles.section} ${styles.mobileOnly}`}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Parceiros cadastrados</div>
+            <p className={styles.sectionSubtitle}>
+              Base pessoal com leitura melhor para consultar e editar pelo celular.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.mobileList}>
+          {partners.length > 0 ? (
+            partners.map((partner) => (
+              <details key={partner.id} className={styles.mobileListItem}>
+                <summary className={styles.mobileListSummary}>
+                  <div className={styles.mobileListTitleRow}>
+                    <div className={styles.mobileListTitle}>{partner.fullName}</div>
+                    <span className={`${styles.pill} ${styles.pillMedium}`}>
+                      {labelForPartnerType(partner.partnerType)}
+                    </span>
+                  </div>
+                  <div className={styles.mobileListMeta}>
+                    <span>{partner.email}</span>
+                    <span>{partner.hasLogin ? "Login criado" : "Sem login"}</span>
+                  </div>
+                </summary>
+                <div className={styles.mobileKeyValueList}>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Idade</strong>
+                    <span>{partner.age !== null ? `${partner.age} anos` : "-"}</span>
+                  </div>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Camiseta</strong>
+                    <span>{partner.shirtSize || "-"}</span>
+                  </div>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Cupom</strong>
+                    <span>{partner.linkedCouponCode || "-"}</span>
+                  </div>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Ultimo acesso</strong>
+                    <span>
+                      {partner.lastSeenAt ? formatDateTime(partner.lastSeenAt) : "-"}
+                    </span>
+                  </div>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Vinculo</strong>
+                    <span>{partner.linkedPartnerName || "-"}</span>
+                  </div>
+                </div>
+                <div className={styles.mobileListActions}>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    onClick={() => handleEditPartner(partner)}
+                  >
+                    Editar
+                  </button>
+                </div>
+              </details>
+            ))
+          ) : (
+            <div className={styles.warningPanel}>
+              <div className={styles.warningTitle}>Sem parceiros cadastrados</div>
+              <p className={styles.warningText}>
+                Cadastre atletas, influenciadores e afiliados para operar por aqui.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className={`${styles.section} ${styles.desktopOnly}`}>
         <div className={styles.sectionHeader}>
           <div>
             <div className={styles.sectionTitle}>Parceiros cadastrados</div>
