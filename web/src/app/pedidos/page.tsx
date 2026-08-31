@@ -869,7 +869,139 @@ export default async function PedidosPage({ searchParams }: PageProps) {
         </div>
       </section>
 
-      <section className={styles.section}>
+      <section className={`${styles.section} ${styles.mobileOnly}`}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Resumo do caixa</div>
+            <p className={styles.sectionSubtitle}>
+              Totais e agrupamentos principais em leitura mobile.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.metricGrid}>
+          <article className={styles.metricCard}>
+            <div className={styles.metricLabel}>Saldo inicial</div>
+            <div className={styles.metricValue}>{formatMoney(openingBalance)}</div>
+            <div className={styles.metricHint}>Base de abertura do mes.</div>
+          </article>
+          <article className={styles.metricCard}>
+            <div className={styles.metricLabel}>Entradas</div>
+            <div className={styles.metricValue}>{formatMoney(totalEntries)}</div>
+            <div className={styles.metricHint}>Tudo que entrou manualmente.</div>
+          </article>
+          <article className={styles.metricCard}>
+            <div className={styles.metricLabel}>Saidas</div>
+            <div className={styles.metricValue}>{formatMoney(totalExpenses)}</div>
+            <div className={styles.metricHint}>Tudo que saiu manualmente.</div>
+          </article>
+          <article className={styles.metricCard}>
+            <div className={styles.metricLabel}>Balanco atual</div>
+            <div className={styles.metricValue}>{formatMoney(currentBalance)}</div>
+            <div className={styles.metricHint}>Saldo inicial + entradas - saidas.</div>
+          </article>
+        </div>
+
+        <div className={styles.twoColumn} style={{ marginTop: 16 }}>
+          <article className={styles.configCard}>
+            <div className={styles.sectionHeader}>
+              <div>
+                <div className={styles.listTitle}>Saidas por grupo</div>
+                <p className={styles.sectionSubtitle}>Quanto cada grupo consumiu no mes.</p>
+              </div>
+            </div>
+            <div className={styles.mobileList}>
+              {expenseBreakdown.length > 0 ? (
+                expenseBreakdown.map((group) => (
+                  <details key={group.key} className={styles.mobileListItem}>
+                    <summary className={styles.mobileListSummary}>
+                      <div className={styles.mobileListTitleRow}>
+                        <div className={styles.mobileListTitle}>{group.name}</div>
+                        <span className={`${styles.pill} ${styles.pillHigh}`}>
+                          {formatMoney(group.total)}
+                        </span>
+                      </div>
+                      <div className={styles.mobileListMeta}>
+                        <span>{group.subgroups.length} subgrupo(s)</span>
+                      </div>
+                    </summary>
+                    <div className={styles.mobileKeyValueList}>
+                      {group.subgroups.length > 0 ? (
+                        group.subgroups.map((subgroup) => (
+                          <div key={subgroup.key} className={styles.mobileKeyValueRow}>
+                            <strong>{subgroup.name}</strong>
+                            <span>{formatMoney(subgroup.total)}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className={styles.mobileKeyValueRow}>
+                          <strong>Total do grupo</strong>
+                          <span>{formatMoney(group.total)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                ))
+              ) : (
+                <div className={styles.warningPanel}>
+                  <div className={styles.warningTitle}>Nenhuma saida agrupada</div>
+                  <p className={styles.warningText}>As saidas do mes aparecem aqui.</p>
+                </div>
+              )}
+            </div>
+          </article>
+
+          <article className={styles.configCard}>
+            <div className={styles.sectionHeader}>
+              <div>
+                <div className={styles.listTitle}>Entradas por grupo</div>
+                <p className={styles.sectionSubtitle}>Tudo o que entrou detalhado por grupo.</p>
+              </div>
+            </div>
+            <div className={styles.mobileList}>
+              {entryBreakdown.length > 0 ? (
+                entryBreakdown.map((group) => (
+                  <details key={group.key} className={styles.mobileListItem}>
+                    <summary className={styles.mobileListSummary}>
+                      <div className={styles.mobileListTitleRow}>
+                        <div className={styles.mobileListTitle}>{group.name}</div>
+                        <span className={`${styles.pill} ${styles.pillLow}`}>
+                          {formatMoney(group.total)}
+                        </span>
+                      </div>
+                      <div className={styles.mobileListMeta}>
+                        <span>{group.subgroups.length} subgrupo(s)</span>
+                      </div>
+                    </summary>
+                    <div className={styles.mobileKeyValueList}>
+                      {group.subgroups.length > 0 ? (
+                        group.subgroups.map((subgroup) => (
+                          <div key={subgroup.key} className={styles.mobileKeyValueRow}>
+                            <strong>{subgroup.name}</strong>
+                            <span>{formatMoney(subgroup.total)}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className={styles.mobileKeyValueRow}>
+                          <strong>Total do grupo</strong>
+                          <span>{formatMoney(group.total)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                ))
+              ) : (
+                <div className={styles.warningPanel}>
+                  <div className={styles.warningTitle}>Nenhuma entrada agrupada</div>
+                  <p className={styles.warningText}>As entradas do mes aparecem aqui.</p>
+                </div>
+              )}
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section className={`${styles.section} ${styles.desktopOnly}`}>
         <div className={styles.sectionHeader}>
           <div>
             <div className={styles.sectionTitle}>Resumo do caixa</div>
@@ -1014,7 +1146,103 @@ export default async function PedidosPage({ searchParams }: PageProps) {
         </div>
       </section>
 
-      <section className={styles.section}>
+      <section className={`${styles.section} ${styles.mobileOnly}`}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Extrato do mes</div>
+            <p className={styles.sectionSubtitle}>
+              Entradas e saidas com edicao direta no celular.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.mobileList}>
+          {ledgerRows.length > 0 ? (
+            ledgerRows.map((row) => {
+              const editSheetId = `mobile-edit-movement-${row.id}`;
+
+              return (
+                <details key={row.id} className={styles.mobileListItem}>
+                  <summary className={styles.mobileListSummary}>
+                    <div className={styles.mobileListTitleRow}>
+                      <div className={styles.mobileListTitle}>{row.title}</div>
+                      <span
+                        className={`${styles.pill} ${
+                          row.type === "entrada" ? styles.pillLow : styles.pillHigh
+                        }`}
+                      >
+                        {labelForMovementType(row.type)}
+                      </span>
+                    </div>
+                    <div className={styles.mobileListMeta}>
+                      <span>{formatDate(row.movementDate)}</span>
+                      <span>{row.groupName || row.category || "-"}</span>
+                      <span>{formatMoney(row.amount)}</span>
+                    </div>
+                  </summary>
+
+                  <div className={styles.mobileKeyValueList}>
+                    <div className={styles.mobileKeyValueRow}>
+                      <strong>Subgrupo</strong>
+                      <span>{row.subgroupName || "-"}</span>
+                    </div>
+                    <div className={styles.mobileKeyValueRow}>
+                      <strong>Pagamento</strong>
+                      <span>{labelForPaymentMethod(row.paymentMethod)}</span>
+                    </div>
+                    <div className={styles.mobileKeyValueRow}>
+                      <strong>Saldo apos</strong>
+                      <span>{formatMoney(row.balanceAfter)}</span>
+                    </div>
+                    {row.notes ? (
+                      <div className={styles.mobileKeyValueRow}>
+                        <strong>Obs.</strong>
+                        <span>{row.notes}</span>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className={styles.mobileListActions}>
+                    <input id={editSheetId} type="checkbox" className={styles.sheetToggle} />
+                    <label htmlFor={editSheetId} className={styles.secondaryButton}>
+                      Editar
+                    </label>
+                    <label htmlFor={editSheetId} className={styles.sheetOverlay} aria-hidden="true" />
+
+                    <div className={styles.sheetPanel}>
+                      <div className={styles.sheetHeader}>
+                        <div className={styles.sheetTitle}>
+                          {row.type === "entrada" ? "Editar entrada" : "Editar saida"}
+                        </div>
+                        <label htmlFor={editSheetId} className={styles.sheetClose}>
+                          Fechar
+                        </label>
+                      </div>
+                      <MovementForm
+                        type={row.type}
+                        redirectTo={redirectTo}
+                        selectedMonth={selectedMonth}
+                        sheetId={editSheetId}
+                        groups={manualFinanceData.groups}
+                        initialMovement={row}
+                      />
+                    </div>
+                  </div>
+                </details>
+              );
+            })
+          ) : (
+            <div className={styles.warningPanel}>
+              <div className={styles.warningTitle}>Sem movimentacoes no mes</div>
+              <p className={styles.warningText}>
+                Registre entradas e saidas para acompanhar o extrato por aqui.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className={`${styles.section} ${styles.desktopOnly}`}>
         <div className={styles.sectionHeader}>
           <div>
             <div className={styles.sectionTitle}>Extrato do mes</div>

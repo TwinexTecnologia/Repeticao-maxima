@@ -473,7 +473,108 @@ export function EmpresaClient({
         </div>
       </section>
 
-      <section className={styles.section}>
+      <section className={`${styles.section} ${styles.mobileOnly}`}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Promocoes salvas</div>
+            <p className={styles.sectionSubtitle}>
+              Leitura compacta para revisar, editar e ativar regras pelo celular.
+            </p>
+          </div>
+        </div>
+
+        {rules.length === 0 ? (
+          <div className={styles.emptyState}>
+            Nenhuma promocao salva ainda. Monte a primeira regra abaixo.
+          </div>
+        ) : (
+          <div className={styles.mobileList}>
+            {rules.map((rule) => (
+              <details key={rule.id} className={styles.mobileListItem}>
+                <summary className={styles.mobileListSummary}>
+                  <div className={styles.mobileListTitleRow}>
+                    <div className={styles.mobileListTitle}>{rule.title}</div>
+                    <span
+                      className={`${styles.pill} ${
+                        rule.active ? styles.pillLow : styles.pillMedium
+                      }`}
+                    >
+                      {rule.active ? "Ativa" : "Pausada"}
+                    </span>
+                  </div>
+                  <div className={styles.mobileListMeta}>
+                    <span>{rule.ruleMode === "misto" ? "Misto" : "Categoria"}</span>
+                    <span>{rule.minimumQuantity} itens</span>
+                    <span>{formatMoney(rule.discountAmount)}</span>
+                  </div>
+                </summary>
+                <div className={styles.mobileKeyValueList}>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Categorias</strong>
+                    <span>
+                      {rule.comboGroups.length > 0
+                        ? rule.comboGroups
+                            .map(
+                              (group) =>
+                                `${group.minimumQuantity}x ${group.categoryName}`,
+                            )
+                            .join(", ")
+                        : (rule.categoryNames.length > 0
+                            ? rule.categoryNames
+                            : [rule.categoryName]
+                          ).join(", ")}
+                    </span>
+                  </div>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Produtos</strong>
+                    <span>{`${rule.productNames.length} produto(s)`}</span>
+                  </div>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Combinacao</strong>
+                    <span>
+                      {rule.allowCombiningWithOtherPromotions
+                        ? "Combina com outras promocoes"
+                        : "Nao combina com outras promocoes"}
+                    </span>
+                  </div>
+                </div>
+                <div className={styles.callout} style={{ marginTop: 12 }}>
+                  <h3>{getNuvemshopStatusLabel(rule.nuvemshopStatus)}</h3>
+                  <p>{rule.nuvemshopMessage}</p>
+                  {rule.nuvemshopLastSyncedAt ? (
+                    <p style={{ marginTop: 6 }}>
+                      Ultima sync: {formatDateTime(rule.nuvemshopLastSyncedAt)}
+                    </p>
+                  ) : null}
+                </div>
+                <div className={styles.mobileListActions}>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    onClick={() => startEditingRule(rule)}
+                  >
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    onClick={() => handleToggleRule(rule)}
+                    disabled={togglingRuleId === rule.id}
+                  >
+                    {togglingRuleId === rule.id
+                      ? "Salvando..."
+                      : rule.active
+                        ? "Inativar"
+                        : "Ativar"}
+                  </button>
+                </div>
+              </details>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className={`${styles.section} ${styles.desktopOnly}`}>
         <div className={styles.sectionHeader}>
           <div>
             <div className={styles.sectionTitle}>Promocoes salvas</div>

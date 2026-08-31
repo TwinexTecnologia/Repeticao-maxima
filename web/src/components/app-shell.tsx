@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import { AuthUserMenu } from "./auth-user-menu";
 import styles from "./panel.module.css";
 import {
-  APP_NAVIGATION_ITEMS,
   isNavigationItemActive,
   requirePageAccess,
   type AppNavigationItem,
@@ -26,6 +25,10 @@ export async function AppShell({
 }: AppShellProps) {
   const { user, navigationItems } = await requirePageAccess(currentPath);
   const isPartner = user.userType === "parceiro";
+  const mobileAdminSheetId = "mobile-admin-nav-sheet";
+  const mobilePrimaryItems = isPartner
+    ? []
+    : getMobilePrimaryItems(navigationItems, currentPath);
   const isPartnerHome =
     currentPath.startsWith("/meu-desempenho") &&
     (!currentPath.includes("tab=") || currentPath.includes("tab=inicio"));
@@ -35,6 +38,14 @@ export async function AppShell({
 
   return (
     <div className={styles.appShell}>
+      {!isPartner ? (
+        <input
+          id={mobileAdminSheetId}
+          type="checkbox"
+          className={styles.sheetToggle}
+        />
+      ) : null}
+
       <aside className={styles.sidebar}>
         <div className={styles.brandCard}>
           <div className={styles.brandLogoWrap}>
@@ -98,6 +109,38 @@ export async function AppShell({
             />
             <div className={styles.mobileTopBrandName}>Repeticao Maxima</div>
           </div>
+          {!isPartner ? (
+            <div className={styles.mobileAdminTopActions}>
+              <label
+                htmlFor={mobileAdminSheetId}
+                className={styles.mobileAdminSheetButton}
+              >
+                <span className={styles.mobileAdminSheetButtonIcon} aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M5 7H19"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                    />
+                    <path
+                      d="M5 12H19"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                    />
+                    <path
+                      d="M5 17H13"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </span>
+                <span>Modulos</span>
+              </label>
+            </div>
+          ) : null}
           <div className={styles.titleBlock}>
             <h1>{title}</h1>
             <p>{subtitle}</p>
@@ -144,6 +187,141 @@ export async function AppShell({
 
         {children}
       </div>
+
+      {!isPartner ? (
+        <>
+          <label
+            htmlFor={mobileAdminSheetId}
+            className={styles.sheetOverlay}
+            aria-hidden="true"
+          />
+          <div className={`${styles.sheetPanel} ${styles.mobileAdminSheet}`}>
+            <div className={styles.sheetHeader}>
+              <div>
+                <div className={styles.sheetTitle}>Modulos liberados</div>
+                <div className={styles.sectionSubtitle}>
+                  Acesso rapido a tudo o que voce consegue operar pelo celular.
+                </div>
+              </div>
+              <label
+                htmlFor={mobileAdminSheetId}
+                className={styles.sheetClose}
+              >
+                Fechar
+              </label>
+            </div>
+
+            <div className={styles.mobileAdminSheetGrid}>
+              {navigationItems.map((item) => {
+                const isActive = isNavigationItemActive(currentPath, item.href);
+
+                return (
+                  <Link
+                    key={`mobile-sheet-${item.href}`}
+                    href={item.href}
+                    className={`${styles.mobileModuleLink} ${
+                      isActive ? styles.mobileModuleLinkActive : ""
+                    }`}
+                  >
+                    <span className={styles.mobileModuleIcon} aria-hidden="true">
+                      <NavigationIcon icon={item.icon} />
+                    </span>
+                    <span className={styles.mobileModuleCopy}>
+                      <strong>{item.label}</strong>
+                      <span>{item.hint}</span>
+                    </span>
+                    <span className={styles.navArrow} aria-hidden="true">
+                      <svg viewBox="0 0 20 20" fill="none">
+                        <path
+                          d="M7.5 4.5L13 10L7.5 15.5"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </span>
+                  </Link>
+                );
+              })}
+
+              <Link
+                href="/perfil"
+                className={`${styles.mobileModuleLink} ${
+                  currentPath.startsWith("/perfil")
+                    ? styles.mobileModuleLinkActive
+                    : ""
+                }`}
+              >
+                <span className={styles.mobileModuleIcon} aria-hidden="true">
+                  <NavigationIcon icon="perfil" />
+                </span>
+                <span className={styles.mobileModuleCopy}>
+                  <strong>Perfil</strong>
+                  <span>Conta, senha e acessos</span>
+                </span>
+                <span className={styles.navArrow} aria-hidden="true">
+                  <svg viewBox="0 0 20 20" fill="none">
+                    <path
+                      d="M7.5 4.5L13 10L7.5 15.5"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+              </Link>
+            </div>
+          </div>
+
+          <nav className={styles.mobileAdminBar} aria-label="Atalhos principais">
+            {mobilePrimaryItems.map((item) => {
+              const isActive = isNavigationItemActive(currentPath, item.href);
+
+              return (
+                <Link
+                  key={`mobile-primary-${item.href}`}
+                  href={item.href}
+                  className={`${styles.mobileAdminBarLink} ${
+                    isActive ? styles.mobileAdminBarLinkActive : ""
+                  }`}
+                >
+                  <NavigationIcon icon={item.icon} />
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
+
+            <label
+              htmlFor={mobileAdminSheetId}
+              className={styles.mobileAdminBarLink}
+            >
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M6 12H6.01"
+                  stroke="currentColor"
+                  strokeWidth="2.6"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M12 12H12.01"
+                  stroke="currentColor"
+                  strokeWidth="2.6"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M18 12H18.01"
+                  stroke="currentColor"
+                  strokeWidth="2.6"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span>Mais</span>
+            </label>
+          </nav>
+        </>
+      ) : null}
 
       {isPartner ? (
         <nav className={styles.mobileTabBar} aria-label="Navegacao">
@@ -255,7 +433,56 @@ export async function AppShell({
   );
 }
 
-function NavigationIcon({ icon }: { icon: AppNavigationItem["icon"] }) {
+function getMobilePrimaryItems(
+  navigationItems: AppNavigationItem[],
+  currentPath: string,
+) {
+  const preferredOrder = ["/", "/pedidos", "/estoque", "/empresa"];
+  const chosen: AppNavigationItem[] = [];
+
+  for (const href of preferredOrder) {
+    const match = navigationItems.find((item) => item.href === href);
+
+    if (match && !chosen.some((item) => item.href === match.href)) {
+      chosen.push(match);
+    }
+  }
+
+  if (chosen.length < 4) {
+    for (const item of navigationItems) {
+      if (!chosen.some((entry) => entry.href === item.href)) {
+        chosen.push(item);
+      }
+
+      if (chosen.length === 4) {
+        break;
+      }
+    }
+  }
+
+  const currentMatch = navigationItems.find((item) =>
+    isNavigationItemActive(currentPath, item.href),
+  );
+
+  if (
+    currentMatch &&
+    !chosen.some((item) => item.href === currentMatch.href)
+  ) {
+    if (chosen.length === 4) {
+      chosen[chosen.length - 1] = currentMatch;
+    } else {
+      chosen.push(currentMatch);
+    }
+  }
+
+  return chosen.slice(0, 4);
+}
+
+function NavigationIcon({
+  icon,
+}: {
+  icon: AppNavigationItem["icon"] | "perfil";
+}) {
   switch (icon) {
     case "dashboard":
       return (
@@ -332,6 +559,24 @@ function NavigationIcon({ icon }: { icon: AppNavigationItem["icon"] }) {
           <path d="M4.8 17.8C5.7 15.8 7.3 14.8 9 14.8C10.7 14.8 12.3 15.8 13.2 17.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
           <path d="M16.5 8.2H20.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
           <path d="M18.5 6.2V10.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      );
+    case "perfil":
+      return (
+        <svg viewBox="0 0 24 24" fill="none">
+          <circle
+            cx="12"
+            cy="8.5"
+            r="3.2"
+            stroke="currentColor"
+            strokeWidth="1.8"
+          />
+          <path
+            d="M5.2 19C6.5 16.3 9 15 12 15C15 15 17.5 16.3 18.8 19"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+          />
         </svg>
       );
   }
