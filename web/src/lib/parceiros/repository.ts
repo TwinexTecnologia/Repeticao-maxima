@@ -589,7 +589,11 @@ export async function createPartnerRedemption(input: unknown) {
       status: row.status,
       create_marketing_debt: row.createMarketingDebt,
       debt_id: debtId,
-      notes: row.notes,
+      notes: buildPartnerRedemptionNotes(
+        row.productLabel,
+        row.adjustStock,
+        row.notes,
+      ),
       updated_at: now,
     };
     const { data, error } = await supabase.client
@@ -808,7 +812,7 @@ export async function updatePartnerRedemption(id: string, input: unknown) {
     }
 
     const storedNotes = buildPartnerRedemptionNotes(
-      row.artName,
+      row.productLabel,
       row.adjustStock,
       row.notes,
     );
@@ -883,6 +887,133 @@ export async function updatePartnerRedemption(id: string, input: unknown) {
           updated_at: new Date().toISOString(),
         })
         .eq("id", rollback.stockItemId);
+    }
+
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function deletePartnerRedemption(id: string) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  let previousDebtRow: Record<string, unknown> | null = null;
+  let stockRollback: {
+    stockItemId: string;
+    total: number;
+    printed: number;
+  } | null = null;
+
+  try {
+    const { data: existingData, error: existingError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_REDEMPTION_TABLE)
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (existingError || !existingData) {
+      throw existingError || new Error("Nao foi possivel localizar o resgate para excluir.");
+    }
+
+    const existingRedemption = rowToPartnerRedemption(existingData);
+    const affectedStock = getAffectsStockFromNotes(existingRedemption.notes);
+
+    if (existingRedemption.debtId) {
+      const { data: debtRow } = await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(DEBTS_TABLE)
+        .select("*")
+        .eq("id", existingRedemption.debtId)
+        .maybeSingle();
+
+      previousDebtRow = debtRow ?? null;
+    }
+
+    if (affectedStock && existingRedemption.stockItemId) {
+      const stockRow = await loadStockRowForRedemption(
+        supabase.client,
+        existingRedemption.stockItemId,
+      );
+      const restoredTotal = stockRow.total + existingRedemption.quantity;
+
+      await applyStockUpdate(
+        supabase.client,
+        stockRow.id,
+        restoredTotal,
+        stockRow.printed,
+        new Date().toISOString(),
+      );
+
+      stockRollback = {
+        stockItemId: stockRow.id,
+        total: stockRow.total,
+        printed: stockRow.printed,
+      };
+    }
+
+    if (existingRedemption.debtId) {
+      const { error: deleteDebtError } = await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(DEBTS_TABLE)
+        .delete()
+        .eq("id", existingRedemption.debtId);
+
+      if (deleteDebtError) {
+        throw deleteDebtError;
+      }
+    }
+
+    const { error: deleteRedemptionError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_REDEMPTION_TABLE)
+      .delete()
+      .eq("id", id);
+
+    if (deleteRedemptionError) {
+      throw deleteRedemptionError;
+    }
+
+    return {
+      ok: true as const,
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message: "Resgate excluido com sucesso.",
+        updatedAt: new Date().toISOString(),
+      },
+    };
+  } catch (error) {
+    if (previousDebtRow) {
+      await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(DEBTS_TABLE)
+        .upsert(previousDebtRow, {
+          onConflict: "id",
+        });
+    }
+
+    if (stockRollback) {
+      await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(STOCK_TABLE)
+        .update({
+          total_qty: stockRollback.total,
+          printed_qty: stockRollback.printed,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", stockRollback.stockItemId);
     }
 
     return {
@@ -1141,7 +1272,7 @@ function normalizePartnerRedemptionInput(input: unknown) {
   const couponCode = String(source.couponCode ?? "")
     .trim()
     .toUpperCase();
-  const artName = String(source.artName ?? "").trim();
+  const productLabel = String(source.productLabel ?? source.artName ?? "").trim();
   const stockItemId = String(source.stockItemId ?? "").trim();
   const partnerName = String(source.partnerName ?? "").trim();
   const sku = String(source.sku ?? "").trim();
@@ -1170,8 +1301,8 @@ function normalizePartnerRedemptionInput(input: unknown) {
     throw new Error("Informe o nome do parceiro.");
   }
 
-  if (!artName) {
-    throw new Error("Selecione a arte disponivel no site para registrar esse resgate.");
+  if (!productLabel) {
+    throw new Error("Selecione o produto da loja para registrar esse resgate.");
   }
 
   if (createMarketingDebt && !dueDate) {
@@ -1192,7 +1323,7 @@ function normalizePartnerRedemptionInput(input: unknown) {
     totalCost: Math.round(unitCost * quantity * 100) / 100,
     grantedAt,
     dueDate: dueDate || null,
-    artName,
+    productLabel,
     adjustStock,
     status: normalizePartnerRedemptionStatus(source.status),
     createMarketingDebt,
@@ -1248,11 +1379,11 @@ async function applyStockUpdate(
 }
 
 function buildPartnerRedemptionNotes(
-  artName: string,
+  productLabel: string,
   adjustStock: boolean,
   notes: string,
 ) {
-  const lines = [`[arte] ${artName.trim()}`, `[estoque] ${adjustStock ? "sim" : "nao"}`];
+  const lines = [`[produto] ${productLabel.trim()}`, `[estoque] ${adjustStock ? "sim" : "nao"}`];
   const cleanNotes = notes.trim();
 
   if (cleanNotes) {
