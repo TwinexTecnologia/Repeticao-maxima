@@ -2208,6 +2208,8 @@
   font-size: 0.76rem;
   font-weight: 700;
   cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 
 .mobileAdminBarLink svg {
@@ -2235,6 +2237,8 @@
   gap: 6px;
   font-size: 0.78rem;
   font-weight: 700;
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 
 .mobileTabBarLink svg {
@@ -2272,6 +2276,7 @@
   background: rgba(14, 9, 28, 0.46);
   backdrop-filter: blur(6px);
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
   transition: opacity 0.18s ease;
   z-index: 60;
@@ -2298,6 +2303,8 @@
   box-shadow: 0 28px 80px rgba(30, 27, 75, 0.18);
   padding: 22px;
   opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .sheetHeader {
@@ -2337,12 +2344,15 @@
 
 .sheetToggle:checked ~ .sheetOverlay {
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
 }
 
 .sheetToggle:checked ~ .sheetPanel {
   transform: translate(-50%, -50%) scale(1);
   opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .movementTypeGrid {
@@ -2686,6 +2696,7 @@
     box-shadow: 0 18px 40px rgba(8, 2, 14, 0.35);
     backdrop-filter: blur(14px);
     z-index: 80;
+    pointer-events: none;
   }
 
   .mobileAdminBar {
@@ -2703,6 +2714,7 @@
     box-shadow: 0 18px 40px rgba(8, 2, 14, 0.35);
     backdrop-filter: blur(14px);
     z-index: 80;
+    pointer-events: none;
   }
 
   .sheetPanel {
