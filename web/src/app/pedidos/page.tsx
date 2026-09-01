@@ -1,4 +1,3 @@
-import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { Fragment } from "react";
 
@@ -291,8 +290,6 @@ async function saveOpeningBalanceAction(formData: FormData) {
     );
   }
 
-  revalidatePath("/pedidos");
-  revalidatePath("/financeiro");
   redirect(appendFlashToRedirect(redirectTo, "success", "Saldo inicial salvo com sucesso."));
 }
 
@@ -325,8 +322,6 @@ async function createFinanceGroupAction(formData: FormData) {
     );
   }
 
-  revalidatePath("/pedidos");
-  revalidatePath("/financeiro");
   redirect(appendFlashToRedirect(redirectTo, "success", "Grupo cadastrado com sucesso."));
 }
 
@@ -360,8 +355,6 @@ async function createFinanceSubgroupAction(formData: FormData) {
     );
   }
 
-  revalidatePath("/pedidos");
-  revalidatePath("/financeiro");
   redirect(appendFlashToRedirect(redirectTo, "success", "Subgrupo cadastrado com sucesso."));
 }
 
@@ -435,8 +428,6 @@ async function saveMovementAction(formData: FormData) {
     );
   }
 
-  revalidatePath("/pedidos");
-  revalidatePath("/financeiro");
   redirect(
     appendFlashToRedirect(
       redirectTo,
@@ -480,8 +471,6 @@ async function deleteMovementAction(formData: FormData) {
     );
   }
 
-  revalidatePath("/pedidos");
-  revalidatePath("/financeiro");
   redirect(
     appendFlashToRedirect(
       redirectTo,
