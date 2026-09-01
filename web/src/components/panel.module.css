@@ -2494,6 +2494,288 @@
   color: #6f5b82;
 }
 
+.financeAnalyticsSection {
+  margin-top: 20px;
+}
+
+.financeAnalyticsStack {
+  display: grid;
+  gap: 18px;
+}
+
+.financeDonutSection {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.financeChartCard {
+  padding: 22px;
+  border-radius: 24px;
+  background: #ffffff;
+  border: 1px solid rgba(123, 44, 191, 0.08);
+  box-shadow: 0 14px 36px rgba(88, 28, 135, 0.06);
+}
+
+.financeDonutLayout {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  align-items: center;
+}
+
+.financeDonutWrap {
+  position: relative;
+  width: min(280px, 100%);
+  margin: 0 auto;
+}
+
+.financeDonutSvg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.financeDonutCenter {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 6px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.financeDonutCenter span {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #6f5b82;
+}
+
+.financeDonutCenter strong {
+  font-size: 1.3rem;
+  line-height: 1.15;
+  color: #2d1941;
+}
+
+.financeLegendTable {
+  display: grid;
+  gap: 10px;
+}
+
+.financeLegendHeader,
+.financeLegendRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(110px, 0.9fr) minmax(90px, 0.6fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.financeLegendHeader {
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(123, 44, 191, 0.08);
+  color: #755b8d;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.financeLegendRow {
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(123, 44, 191, 0.03);
+  border: 1px solid rgba(123, 44, 191, 0.06);
+}
+
+.financeLegendName {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: #2d1941;
+  font-weight: 600;
+}
+
+.financeLegendName,
+.financeLegendHeader span,
+.financeLegendRow strong,
+.financeLegendRow span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.financeLegendDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.financeLegendRow strong {
+  color: #37184d;
+  font-size: 0.88rem;
+}
+
+.financeLegendRow span:last-child {
+  color: #755b8d;
+  text-align: right;
+}
+
+.financeBarChart {
+  display: grid;
+  gap: 14px;
+}
+
+.financeBarLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.financeBarLegendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(123, 44, 191, 0.05);
+  border: 1px solid rgba(123, 44, 191, 0.08);
+  color: #4f2f6d;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.financeBarLegendDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.financeBarLegendDotEntry {
+  background: linear-gradient(180deg, #7c3aed 0%, #5b21b6 100%);
+}
+
+.financeBarLegendDotExpense {
+  background: linear-gradient(180deg, #fb7185 0%, #f97316 100%);
+}
+
+.financeBarTooltip {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(123, 44, 191, 0.08), rgba(176, 90, 0, 0.08));
+  border: 1px solid rgba(123, 44, 191, 0.08);
+}
+
+.financeBarTooltip strong {
+  color: #2d1941;
+}
+
+.financeBarTooltip span {
+  color: #6f5b82;
+  font-size: 0.9rem;
+}
+
+.financeBarFrame {
+  position: relative;
+  height: 320px;
+  padding: 18px 10px 28px 54px;
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(123, 44, 191, 0.03) 0%, rgba(255, 247, 236, 0.7) 100%);
+  border: 1px solid rgba(123, 44, 191, 0.08);
+  overflow: hidden;
+}
+
+.financeBarGridLine {
+  position: absolute;
+  left: 54px;
+  right: 10px;
+  border-top: 1px dashed rgba(123, 44, 191, 0.12);
+}
+
+.financeBarGridLine span {
+  position: absolute;
+  left: -50px;
+  top: -10px;
+  width: 42px;
+  color: #8a739e;
+  font-size: 0.68rem;
+  text-align: right;
+}
+
+.financeBarColumns {
+  position: absolute;
+  left: 54px;
+  right: 10px;
+  bottom: 12px;
+  top: 14px;
+  display: grid;
+  grid-template-columns: repeat(31, minmax(0, 1fr));
+  gap: 6px;
+  align-items: end;
+}
+
+.financeBarDay {
+  height: 100%;
+  display: grid;
+  align-items: end;
+  gap: 8px;
+  justify-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.financeBarPair {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  align-items: end;
+}
+
+.financeBarColumn {
+  width: 100%;
+  min-height: 4px;
+  align-self: end;
+  border-radius: 999px 999px 4px 4px;
+  transition:
+    transform 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.financeBarDay:hover .financeBarColumn,
+.financeBarDay:focus-visible .financeBarColumn {
+  transform: translateY(-2px);
+}
+
+.financeBarDay:focus-visible {
+  outline: none;
+}
+
+.financeBarColumnEntry {
+  background: linear-gradient(180deg, #7c3aed 0%, #5b21b6 100%);
+}
+
+.financeBarColumnExpense {
+  background: linear-gradient(180deg, #fb7185 0%, #f97316 100%);
+}
+
+.financeBarDayLabel {
+  color: #755b8d;
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
 @media (max-width: 1180px) {
   .appShell {
     grid-template-columns: 1fr;
@@ -2556,6 +2838,11 @@
   }
 
   .configGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .financeDonutSection,
+  .financeDonutLayout {
     grid-template-columns: 1fr;
   }
 
@@ -2773,7 +3060,8 @@
 
   .financeTopGrid,
   .financeChartGrid,
-  .financeInsightGrid {
+  .financeInsightGrid,
+  .financeDonutSection {
     grid-template-columns: 1fr;
   }
 
@@ -2809,6 +3097,51 @@
 
   .movementFormGrid {
     grid-template-columns: 1fr;
+  }
+
+  .financeChartCard {
+    padding: 14px;
+  }
+
+  .financeDonutLayout {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .financeLegendHeader,
+  .financeLegendRow {
+    grid-template-columns: minmax(0, 1.2fr) minmax(90px, 0.8fr) minmax(70px, 0.5fr);
+    gap: 8px;
+  }
+
+  .financeBarTooltip {
+    padding: 12px 14px;
+  }
+
+  .financeBarFrame {
+    height: 250px;
+    padding: 14px 8px 24px 40px;
+  }
+
+  .financeBarGridLine {
+    left: 40px;
+    right: 8px;
+  }
+
+  .financeBarGridLine span {
+    left: -38px;
+    width: 32px;
+    font-size: 0.62rem;
+  }
+
+  .financeBarColumns {
+    left: 40px;
+    right: 8px;
+    gap: 4px;
+  }
+
+  .financeBarDayLabel {
+    font-size: 0.56rem;
   }
 
 
