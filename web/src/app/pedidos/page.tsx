@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { Fragment } from "react";
 
 import { AppShell } from "@/components/app-shell";
+import { FinanceAnalyticsCharts } from "@/components/finance-analytics-charts";
 import { FinanceGroupSubgroupFields } from "@/components/finance-group-subgroup-fields";
 import styles from "@/components/panel.module.css";
 import {
@@ -898,6 +899,13 @@ export default async function PedidosPage({ searchParams }: PageProps) {
           </article>
         </div>
 
+        <div className={styles.financeAnalyticsSection}>
+          <FinanceAnalyticsCharts
+            movements={manualFinanceData.movements}
+            selectedMonth={selectedMonth}
+          />
+        </div>
+
         <div className={styles.twoColumn} style={{ marginTop: 16 }}>
           <article className={styles.configCard}>
             <div className={styles.sectionHeader}>
@@ -1043,6 +1051,13 @@ export default async function PedidosPage({ searchParams }: PageProps) {
             <div className={styles.metricValue}>{String(manualFinanceData.movements.length)}</div>
             <div className={styles.metricHint}>Lancamentos manuais registrados no mes</div>
           </article>
+        </div>
+
+        <div className={styles.financeAnalyticsSection}>
+          <FinanceAnalyticsCharts
+            movements={manualFinanceData.movements}
+            selectedMonth={selectedMonth}
+          />
         </div>
 
         <div className={styles.configGrid}>
