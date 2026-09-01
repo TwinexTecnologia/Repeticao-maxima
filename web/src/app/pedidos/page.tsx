@@ -8,6 +8,7 @@ import {
   createFinanceCategoryGroup,
   createFinanceCategorySubgroup,
   createManualFinanceMovement,
+  deleteManualFinanceMovement,
   type FinanceCategoryGroup,
   loadManualFinanceModuleData,
   saveMonthlyOpeningBalance,
@@ -447,6 +448,45 @@ async function saveMovementAction(formData: FormData) {
           : type === "entrada"
             ? "Entrada registrada com sucesso."
             : "Saida registrada com sucesso.",
+    ),
+  );
+}
+
+async function deleteMovementAction(formData: FormData) {
+  "use server";
+
+  const redirectTo = String(formData.get("redirectTo") ?? "/pedidos").trim() || "/pedidos";
+  const movementId = String(formData.get("movementId") ?? "").trim();
+
+  if (!movementId) {
+    redirect(
+      appendFlashToRedirect(
+        redirectTo,
+        "error",
+        "Nao foi possivel identificar a movimentacao para excluir.",
+      ),
+    );
+  }
+
+  const result = await deleteManualFinanceMovement(movementId);
+
+  if (!result.ok) {
+    redirect(
+      appendFlashToRedirect(
+        redirectTo,
+        "error",
+        result.persistence.message || "Nao foi possivel excluir a movimentacao.",
+      ),
+    );
+  }
+
+  revalidatePath("/pedidos");
+  revalidatePath("/financeiro");
+  redirect(
+    appendFlashToRedirect(
+      redirectTo,
+      "success",
+      result.persistence.message || "Movimentacao excluida com sucesso.",
     ),
   );
 }
@@ -1207,6 +1247,13 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                     <label htmlFor={editSheetId} className={styles.secondaryButton}>
                       Editar
                     </label>
+                    <form action={deleteMovementAction}>
+                      <input type="hidden" name="redirectTo" value={redirectTo} />
+                      <input type="hidden" name="movementId" value={row.id} />
+                      <button type="submit" className={styles.dangerButton}>
+                        Excluir
+                      </button>
+                    </form>
                     <label htmlFor={editSheetId} className={styles.sheetOverlay} aria-hidden="true" />
 
                     <div className={styles.sheetPanel}>
@@ -1307,6 +1354,13 @@ export default async function PedidosPage({ searchParams }: PageProps) {
                         <label htmlFor={editSheetId} className={styles.secondaryButton}>
                           Editar
                         </label>
+                        <form action={deleteMovementAction} style={{ marginTop: 8 }}>
+                          <input type="hidden" name="redirectTo" value={redirectTo} />
+                          <input type="hidden" name="movementId" value={row.id} />
+                          <button type="submit" className={styles.dangerButton}>
+                            Excluir
+                          </button>
+                        </form>
                         <label htmlFor={editSheetId} className={styles.sheetOverlay} aria-hidden="true" />
 
                         <div className={styles.sheetPanel}>
