@@ -1,5 +1,5 @@
 .appShell {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
   background:
@@ -154,6 +154,7 @@
 }
 
 .content {
+  min-width: 0;
   padding: 28px;
   background:
     radial-gradient(circle at top left, rgba(123, 44, 191, 0.05), transparent 24%),
@@ -2219,7 +2220,7 @@
 }
 
 .mobileTabBarSpacer {
-  height: 84px;
+  height: calc(84px + var(--mobile-safe-bottom));
 }
 
 .mobileTabBar {
@@ -2283,6 +2284,8 @@
   width: min(760px, calc(100vw - 40px));
   max-height: min(84vh, 760px);
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   transform: translate(-50%, -46%) scale(0.98);
   transition:
     transform 0.18s ease,
@@ -2574,17 +2577,18 @@
 
   .content {
     padding: 12px;
-    padding-bottom: 100px;
+    padding-bottom: calc(var(--mobile-shell-bottom-offset) + 16px);
   }
 
   .topbar {
     flex-direction: column;
     align-items: stretch;
-    gap: 12px;
+    gap: 10px;
   }
 
   .mobileTopBrand {
     display: flex;
+    gap: 8px;
   }
 
   .mobileAdminTopActions {
@@ -2593,26 +2597,15 @@
   }
 
   .mobileModuleNav {
-    display: flex;
-    gap: 10px;
-    margin: 4px 0 16px;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    scroll-snap-type: x proximity;
-  }
-
-  .mobileModuleLink {
-    min-width: min(260px, calc(100vw - 40px));
-    scroll-snap-align: start;
+    display: none;
   }
 
   .titleBlock h1 {
-    font-size: 1.5rem;
+    font-size: 1.35rem;
+    line-height: 1.08;
   }
 
   .titleBlock p {
-    margin-top: 8px;
-    font-size: 0.95rem;
     display: none;
   }
 
@@ -2621,7 +2614,8 @@
     flex-direction: column;
     align-items: stretch;
     justify-content: flex-start;
-    padding: 10px;
+    gap: 8px;
+    padding: 8px 10px;
     border-radius: 16px;
   }
 
@@ -2680,37 +2674,42 @@
   .mobileTabBar {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 6px;
+    gap: 4px;
     position: fixed;
-    left: 12px;
-    right: 12px;
-    bottom: 12px;
-    padding: 12px 10px;
-    border-radius: 22px;
+    left: 8px;
+    right: 8px;
+    bottom: calc(8px + var(--mobile-safe-bottom));
+    padding: 10px 8px calc(10px + var(--mobile-safe-bottom));
+    border-radius: 20px;
     background: linear-gradient(180deg, rgba(28, 4, 48, 0.98), rgba(42, 7, 70, 0.98));
     border: 1px solid rgba(255, 255, 255, 0.12);
     box-shadow: 0 18px 40px rgba(8, 2, 14, 0.35);
+    backdrop-filter: blur(14px);
     z-index: 80;
   }
 
   .mobileAdminBar {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 6px;
+    gap: 4px;
     position: fixed;
-    left: 12px;
-    right: 12px;
-    bottom: 12px;
-    padding: 12px 10px;
-    border-radius: 22px;
+    left: 8px;
+    right: 8px;
+    bottom: calc(8px + var(--mobile-safe-bottom));
+    padding: 10px 8px calc(10px + var(--mobile-safe-bottom));
+    border-radius: 20px;
     background: linear-gradient(180deg, rgba(28, 4, 48, 0.98), rgba(42, 7, 70, 0.98));
     border: 1px solid rgba(255, 255, 255, 0.12);
     box-shadow: 0 18px 40px rgba(8, 2, 14, 0.35);
+    backdrop-filter: blur(14px);
     z-index: 80;
   }
 
   .sheetPanel {
-    padding-bottom: 24px;
+    width: min(760px, calc(100vw - 16px));
+    max-height: min(82dvh, 760px);
+    padding: 18px 16px calc(18px + var(--mobile-safe-bottom));
+    border-radius: 24px;
   }
 
   .metricGrid {
