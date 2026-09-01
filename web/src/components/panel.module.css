@@ -1257,7 +1257,8 @@
 }
 
 .primaryButton,
-.secondaryButton {
+.secondaryButton,
+.dangerButton {
   min-height: 46px;
   padding: 0 16px;
   border-radius: 14px;
@@ -1284,8 +1285,15 @@
   background: #ffffff;
 }
 
+.dangerButton {
+  border: 1px solid rgba(185, 28, 28, 0.18);
+  color: #b91c1c;
+  background: #ffffff;
+}
+
 .primaryButton:hover,
-.secondaryButton:hover {
+.secondaryButton:hover,
+.dangerButton:hover {
   transform: translateY(-1px);
 }
 
@@ -2168,6 +2176,7 @@
 .mobileListActions {
   margin-top: 12px;
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 

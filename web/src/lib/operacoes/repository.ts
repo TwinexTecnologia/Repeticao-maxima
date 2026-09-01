@@ -736,6 +736,71 @@ export async function updateManualFinanceMovement(id: string, input: unknown) {
   }
 }
 
+export async function deleteManualFinanceMovement(id: string) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const movementId = String(id).trim();
+
+  if (!movementId) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Nao foi possivel identificar a movimentacao para excluir."),
+    };
+  }
+
+  try {
+    const { data: existingMovement, error: existingMovementError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_MOVEMENTS_TABLE)
+      .select("id, movement_type")
+      .eq("id", movementId)
+      .single();
+
+    if (existingMovementError || !existingMovement) {
+      throw existingMovementError || new Error("A movimentacao informada nao foi encontrada.");
+    }
+
+    const { error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_MOVEMENTS_TABLE)
+      .delete()
+      .eq("id", movementId);
+
+    if (error) {
+      throw error;
+    }
+
+    const movementType = normalizeFinancialMovementType(existingMovement.movement_type);
+
+    return {
+      ok: true as const,
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          movementType === "entrada"
+            ? "Entrada manual excluida com sucesso."
+            : "Saida manual excluida com sucesso.",
+        updatedAt: new Date().toISOString(),
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
 export async function loadStockSelectionOptions() {
   const supabase = createSupabaseServerClient();
 
