@@ -305,7 +305,7 @@ export async function loadManualFinanceModuleData(selectedMonth: string) {
   try {
     const [
       { data: balanceData, error: balanceError },
-      { data: movementData, error: movementError },
+      { data: currentMonthMovementData, error: currentMonthMovementError },
       { data: groupData, error: groupError },
       { data: subgroupData, error: subgroupError },
     ] =
@@ -320,6 +320,7 @@ export async function loadManualFinanceModuleData(selectedMonth: string) {
           .schema(OPERATIONS_SCHEMA)
           .from(FINANCE_MOVEMENTS_TABLE)
           .select("*")
+          .gte("movement_date", monthStart)
           .lte("movement_date", monthEnd)
           .order("movement_date", { ascending: true })
           .order("created_at", { ascending: true }),
@@ -340,8 +341,8 @@ export async function loadManualFinanceModuleData(selectedMonth: string) {
       throw balanceError;
     }
 
-    if (movementError) {
-      throw movementError;
+    if (currentMonthMovementError) {
+      throw currentMonthMovementError;
     }
 
     if (groupError) {
@@ -356,7 +357,7 @@ export async function loadManualFinanceModuleData(selectedMonth: string) {
       (row: Record<string, unknown>) =>
         rowToMonthlyOpeningBalance(row as Record<string, unknown>),
     );
-    const allMovements: ManualFinanceMovement[] = (movementData ?? []).map(
+    const movements: ManualFinanceMovement[] = (currentMonthMovementData ?? []).map(
       (row: Record<string, unknown>) =>
         rowToManualFinanceMovement(row as Record<string, unknown>),
     );
@@ -383,35 +384,52 @@ export async function loadManualFinanceModuleData(selectedMonth: string) {
     const balanceByMonth = new Map<string, MonthlyOpeningBalance>(
       allBalances.map((balance: MonthlyOpeningBalance) => [balance.monthRef, balance]),
     );
-    const movementNetByMonth = new Map<string, number>();
-
-    for (const movement of allMovements) {
-      const movementMonthRef = movement.movementDate.slice(0, 7);
-      const currentNet = movementNetByMonth.get(movementMonthRef) ?? 0;
-      const signedAmount = movement.type === "entrada" ? movement.amount : -movement.amount;
-      movementNetByMonth.set(movementMonthRef, currentNet + signedAmount);
-    }
-
     const currentBalance = balanceByMonth.get(monthRef) ?? null;
-    const movements = allMovements.filter(
-      (movement: ManualFinanceMovement) => movement.movementDate.slice(0, 7) === monthRef,
-    );
     const previousMonthRef = getPreviousMonthReference(monthRef);
-    const monthsWithHistory = Array.from(
-      new Set([
-        ...allBalances.map((balance: MonthlyOpeningBalance) => balance.monthRef),
-        ...allMovements.map((movement: ManualFinanceMovement) => movement.movementDate.slice(0, 7)),
-      ]),
-    )
-      .filter((value: string) => value < monthRef)
-      .sort();
+    const movementNetByMonth = new Map<string, number>();
+    const historyMonths = new Set<string>();
 
     let effectiveOpeningBalance: number | null = currentBalance?.openingBalance ?? null;
     let openingBalanceSource: ManualFinanceOpeningBalanceSource =
       currentBalance ? "manual" : "none";
     let inheritedFromMonthRef: string | null = null;
 
-    if (!currentBalance && previousMonthRef && monthsWithHistory.length > 0) {
+    if (!currentBalance && previousMonthRef) {
+      for (const balance of allBalances) {
+        if (balance.monthRef < monthRef) {
+          historyMonths.add(balance.monthRef);
+        }
+      }
+
+      const { data: historyMovementData, error: historyMovementError } = await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(FINANCE_MOVEMENTS_TABLE)
+        .select("movement_date, movement_type, amount, updated_at")
+        .lt("movement_date", monthStart);
+
+      if (historyMovementError) {
+        throw historyMovementError;
+      }
+
+      for (const movement of (historyMovementData ?? []) as Array<Record<string, unknown>>) {
+        const movementMonthRef = String(movement.movement_date ?? "").slice(0, 7);
+
+        if (!movementMonthRef) {
+          continue;
+        }
+
+        historyMonths.add(movementMonthRef);
+        const currentNet = movementNetByMonth.get(movementMonthRef) ?? 0;
+        const signedAmount =
+          normalizeFinancialMovementType(movement.movement_type) === "entrada"
+            ? getNumberValue(movement.amount)
+            : getNumberValue(movement.amount) * -1;
+        movementNetByMonth.set(movementMonthRef, currentNet + signedAmount);
+      }
+
+      const monthsWithHistory = Array.from(historyMonths).sort();
+
+      if (monthsWithHistory.length > 0) {
       const monthsToProcess = buildMonthSequence(monthsWithHistory[0]!, previousMonthRef);
       let carriedBalance = 0;
 
@@ -425,11 +443,12 @@ export async function loadManualFinanceModuleData(selectedMonth: string) {
       effectiveOpeningBalance = carriedBalance;
       openingBalanceSource = "previous_month";
       inheritedFromMonthRef = previousMonthRef;
+      }
     }
 
     const latestUpdatedAt = getLatestUpdatedAt([
       ...((balanceData ?? []) as Array<Record<string, unknown>>),
-      ...((movementData ?? []) as Array<Record<string, unknown>>),
+      ...((currentMonthMovementData ?? []) as Array<Record<string, unknown>>),
       ...((groupData ?? []) as Array<Record<string, unknown>>),
       ...((subgroupData ?? []) as Array<Record<string, unknown>>),
     ]);
