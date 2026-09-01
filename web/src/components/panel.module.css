@@ -211,6 +211,7 @@
   box-shadow: 0 10px 24px rgba(88, 28, 135, 0.08);
   font-weight: 700;
   cursor: pointer;
+  appearance: none;
 }
 
 .mobileAdminSheetButtonIcon {
@@ -2207,6 +2208,9 @@
   gap: 6px;
   font-size: 0.76rem;
   font-weight: 700;
+  border: none;
+  background: transparent;
+  appearance: none;
   cursor: pointer;
   pointer-events: auto;
   touch-action: manipulation;
@@ -2340,6 +2344,20 @@
   color: #4f2f6d;
   font-size: 1.5rem;
   line-height: 1;
+  cursor: pointer;
+}
+
+.sheetOverlayVisible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.sheetPanelVisible {
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .sheetToggle:checked ~ .sheetOverlay {
