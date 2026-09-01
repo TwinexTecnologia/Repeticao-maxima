@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { Fragment } from "react";
 
 import { AppShell } from "@/components/app-shell";
+import { FinanceGroupSubgroupFields } from "@/components/finance-group-subgroup-fields";
 import styles from "@/components/panel.module.css";
 import {
   createFinanceCategoryGroup,
@@ -522,45 +523,11 @@ function MovementForm(props: {
         />
       </label>
 
-      <label className={styles.filterField}>
-        <span>Grupo</span>
-        <select
-          name="groupId"
-          defaultValue={props.initialMovement?.groupId || availableGroups[0]?.id || ""}
-          required
-        >
-          <option value="">
-            {availableGroups.length > 0
-              ? "Selecione o grupo"
-              : "Cadastre um grupo antes de registrar"}
-          </option>
-          {availableGroups.map((group) => (
-            <option key={group.id} value={group.id}>
-              {group.name}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className={styles.filterField}>
-        <span>Subgrupo</span>
-        <select name="subgroupId" defaultValue={props.initialMovement?.subgroupId || ""}>
-          <option value="">Sem subgrupo</option>
-          {availableGroups.map((group) =>
-            group.subgroups.length > 0 ? (
-              <optgroup key={group.id} label={group.name}>
-                {group.subgroups
-                  .filter((subgroup) => subgroup.active)
-                  .map((subgroup) => (
-                    <option key={subgroup.id} value={subgroup.id}>
-                      {subgroup.name}
-                    </option>
-                  ))}
-              </optgroup>
-            ) : null,
-          )}
-        </select>
-      </label>
+      <FinanceGroupSubgroupFields
+        groups={availableGroups}
+        initialGroupId={props.initialMovement?.groupId || availableGroups[0]?.id || ""}
+        initialSubgroupId={props.initialMovement?.subgroupId || ""}
+      />
 
       <label className={styles.filterField}>
         <span>Valor</span>
