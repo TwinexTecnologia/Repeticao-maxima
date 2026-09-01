@@ -307,27 +307,6 @@ function buildDonutSegments(
     .sort((left, right) => right.amount - left.amount || left.label.localeCompare(right.label, "pt-BR"));
   const total = items.reduce((sum, item) => sum + item.amount, 0);
 
-  if (items.length > 5) {
-    const mainItems = items.slice(0, 4);
-    const otherAmount = items.slice(4).reduce((sum, item) => sum + item.amount, 0);
-
-    if (otherAmount > 0) {
-      mainItems.push({
-        label: "Outros",
-        amount: otherAmount,
-      });
-    }
-
-    return {
-      total,
-      segments: mainItems.map((item, index) => ({
-        ...item,
-        percentage: total > 0 ? (item.amount / total) * 100 : 0,
-        color: DONUT_COLORS[index % DONUT_COLORS.length] || DONUT_COLORS[0]!,
-      })),
-    };
-  }
-
   return {
     total,
     segments: items.map((item, index) => ({
