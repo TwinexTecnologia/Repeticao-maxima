@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
+import { PartnerContentHub } from "@/components/partner-content-hub";
 import styles from "@/components/panel.module.css";
 import {
   ATHLETE_SUPPORT_MINIMUM_REDEMPTION,
@@ -14,6 +15,7 @@ import {
 } from "@/lib/parceiros/performance";
 import { loadPartnerCampaignSnapshots } from "@/lib/parceiros/campaigns";
 import { loadPartnerCampaigns } from "@/lib/parceiros/campaigns-repository";
+import { loadPartnerContentLibrary } from "@/lib/parceiros/content-repository";
 import {
   loadCouponPartnerProfiles,
   loadPartnerRedemptions,
@@ -91,6 +93,7 @@ export default async function MeuDesempenhoPage({
   );
   const selectedCampaign =
     partnerCampaigns.find((campaign) => campaign.id === selectedCampaignId) || null;
+  const contentLibrary = await loadPartnerContentLibrary();
   const windowCampaign =
     partnerCampaigns
       .filter((campaign) => campaign.useCurrentWindow)
@@ -519,8 +522,57 @@ export default async function MeuDesempenhoPage({
               </div>
             </div>
           </section>
+
+          <section className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <div>
+                <div className={styles.sectionTitle}>Central de Conteudo</div>
+                <p className={styles.sectionSubtitle}>
+                  Biblioteca oficial com campanhas, produtos, identidade, templates e ideias.
+                </p>
+              </div>
+              <a href="/meu-desempenho?tab=conteudo" className={styles.primaryButton}>
+                Abrir central
+              </a>
+            </div>
+
+            <div className={styles.metricGridCompact}>
+              <article className={styles.metricCard}>
+                <div className={styles.metricLabel}>Campanha ativa</div>
+                <div className={styles.metricValue}>
+                  {contentLibrary.activeCampaign?.title || "Nenhuma"}
+                </div>
+                <div className={styles.metricHint}>
+                  {contentLibrary.activeCampaign
+                    ? contentLibrary.activeCampaign.endDate
+                      ? formatDateOnly(contentLibrary.activeCampaign.endDate)
+                      : contentLibrary.activeCampaign.startDate
+                        ? formatDateOnly(contentLibrary.activeCampaign.startDate)
+                        : "Sem data definida"
+                    : "Aguardando nova ativacao"}
+                </div>
+              </article>
+              <article className={styles.metricCard}>
+                <div className={styles.metricLabel}>Produtos</div>
+                <div className={styles.metricValue}>{contentLibrary.products.length}</div>
+                <div className={styles.metricHint}>Cards visuais para voce baixar materiais</div>
+              </article>
+              <article className={styles.metricCard}>
+                <div className={styles.metricLabel}>Materiais da marca</div>
+                <div className={styles.metricValue}>{contentLibrary.brandAssets.length}</div>
+                <div className={styles.metricHint}>Logos, elementos e fundos oficiais</div>
+              </article>
+              <article className={styles.metricCard}>
+                <div className={styles.metricLabel}>Ideias</div>
+                <div className={styles.metricValue}>{contentLibrary.ideas.length}</div>
+                <div className={styles.metricHint}>Sugestoes prontas para inspirar seu conteudo</div>
+              </article>
+            </div>
+          </section>
         </>
       ) : null}
+
+      {tab === "conteudo" ? <PartnerContentHub library={contentLibrary} /> : null}
 
       <section className={`${styles.section} ${styles.desktopOnly}`}>
         <form className={styles.filterGrid} method="get">
@@ -1263,11 +1315,12 @@ function normalizeTab(value: unknown) {
 
   if (
     normalized === "inicio" ||
+    normalized === "conteudo" ||
     normalized === "campanhas" ||
     normalized === "pedidos" ||
     normalized === "resgates"
   ) {
-    return normalized as "inicio" | "campanhas" | "pedidos" | "resgates";
+    return normalized as "inicio" | "conteudo" | "campanhas" | "pedidos" | "resgates";
   }
 
   return "inicio" as const;

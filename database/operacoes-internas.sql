@@ -417,6 +417,124 @@ CREATE TABLE IF NOT EXISTS repeticao_maxima.parceiros_campanhas_participantes (
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.parceiros_campanhas_participantes TO anon, authenticated, service_role;
 
+CREATE TABLE IF NOT EXISTS repeticao_maxima.parceiros_conteudo_campanhas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL DEFAULT '',
+  summary TEXT NOT NULL DEFAULT '',
+  details TEXT NOT NULL DEFAULT '',
+  recommended_cta TEXT NOT NULL DEFAULT '',
+  start_date DATE,
+  end_date DATE,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  is_current BOOLEAN NOT NULL DEFAULT FALSE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (sort_order >= 0),
+  CHECK (end_date IS NULL OR start_date IS NULL OR end_date >= start_date)
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.parceiros_conteudo_campanhas TO anon, authenticated, service_role;
+
+CREATE TABLE IF NOT EXISTS repeticao_maxima.parceiros_conteudo_produtos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL DEFAULT '',
+  image_url TEXT NOT NULL DEFAULT '',
+  short_description TEXT NOT NULL DEFAULT '',
+  composition TEXT NOT NULL DEFAULT '',
+  differentials TEXT NOT NULL DEFAULT '',
+  product_url TEXT NOT NULL DEFAULT '',
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (sort_order >= 0)
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.parceiros_conteudo_produtos TO anon, authenticated, service_role;
+
+CREATE TABLE IF NOT EXISTS repeticao_maxima.parceiros_conteudo_assets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  scope_type TEXT NOT NULL DEFAULT 'brand',
+  scope_id UUID,
+  category_key TEXT NOT NULL DEFAULT 'other',
+  title TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  file_url TEXT NOT NULL DEFAULT '',
+  preview_url TEXT NOT NULL DEFAULT '',
+  download_label TEXT NOT NULL DEFAULT 'Baixar',
+  asset_type TEXT NOT NULL DEFAULT 'image',
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (scope_type IN ('campaign', 'product', 'brand', 'template', 'idea')),
+  CHECK (category_key IN (
+    'story',
+    'feed',
+    'pdf',
+    'info',
+    'other',
+    'png_front',
+    'png_back',
+    'photo_official',
+    'photo_model',
+    'video',
+    'art',
+    'logos',
+    'elements',
+    'backgrounds',
+    'story_9_16',
+    'feed_4_5',
+    'template_other',
+    'treino',
+    'cupom',
+    'unboxing',
+    'look',
+    'lancamento'
+  )),
+  CHECK (asset_type IN ('image', 'video', 'pdf', 'link', 'archive', 'idea')),
+  CHECK (sort_order >= 0)
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.parceiros_conteudo_assets TO anon, authenticated, service_role;
+
+ALTER TABLE repeticao_maxima.parceiros_conteudo_campanhas
+  ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS summary TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS details TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS recommended_cta TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS start_date DATE,
+  ADD COLUMN IF NOT EXISTS end_date DATE,
+  ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS is_current BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE repeticao_maxima.parceiros_conteudo_produtos
+  ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS image_url TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS short_description TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS composition TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS differentials TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS product_url TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE repeticao_maxima.parceiros_conteudo_assets
+  ADD COLUMN IF NOT EXISTS scope_type TEXT NOT NULL DEFAULT 'brand',
+  ADD COLUMN IF NOT EXISTS scope_id UUID,
+  ADD COLUMN IF NOT EXISTS category_key TEXT NOT NULL DEFAULT 'other',
+  ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS file_url TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS preview_url TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS download_label TEXT NOT NULL DEFAULT 'Baixar',
+  ADD COLUMN IF NOT EXISTS asset_type TEXT NOT NULL DEFAULT 'image',
+  ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+
 ALTER TABLE repeticao_maxima.profiles_usuarios
   ADD COLUMN IF NOT EXISTS auth_user_id UUID,
   ADD COLUMN IF NOT EXISTS coupon_partner_id UUID REFERENCES repeticao_maxima.parceiros_cupons(id) ON DELETE SET NULL,
