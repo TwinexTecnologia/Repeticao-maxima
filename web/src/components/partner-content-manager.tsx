@@ -35,6 +35,7 @@ type CampaignFormState = {
   summary: string;
   details: string;
   recommendedCta: string;
+  imageUrl: string;
   startDate: string;
   endDate: string;
   active: boolean;
@@ -149,6 +150,7 @@ export function PartnerContentManager({
   const [isSavingCampaign, setIsSavingCampaign] = useState(false);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [isSavingAsset, setIsSavingAsset] = useState(false);
+  const [isUploadingCampaignImage, setIsUploadingCampaignImage] = useState(false);
   const [isUploadingProductImage, setIsUploadingProductImage] = useState(false);
   const [isUploadingAssetFile, setIsUploadingAssetFile] = useState(false);
   const [isUploadingAssetPreview, setIsUploadingAssetPreview] = useState(false);
@@ -159,6 +161,7 @@ export function PartnerContentManager({
     summary: "",
     details: "",
     recommendedCta: "",
+    imageUrl: "",
     startDate: "",
     endDate: "",
     active: true,
@@ -248,6 +251,7 @@ export function PartnerContentManager({
         summary: campaignForm.summary,
         details: campaignForm.details,
         recommendedCta: campaignForm.recommendedCta,
+        imageUrl: campaignForm.imageUrl,
         startDate: campaignForm.startDate,
         endDate: campaignForm.endDate,
         active: campaignForm.active,
@@ -394,6 +398,7 @@ export function PartnerContentManager({
         summary: campaign.summary,
         details: campaign.details,
         recommendedCta: campaign.recommendedCta,
+        imageUrl: campaign.imageUrl,
         startDate: campaign.startDate,
         endDate: campaign.endDate,
         active: !campaign.active,
@@ -422,6 +427,32 @@ export function PartnerContentManager({
       );
     } finally {
       setProcessingKey("");
+    }
+  }
+
+  async function handleUploadCampaignImage(file: File | null) {
+    if (!file) {
+      return;
+    }
+
+    setIsUploadingCampaignImage(true);
+    setFeedback("");
+
+    try {
+      const fileUrl = await uploadContentFile(file, "campaigns");
+      setCampaignForm((current) => ({
+        ...current,
+        imageUrl: fileUrl,
+      }));
+      setFeedback("Imagem da campanha enviada com sucesso.");
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : "Nao foi possivel enviar a imagem da campanha.",
+      );
+    } finally {
+      setIsUploadingCampaignImage(false);
     }
   }
 
@@ -511,6 +542,7 @@ export function PartnerContentManager({
       summary: campaign.summary,
       details: campaign.details,
       recommendedCta: campaign.recommendedCta,
+      imageUrl: campaign.imageUrl,
       startDate: campaign.startDate || "",
       endDate: campaign.endDate || "",
       active: campaign.active,
@@ -561,6 +593,7 @@ export function PartnerContentManager({
       summary: "",
       details: "",
       recommendedCta: "",
+      imageUrl: "",
       startDate: "",
       endDate: "",
       active: true,
@@ -719,6 +752,34 @@ export function PartnerContentManager({
                 />
               </label>
               <label className={styles.filterField}>
+                <span>Foto da campanha</span>
+                <div className={styles.stack}>
+                  <input
+                    value={campaignForm.imageUrl}
+                    onChange={(event) =>
+                      setCampaignForm((current) => ({
+                        ...current,
+                        imageUrl: event.target.value,
+                      }))
+                    }
+                    placeholder="https://..."
+                  />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) =>
+                      handleUploadCampaignImage(event.target.files?.[0] || null)
+                    }
+                    disabled={isUploadingCampaignImage}
+                  />
+                  <span className={styles.sectionSubtitle}>
+                    {isUploadingCampaignImage
+                      ? "Enviando imagem..."
+                      : "Voce pode colar a URL ou subir a foto oficial da campanha por aqui."}
+                  </span>
+                </div>
+              </label>
+              <label className={styles.filterField}>
                 <span>Ordem</span>
                 <input
                   type="number"
@@ -822,6 +883,14 @@ export function PartnerContentManager({
                   <p className={styles.sectionSubtitle}>
                     {campaign.summary || "Sem resumo curto."}
                   </p>
+                  {campaign.imageUrl ? (
+                    <div className={styles.metaList} style={{ marginTop: 16 }}>
+                      <div className={styles.metaItem}>
+                        <strong>Foto da campanha</strong>
+                        <span>{campaign.imageUrl}</span>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className={styles.metaList} style={{ marginTop: 16 }}>
                     <div className={styles.metaItem}>
                       <strong>Periodo</strong>
@@ -1432,7 +1501,7 @@ async function saveContentEntity(
 
 async function uploadContentFile(
   file: File,
-  folder: "products" | "assets" | "previews",
+  folder: "campaigns" | "products" | "assets" | "previews",
 ) {
   const formData = new FormData();
   formData.append("file", file);

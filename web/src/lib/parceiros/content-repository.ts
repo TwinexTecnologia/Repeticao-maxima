@@ -76,6 +76,7 @@ export type PartnerContentCampaign = {
   summary: string;
   details: string;
   recommendedCta: string;
+  imageUrl: string;
   startDate: string | null;
   endDate: string | null;
   active: boolean;
@@ -328,6 +329,7 @@ async function savePartnerContentCampaignRecord(id: string | null, input: unknow
       summary: row.summary,
       details: row.details,
       recommended_cta: row.recommendedCta,
+      image_url: row.imageUrl,
       start_date: row.startDate,
       end_date: row.endDate,
       active: row.active,
@@ -566,6 +568,7 @@ function rowToPartnerContentCampaign(
     summary: String(row.summary ?? "").trim(),
     details: String(row.details ?? "").trim(),
     recommendedCta: String(row.recommended_cta ?? "").trim(),
+    imageUrl: String(row.image_url ?? "").trim(),
     startDate: normalizeDate(row.start_date) || null,
     endDate: normalizeDate(row.end_date) || null,
     active: row.active === false ? false : true,
@@ -651,6 +654,7 @@ function normalizeCampaignInput(input: unknown) {
     summary: String(source.summary ?? "").trim(),
     details: String(source.details ?? "").trim(),
     recommendedCta: String(source.recommendedCta ?? "").trim(),
+    imageUrl: String(source.imageUrl ?? "").trim(),
     startDate,
     endDate,
     active: source.active === false ? false : true,

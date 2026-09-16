@@ -72,6 +72,25 @@ export function PartnerContentHub({
               </div>
             </div>
 
+            {library.activeCampaign.imageUrl ? (
+              <div className={styles.contentHeroMedia}>
+                <AssetPreview
+                  title={library.activeCampaign.title}
+                  imageUrl={library.activeCampaign.imageUrl}
+                  tone="campaign"
+                  className={styles.contentHeroImage}
+                />
+                <a
+                  href={library.activeCampaign.imageUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={styles.contentHeroDownload}
+                >
+                  Baixar foto da campanha
+                </a>
+              </div>
+            ) : null}
+
             {library.activeCampaign.details ? (
               <div
                 className={`${styles.callout} ${styles.contentHeroCallout}`}
@@ -411,6 +430,14 @@ function CampaignCard({
 }) {
   return (
     <article className={styles.contentCampaignCard}>
+      {campaign.imageUrl ? (
+        <AssetPreview
+          title={campaign.title}
+          imageUrl={campaign.imageUrl}
+          tone="campaign"
+          className={styles.contentCampaignImage}
+        />
+      ) : null}
       <div className={styles.contentHeroEyebrow}>Campanha</div>
       <strong>{campaign.title}</strong>
       <p>{campaign.summary || "Campanha ativa com materiais para download."}</p>
@@ -423,6 +450,16 @@ function CampaignCard({
           <strong>Argumento recomendado</strong>
           <span>{campaign.recommendedCta}</span>
         </div>
+      ) : null}
+      {campaign.imageUrl ? (
+        <a
+          href={campaign.imageUrl}
+          target="_blank"
+          rel="noreferrer"
+          className={styles.secondaryButton}
+        >
+          Baixar foto
+        </a>
       ) : null}
     </article>
   );
