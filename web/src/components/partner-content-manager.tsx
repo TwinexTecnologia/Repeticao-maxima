@@ -706,7 +706,7 @@ export function PartnerContentManager({
                 />
               </label>
               <label className={styles.filterField}>
-                <span>CTA recomendado</span>
+                <span>Argumento recomendado</span>
                 <input
                   value={campaignForm.recommendedCta}
                   onChange={(event) =>
@@ -840,7 +840,7 @@ export function PartnerContentManager({
                   </div>
                   {campaign.recommendedCta ? (
                     <div className={styles.callout} style={{ marginTop: 16 }}>
-                      <h3>CTA recomendado</h3>
+                      <h3>Argumento recomendado</h3>
                       <p>{campaign.recommendedCta}</p>
                     </div>
                   ) : null}

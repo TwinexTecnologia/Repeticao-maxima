@@ -17,6 +17,13 @@ export function PartnerContentHub({
   library: PartnerContentLibrary;
   compact?: boolean;
 }) {
+  const otherCampaigns = useMemo(
+    () =>
+      library.campaigns.filter(
+        (campaign) => campaign.id !== library.activeCampaign?.id,
+      ),
+    [library.activeCampaign?.id, library.campaigns],
+  );
   const brandGroups = useMemo(
     () => buildCategoryGroups(library.brandAssets),
     [library.brandAssets],
@@ -59,20 +66,26 @@ export function PartnerContentHub({
             </div>
 
             {library.activeCampaign.details ? (
-              <div className={styles.callout} style={{ marginTop: 18 }}>
+              <div
+                className={`${styles.callout} ${styles.contentHeroCallout}`}
+                style={{ marginTop: 18 }}
+              >
                 <h3>Informacoes da campanha</h3>
                 <p>{library.activeCampaign.details}</p>
               </div>
             ) : null}
 
             {library.activeCampaign.recommendedCta ? (
-              <div className={styles.callout} style={{ marginTop: 16 }}>
-                <h3>CTA recomendado</h3>
+              <div
+                className={`${styles.callout} ${styles.contentHeroCallout}`}
+                style={{ marginTop: 16 }}
+              >
+                <h3>Argumento recomendado</h3>
                 <p>{library.activeCampaign.recommendedCta}</p>
               </div>
             ) : null}
 
-            <div className={styles.contentAssetGrid}>
+            <div className={`${styles.contentAssetGrid} ${styles.contentCarouselRow}`}>
               {library.activeCampaign.assets.length > 0 ? (
                 library.activeCampaign.assets.map((asset) => (
                   <AssetCard key={asset.id} asset={asset} />
@@ -86,6 +99,17 @@ export function PartnerContentHub({
                 </div>
               )}
             </div>
+
+            {otherCampaigns.length > 0 ? (
+              <div className={styles.stack} style={{ marginTop: 18 }}>
+                <div className={styles.contentCarouselLabel}>Outras campanhas</div>
+                <div className={`${styles.contentCampaignGrid} ${styles.contentCarouselRow}`}>
+                  {otherCampaigns.map((campaign) => (
+                    <CampaignCard key={campaign.id} campaign={campaign} />
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </article>
         ) : (
           <div className={styles.warningPanel}>
@@ -108,7 +132,7 @@ export function PartnerContentHub({
         </div>
 
         {library.products.length > 0 ? (
-          <div className={styles.contentProductGrid}>
+          <div className={`${styles.contentProductGrid} ${styles.contentCarouselRow}`}>
             {library.products.map((product) => (
               <ProductCard key={product.id} product={product} compact={compact} />
             ))}
@@ -134,7 +158,7 @@ export function PartnerContentHub({
         </div>
 
         {brandGroups.length > 0 ? (
-          <div className={styles.contentCategoryGrid}>
+          <div className={`${styles.contentCategoryGrid} ${styles.contentCarouselRow}`}>
             {brandGroups.map((group) => (
               <MaterialGroupCard
                 key={group.key}
@@ -165,7 +189,7 @@ export function PartnerContentHub({
         </div>
 
         {templateGroups.length > 0 ? (
-          <div className={styles.contentCategoryGrid}>
+          <div className={`${styles.contentCategoryGrid} ${styles.contentCarouselRow}`}>
             {templateGroups.map((group) => (
               <MaterialGroupCard
                 key={group.key}
@@ -220,6 +244,30 @@ export function PartnerContentHub({
   );
 }
 
+function CampaignCard({
+  campaign,
+}: {
+  campaign: PartnerContentCampaign;
+}) {
+  return (
+    <article className={styles.contentCampaignCard}>
+      <div className={styles.contentHeroEyebrow}>Campanha</div>
+      <strong>{campaign.title}</strong>
+      <p>{campaign.summary || "Campanha ativa com materiais para download."}</p>
+      <div className={styles.contentCampaignMeta}>
+        <span>{formatPeriod(campaign.startDate, campaign.endDate)}</span>
+        <span>{campaign.assets.length} material(is)</span>
+      </div>
+      {campaign.recommendedCta ? (
+        <div className={styles.contentCampaignArgument}>
+          <strong>Argumento recomendado</strong>
+          <span>{campaign.recommendedCta}</span>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
 function ProductCard({
   product,
   compact,
@@ -261,7 +309,7 @@ function ProductCard({
         </div>
       ) : null}
 
-      <div className={styles.contentAssetGrid}>
+      <div className={`${styles.contentAssetGrid} ${styles.contentCarouselRow}`}>
         {product.assets.length > 0 ? (
           product.assets.map((asset) => <AssetCard key={asset.id} asset={asset} />)
         ) : (
@@ -296,7 +344,7 @@ function MaterialGroupCard({
         <span>{assets.length} arquivo(s)</span>
       </summary>
 
-      <div className={styles.contentAssetGrid}>
+      <div className={`${styles.contentAssetGrid} ${styles.contentCarouselRow}`}>
         {assets.map((asset) => (
           <AssetCard key={asset.id} asset={asset} />
         ))}
