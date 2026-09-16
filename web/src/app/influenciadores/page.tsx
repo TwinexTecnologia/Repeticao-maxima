@@ -660,6 +660,9 @@ export default async function InfluenciadoresPage({ searchParams }: PageProps) {
               <a href="/influenciadores/campanhas" className={styles.secondaryButton}>
                 Criar campanha
               </a>
+              <a href="/influenciadores/central-conteudo" className={styles.secondaryButton}>
+                Central de conteudo
+              </a>
               <a href="/influenciadores/poupanca-atleta" className={styles.secondaryButton}>
                 Conferir resgates
               </a>

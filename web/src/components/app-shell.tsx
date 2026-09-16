@@ -33,6 +33,7 @@ export async function AppShell({
     currentPath.startsWith("/meu-desempenho") &&
     (!currentPath.includes("tab=") || currentPath.includes("tab=inicio"));
   const isPartnerCampaigns = currentPath.includes("tab=campanhas");
+  const isPartnerContent = currentPath.includes("tab=conteudo");
   const isPartnerOrders = currentPath.includes("tab=pedidos");
   const isPartnerRedemptions = currentPath.includes("tab=resgates");
 
@@ -202,6 +203,46 @@ export async function AppShell({
             <span>Campanhas</span>
           </Link>
           <Link
+            href="/meu-desempenho?tab=conteudo"
+            className={`${styles.mobileTabBarLink} ${
+              isPartnerContent ? styles.mobileTabBarLinkActive : ""
+            }`}
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M5.5 6.5H18.5V18.5H5.5V6.5Z"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M8.5 4.5V8.5"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+              <path
+                d="M15.5 4.5V8.5"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+              <path
+                d="M9 12H15"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+              <path
+                d="M9 15.5H13"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+            </svg>
+            <span>Conteudo</span>
+          </Link>
+          <Link
             href="/meu-desempenho?tab=pedidos"
             className={`${styles.mobileTabBarLink} ${
               isPartnerOrders ? styles.mobileTabBarLinkActive : ""
@@ -241,23 +282,6 @@ export async function AppShell({
               />
             </svg>
             <span>Resgates</span>
-          </Link>
-          <Link
-            href="/perfil"
-            className={`${styles.mobileTabBarLink} ${
-              currentPath.startsWith("/perfil") ? styles.mobileTabBarLinkActive : ""
-            }`}
-          >
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="12" cy="8.5" r="3.2" stroke="currentColor" strokeWidth="1.8" />
-              <path
-                d="M5.2 19C6.5 16.3 9 15 12 15C15 15 17.5 16.3 18.8 19"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-              />
-            </svg>
-            <span>Perfil</span>
           </Link>
         </nav>
       ) : null}
