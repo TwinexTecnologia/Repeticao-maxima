@@ -1,6 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
+import {
+  Children,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import styles from "@/components/panel.module.css";
 import type {
@@ -17,6 +24,13 @@ export function PartnerContentHub({
   library: PartnerContentLibrary;
   compact?: boolean;
 }) {
+  const otherCampaigns = useMemo(
+    () =>
+      library.campaigns.filter(
+        (campaign) => campaign.id !== library.activeCampaign?.id,
+      ),
+    [library.activeCampaign?.id, library.campaigns],
+  );
   const brandGroups = useMemo(
     () => buildCategoryGroups(library.brandAssets),
     [library.brandAssets],
@@ -59,33 +73,51 @@ export function PartnerContentHub({
             </div>
 
             {library.activeCampaign.details ? (
-              <div className={styles.callout} style={{ marginTop: 18 }}>
+              <div
+                className={`${styles.callout} ${styles.contentHeroCallout}`}
+                style={{ marginTop: 18 }}
+              >
                 <h3>Informacoes da campanha</h3>
                 <p>{library.activeCampaign.details}</p>
               </div>
             ) : null}
 
             {library.activeCampaign.recommendedCta ? (
-              <div className={styles.callout} style={{ marginTop: 16 }}>
-                <h3>CTA recomendado</h3>
+              <div
+                className={`${styles.callout} ${styles.contentHeroCallout}`}
+                style={{ marginTop: 16 }}
+              >
+                <h3>Argumento recomendado</h3>
                 <p>{library.activeCampaign.recommendedCta}</p>
               </div>
             ) : null}
 
-            <div className={styles.contentAssetGrid}>
-              {library.activeCampaign.assets.length > 0 ? (
-                library.activeCampaign.assets.map((asset) => (
+            {library.activeCampaign.assets.length > 0 ? (
+              <HorizontalCarousel
+                title="Materiais da campanha"
+                tone="hero"
+                items={library.activeCampaign.assets.map((asset) => (
                   <AssetCard key={asset.id} asset={asset} />
-                ))
-              ) : (
-                <div className={styles.warningPanel}>
-                  <div className={styles.warningTitle}>Sem materiais da campanha</div>
-                  <p className={styles.warningText}>
-                    O time ainda nao cadastrou arquivos para essa campanha.
-                  </p>
-                </div>
-              )}
-            </div>
+                ))}
+              />
+            ) : (
+              <div className={styles.warningPanel}>
+                <div className={styles.warningTitle}>Sem materiais da campanha</div>
+                <p className={styles.warningText}>
+                  O time ainda nao cadastrou arquivos para essa campanha.
+                </p>
+              </div>
+            )}
+
+            {otherCampaigns.length > 0 ? (
+              <HorizontalCarousel
+                title="Outras campanhas"
+                tone="hero"
+                items={otherCampaigns.map((campaign) => (
+                  <CampaignCard key={campaign.id} campaign={campaign} />
+                ))}
+              />
+            ) : null}
           </article>
         ) : (
           <div className={styles.warningPanel}>
@@ -108,11 +140,12 @@ export function PartnerContentHub({
         </div>
 
         {library.products.length > 0 ? (
-          <div className={styles.contentProductGrid}>
-            {library.products.map((product) => (
+          <HorizontalCarousel
+            title="Colecao de produtos"
+            items={library.products.map((product) => (
               <ProductCard key={product.id} product={product} compact={compact} />
             ))}
-          </div>
+          />
         ) : (
           <div className={styles.warningPanel}>
             <div className={styles.warningTitle}>Sem produtos publicados</div>
@@ -134,8 +167,9 @@ export function PartnerContentHub({
         </div>
 
         {brandGroups.length > 0 ? (
-          <div className={styles.contentCategoryGrid}>
-            {brandGroups.map((group) => (
+          <HorizontalCarousel
+            title="Materiais da marca"
+            items={brandGroups.map((group) => (
               <MaterialGroupCard
                 key={group.key}
                 title={group.title}
@@ -143,7 +177,7 @@ export function PartnerContentHub({
                 assets={group.assets}
               />
             ))}
-          </div>
+          />
         ) : (
           <div className={styles.warningPanel}>
             <div className={styles.warningTitle}>Sem materiais da marca</div>
@@ -165,8 +199,9 @@ export function PartnerContentHub({
         </div>
 
         {templateGroups.length > 0 ? (
-          <div className={styles.contentCategoryGrid}>
-            {templateGroups.map((group) => (
+          <HorizontalCarousel
+            title="Templates"
+            items={templateGroups.map((group) => (
               <MaterialGroupCard
                 key={group.key}
                 title={group.title}
@@ -174,7 +209,7 @@ export function PartnerContentHub({
                 assets={group.assets}
               />
             ))}
-          </div>
+          />
         ) : (
           <div className={styles.warningPanel}>
             <div className={styles.warningTitle}>Sem templates publicados</div>
@@ -220,6 +255,179 @@ export function PartnerContentHub({
   );
 }
 
+function HorizontalCarousel({
+  title,
+  items,
+  tone = "default",
+}: {
+  title: string;
+  items: ReactNode[];
+  tone?: "default" | "hero";
+}) {
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const slides = useMemo(() => Children.toArray(items), [items]);
+
+  useEffect(() => {
+    if (!trackRef.current) {
+      return;
+    }
+
+    function updateActiveIndex() {
+      const currentTrack = trackRef.current;
+      if (!currentTrack) {
+        return;
+      }
+
+      const children = Array.from(currentTrack.children) as HTMLElement[];
+      if (children.length === 0) {
+        setActiveIndex(0);
+        return;
+      }
+
+      const currentScroll = currentTrack.scrollLeft;
+      let closestIndex = 0;
+      let closestDistance = Number.POSITIVE_INFINITY;
+
+      children.forEach((child, index) => {
+        const distance = Math.abs(child.offsetLeft - currentScroll);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closestIndex = index;
+        }
+      });
+
+      setActiveIndex(closestIndex);
+    }
+
+    const track = trackRef.current;
+    updateActiveIndex();
+    track.addEventListener("scroll", updateActiveIndex, { passive: true });
+    window.addEventListener("resize", updateActiveIndex);
+
+    return () => {
+      track.removeEventListener("scroll", updateActiveIndex);
+      window.removeEventListener("resize", updateActiveIndex);
+    };
+  }, [slides.length]);
+
+  function scrollToIndex(index: number) {
+    const track = trackRef.current;
+    if (!track) {
+      return;
+    }
+
+    const children = Array.from(track.children) as HTMLElement[];
+    const target = children[index];
+    if (!target) {
+      return;
+    }
+
+    track.scrollTo({
+      left: target.offsetLeft,
+      behavior: "smooth",
+    });
+  }
+
+  return (
+    <div
+      className={`${styles.contentCarousel} ${
+        tone === "hero" ? styles.contentCarouselHero : ""
+      }`}
+    >
+      <div className={styles.contentCarouselHeader}>
+        <div className={styles.contentCarouselLabel}>{title}</div>
+        {slides.length > 1 ? (
+          <div className={styles.contentCarouselActions}>
+            <button
+              type="button"
+              className={styles.contentCarouselButton}
+              onClick={() => scrollToIndex(Math.max(0, activeIndex - 1))}
+              disabled={activeIndex === 0}
+              aria-label={`Voltar em ${title}`}
+            >
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path
+                  d="M12.5 4.5L7 10L12.5 15.5"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className={styles.contentCarouselButton}
+              onClick={() => scrollToIndex(Math.min(slides.length - 1, activeIndex + 1))}
+              disabled={activeIndex >= slides.length - 1}
+              aria-label={`Avancar em ${title}`}
+            >
+              <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path
+                  d="M7.5 4.5L13 10L7.5 15.5"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
+        ) : null}
+      </div>
+
+      <div ref={trackRef} className={styles.contentCarouselTrack}>
+        {slides.map((item, index) => (
+          <div key={index} className={styles.contentCarouselSlide}>
+            {item}
+          </div>
+        ))}
+      </div>
+
+      {slides.length > 1 ? (
+        <div className={styles.contentCarouselDots} aria-hidden="true">
+          {slides.map((_, index) => (
+            <button
+              key={index}
+              type="button"
+              className={`${styles.contentCarouselDot} ${
+                index === activeIndex ? styles.contentCarouselDotActive : ""
+              }`}
+              onClick={() => scrollToIndex(index)}
+              aria-label={`Ir para item ${index + 1} de ${title}`}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CampaignCard({
+  campaign,
+}: {
+  campaign: PartnerContentCampaign;
+}) {
+  return (
+    <article className={styles.contentCampaignCard}>
+      <div className={styles.contentHeroEyebrow}>Campanha</div>
+      <strong>{campaign.title}</strong>
+      <p>{campaign.summary || "Campanha ativa com materiais para download."}</p>
+      <div className={styles.contentCampaignMeta}>
+        <span>{formatPeriod(campaign.startDate, campaign.endDate)}</span>
+        <span>{campaign.assets.length} material(is)</span>
+      </div>
+      {campaign.recommendedCta ? (
+        <div className={styles.contentCampaignArgument}>
+          <strong>Argumento recomendado</strong>
+          <span>{campaign.recommendedCta}</span>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
 function ProductCard({
   product,
   compact,
@@ -261,18 +469,21 @@ function ProductCard({
         </div>
       ) : null}
 
-      <div className={styles.contentAssetGrid}>
-        {product.assets.length > 0 ? (
-          product.assets.map((asset) => <AssetCard key={asset.id} asset={asset} />)
-        ) : (
-          <div className={styles.warningPanel}>
-            <div className={styles.warningTitle}>Sem materiais do produto</div>
-            <p className={styles.warningText}>
-              O time ainda nao cadastrou imagens ou arquivos para este produto.
-            </p>
-          </div>
-        )}
-      </div>
+      {product.assets.length > 0 ? (
+        <HorizontalCarousel
+          title={`Materiais de ${product.name}`}
+          items={product.assets.map((asset) => (
+            <AssetCard key={asset.id} asset={asset} />
+          ))}
+        />
+      ) : (
+        <div className={styles.warningPanel}>
+          <div className={styles.warningTitle}>Sem materiais do produto</div>
+          <p className={styles.warningText}>
+            O time ainda nao cadastrou imagens ou arquivos para este produto.
+          </p>
+        </div>
+      )}
     </details>
   );
 }
@@ -296,11 +507,12 @@ function MaterialGroupCard({
         <span>{assets.length} arquivo(s)</span>
       </summary>
 
-      <div className={styles.contentAssetGrid}>
-        {assets.map((asset) => (
+      <HorizontalCarousel
+        title={title}
+        items={assets.map((asset) => (
           <AssetCard key={asset.id} asset={asset} />
         ))}
-      </div>
+      />
     </details>
   );
 }
