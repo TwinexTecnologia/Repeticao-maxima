@@ -35,6 +35,7 @@ function normalizeFolder(value: unknown) {
   const normalized = String(value ?? "").trim().toLowerCase();
 
   if (
+    normalized === "campaigns" ||
     normalized === "products" ||
     normalized === "assets" ||
     normalized === "previews"
