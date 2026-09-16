@@ -23,6 +23,12 @@ type ContentManagerResponse = {
   asset?: PartnerContentAsset;
 };
 
+type ContentUploadResponse = {
+  ok: boolean;
+  fileUrl?: string;
+  message?: string;
+};
+
 type CampaignFormState = {
   editingId: string | null;
   title: string;
@@ -143,6 +149,9 @@ export function PartnerContentManager({
   const [isSavingCampaign, setIsSavingCampaign] = useState(false);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [isSavingAsset, setIsSavingAsset] = useState(false);
+  const [isUploadingProductImage, setIsUploadingProductImage] = useState(false);
+  const [isUploadingAssetFile, setIsUploadingAssetFile] = useState(false);
+  const [isUploadingAssetPreview, setIsUploadingAssetPreview] = useState(false);
   const [processingKey, setProcessingKey] = useState("");
   const [campaignForm, setCampaignForm] = useState<CampaignFormState>({
     editingId: null,
@@ -413,6 +422,85 @@ export function PartnerContentManager({
       );
     } finally {
       setProcessingKey("");
+    }
+  }
+
+  async function handleUploadProductImage(file: File | null) {
+    if (!file) {
+      return;
+    }
+
+    setIsUploadingProductImage(true);
+    setFeedback("");
+
+    try {
+      const fileUrl = await uploadContentFile(file, "products");
+      setProductForm((current) => ({
+        ...current,
+        imageUrl: fileUrl,
+      }));
+      setFeedback("Imagem do produto enviada com sucesso.");
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : "Nao foi possivel enviar a imagem do produto.",
+      );
+    } finally {
+      setIsUploadingProductImage(false);
+    }
+  }
+
+  async function handleUploadAssetFile(file: File | null) {
+    if (!file) {
+      return;
+    }
+
+    setIsUploadingAssetFile(true);
+    setFeedback("");
+
+    try {
+      const fileUrl = await uploadContentFile(file, "assets");
+      setAssetForm((current) => ({
+        ...current,
+        fileUrl,
+        assetType: current.scopeType === "idea" ? "idea" : inferAssetType(file),
+      }));
+      setFeedback("Arquivo principal enviado com sucesso.");
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : "Nao foi possivel enviar o arquivo principal.",
+      );
+    } finally {
+      setIsUploadingAssetFile(false);
+    }
+  }
+
+  async function handleUploadAssetPreview(file: File | null) {
+    if (!file) {
+      return;
+    }
+
+    setIsUploadingAssetPreview(true);
+    setFeedback("");
+
+    try {
+      const fileUrl = await uploadContentFile(file, "previews");
+      setAssetForm((current) => ({
+        ...current,
+        previewUrl: fileUrl,
+      }));
+      setFeedback("Preview enviado com sucesso.");
+    } catch (error) {
+      setFeedback(
+        error instanceof Error
+          ? error.message
+          : "Nao foi possivel enviar o preview.",
+      );
+    } finally {
+      setIsUploadingAssetPreview(false);
     }
   }
 
@@ -828,16 +916,31 @@ export function PartnerContentManager({
               </label>
               <label className={styles.filterField}>
                 <span>Foto principal</span>
-                <input
-                  value={productForm.imageUrl}
-                  onChange={(event) =>
-                    setProductForm((current) => ({
-                      ...current,
-                      imageUrl: event.target.value,
-                    }))
-                  }
-                  placeholder="https://..."
-                />
+                <div className={styles.stack}>
+                  <input
+                    value={productForm.imageUrl}
+                    onChange={(event) =>
+                      setProductForm((current) => ({
+                        ...current,
+                        imageUrl: event.target.value,
+                      }))
+                    }
+                    placeholder="https://..."
+                  />
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) =>
+                      handleUploadProductImage(event.target.files?.[0] || null)
+                    }
+                    disabled={isUploadingProductImage}
+                  />
+                  <span className={styles.sectionSubtitle}>
+                    {isUploadingProductImage
+                      ? "Enviando imagem..."
+                      : "Voce pode colar a URL ou subir a imagem por aqui."}
+                  </span>
+                </div>
               </label>
               <label className={styles.filterField}>
                 <span>Link do produto</span>
@@ -1109,30 +1212,61 @@ export function PartnerContentManager({
               </label>
               <label className={styles.filterField}>
                 <span>URL de download</span>
-                <input
-                  value={assetForm.fileUrl}
-                  onChange={(event) =>
-                    setAssetForm((current) => ({
-                      ...current,
-                      fileUrl: event.target.value,
-                    }))
-                  }
-                  placeholder="https://..."
-                  disabled={assetForm.scopeType === "idea"}
-                />
+                <div className={styles.stack}>
+                  <input
+                    value={assetForm.fileUrl}
+                    onChange={(event) =>
+                      setAssetForm((current) => ({
+                        ...current,
+                        fileUrl: event.target.value,
+                      }))
+                    }
+                    placeholder="https://..."
+                    disabled={assetForm.scopeType === "idea"}
+                  />
+                  <input
+                    type="file"
+                    onChange={(event) =>
+                      handleUploadAssetFile(event.target.files?.[0] || null)
+                    }
+                    disabled={assetForm.scopeType === "idea" || isUploadingAssetFile}
+                  />
+                  <span className={styles.sectionSubtitle}>
+                    {assetForm.scopeType === "idea"
+                      ? "Ideias nao precisam de arquivo para download."
+                      : isUploadingAssetFile
+                        ? "Enviando arquivo..."
+                        : "Voce pode colar a URL ou subir o arquivo por aqui."}
+                  </span>
+                </div>
               </label>
               <label className={styles.filterField}>
                 <span>Preview (opcional)</span>
-                <input
-                  value={assetForm.previewUrl}
-                  onChange={(event) =>
-                    setAssetForm((current) => ({
-                      ...current,
-                      previewUrl: event.target.value,
-                    }))
-                  }
-                  placeholder="https://..."
-                />
+                <div className={styles.stack}>
+                  <input
+                    value={assetForm.previewUrl}
+                    onChange={(event) =>
+                      setAssetForm((current) => ({
+                        ...current,
+                        previewUrl: event.target.value,
+                      }))
+                    }
+                    placeholder="https://..."
+                  />
+                  <input
+                    type="file"
+                    accept="image/*,video/*,.pdf"
+                    onChange={(event) =>
+                      handleUploadAssetPreview(event.target.files?.[0] || null)
+                    }
+                    disabled={isUploadingAssetPreview}
+                  />
+                  <span className={styles.sectionSubtitle}>
+                    {isUploadingAssetPreview
+                      ? "Enviando preview..."
+                      : "Use para capa, thumb ou visualizacao do material."}
+                  </span>
+                </div>
               </label>
               <label className={styles.filterField}>
                 <span>Texto do botao</span>
@@ -1294,6 +1428,49 @@ async function saveContentEntity(
   }
 
   return result;
+}
+
+async function uploadContentFile(
+  file: File,
+  folder: "products" | "assets" | "previews",
+) {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("folder", folder);
+
+  const response = await fetch("/api/influenciadores/conteudo/upload", {
+    method: "POST",
+    body: formData,
+  });
+  const result = (await response.json()) as ContentUploadResponse;
+
+  if (!response.ok || !result.ok || !result.fileUrl) {
+    throw new Error(result.message || "Nao foi possivel enviar o arquivo.");
+  }
+
+  return result.fileUrl;
+}
+
+function inferAssetType(file: File): PartnerContentAssetType {
+  const type = String(file.type || "").toLowerCase();
+
+  if (type.startsWith("image/")) {
+    return "image";
+  }
+
+  if (type.startsWith("video/")) {
+    return "video";
+  }
+
+  if (type === "application/pdf") {
+    return "pdf";
+  }
+
+  if (type.includes("zip") || type.includes("compressed")) {
+    return "archive";
+  }
+
+  return "archive";
 }
 
 function sortCampaigns(items: PartnerContentCampaign[]) {
