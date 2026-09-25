@@ -264,6 +264,16 @@ function NavigationIcon({ icon }: { icon: AppNavigationItem["icon"] }) {
           <path d="M12 7V17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
       );
+    case "marketing":
+      return (
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M4 18.5H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M6.5 16V11.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M12 16V7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M17.5 16V4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M6.5 11.5L12 7.5L17.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+        </svg>
+      );
     case "nuvemshop":
       return (
         <svg viewBox="0 0 24 24" fill="none">
