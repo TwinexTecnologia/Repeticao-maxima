@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/app-shell";
+import { MarketingPreviewTable } from "@/components/marketing-preview-table";
 import styles from "@/components/panel.module.css";
 import {
   formatDateTime,
@@ -6,8 +7,6 @@ import {
   getMarketingFilters,
   loadMarketingModuleData,
 } from "@/lib/marketing/repository";
-
-const DISPLAY_LIMIT = 100;
 
 type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -17,12 +16,82 @@ export default async function MarketingPage({ searchParams }: PageProps) {
   const resolvedSearchParams = (await searchParams) || {};
   const filters = getMarketingFilters(resolvedSearchParams);
   const data = await loadMarketingModuleData(filters);
-  const salesPreview = data.salesRows.slice(0, DISPLAY_LIMIT);
-  const abandonedPreview = data.abandonedRows.slice(0, DISPLAY_LIMIT);
   const salesStatusOptions = Array.from(
     new Set(data.salesRows.map((row) => row.status).filter(Boolean)),
   ).sort((left, right) => left.localeCompare(right));
-  const exportQuery = buildExportQuery(filters);
+  const salesExportCsvHref = buildExportHref(
+    "/api/marketing/vendas/export",
+    filters,
+    "csv",
+  );
+  const salesExportXlsxHref = buildExportHref(
+    "/api/marketing/vendas/export",
+    filters,
+    "xlsx",
+  );
+  const abandonedExportCsvHref = buildExportHref(
+    "/api/marketing/carrinhos-abandonados/export",
+    filters,
+    "csv",
+  );
+  const abandonedExportXlsxHref = buildExportHref(
+    "/api/marketing/carrinhos-abandonados/export",
+    filters,
+    "xlsx",
+  );
+  const salesPreviewRows = data.salesRows.map((row) => ({
+    id: row.orderId,
+    cells: [
+      { primary: row.orderNumber },
+      { primary: formatDateTime(row.createdAt) },
+      {
+        primary: row.buyerName || "-",
+        secondary: row.buyerDocument || "Sem documento",
+      },
+      {
+        primary: row.buyerEmail || "-",
+        secondary: row.buyerPhone || "Sem telefone",
+      },
+      {
+        primary: row.status,
+        secondary: row.paymentStatus,
+      },
+      { primary: formatMoney(row.total) },
+      { primary: row.couponCode || "-" },
+      {
+        primary: row.itemsLabel || "-",
+        secondary: row.shippingOption || "Sem envio",
+      },
+    ],
+  }));
+  const abandonedPreviewRows = data.abandonedRows.map((row) => ({
+    id: row.checkoutId,
+    cells: [
+      { primary: row.checkoutId },
+      { primary: formatDateTime(row.createdAt) },
+      {
+        primary: row.buyerName || "-",
+        secondary: row.buyerDocument || "Sem documento",
+      },
+      {
+        primary: row.buyerEmail || "-",
+        secondary: row.buyerPhone || "Sem telefone",
+      },
+      { primary: formatMoney(row.total) },
+      { primary: row.couponCode || "-" },
+      row.recoveryUrl
+        ? {
+            primary: "Link disponivel",
+            secondary: row.shippingOption || "Sem envio",
+            href: row.recoveryUrl,
+            hrefLabel: "Abrir checkout",
+          }
+        : {
+            primary: "Sem link",
+            secondary: row.shippingOption || "Sem envio",
+          },
+    ],
+  }));
 
   return (
     <AppShell
@@ -143,12 +212,18 @@ export default async function MarketingPage({ searchParams }: PageProps) {
               Exporta todas as vendas com dados pessoais do comprador, status e itens do pedido.
             </p>
           </div>
-          <div className={styles.filterActions}>
+          <div className={styles.exportActions}>
             <a
-              href={`/api/marketing/vendas/export?${exportQuery}`}
+              href={salesExportCsvHref}
               className={styles.primaryButton}
             >
-              Exportar CSV de vendas
+              Exportar CSV
+            </a>
+            <a
+              href={salesExportXlsxHref}
+              className={styles.secondaryButton}
+            >
+              Exportar XLSX
             </a>
           </div>
         </div>
@@ -160,55 +235,20 @@ export default async function MarketingPage({ searchParams }: PageProps) {
           </div>
         ) : data.salesRows.length > 0 ? (
           <>
-            <div className={styles.callout}>
-              <h3>Preview da planilha</h3>
-              <p>
-                A tela mostra as primeiras {DISPLAY_LIMIT} linhas. A exportacao baixa a base
-                completa conforme o filtro aplicado.
-              </p>
-            </div>
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Pedido</th>
-                    <th>Data</th>
-                    <th>Comprador</th>
-                    <th>Contato</th>
-                    <th>Status</th>
-                    <th>Total</th>
-                    <th>Cupom</th>
-                    <th>Itens</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {salesPreview.map((row) => (
-                    <tr key={row.orderId}>
-                      <td>{row.orderNumber}</td>
-                      <td>{formatDateTime(row.createdAt)}</td>
-                      <td className={styles.tableCellTight}>
-                        <strong>{row.buyerName || "-"}</strong>
-                        <div>{row.buyerDocument || "Sem documento"}</div>
-                      </td>
-                      <td className={styles.tableCellTight}>
-                        <strong>{row.buyerEmail || "-"}</strong>
-                        <div>{row.buyerPhone || "Sem telefone"}</div>
-                      </td>
-                      <td className={styles.tableCellTight}>
-                        <strong>{row.status}</strong>
-                        <div>{row.paymentStatus}</div>
-                      </td>
-                      <td>{formatMoney(row.total)}</td>
-                      <td>{row.couponCode || "-"}</td>
-                      <td className={styles.tableCellTight}>
-                        <strong>{row.itemsLabel || "-"}</strong>
-                        <div>{row.shippingOption || "Sem envio"}</div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <MarketingPreviewTable
+              headers={[
+                "Pedido",
+                "Data",
+                "Comprador",
+                "Contato",
+                "Status",
+                "Total",
+                "Cupom",
+                "Itens",
+              ]}
+              rows={salesPreviewRows}
+              previewLabel="Clique em ver mais para abrir de 10 em 10. A exportacao baixa a base completa conforme o filtro."
+            />
           </>
         ) : (
           <div className={styles.emptyState}>Nenhuma venda encontrada para esse filtro.</div>
@@ -223,12 +263,18 @@ export default async function MarketingPage({ searchParams }: PageProps) {
               Base pronta para recuperacao com link do checkout, valor potencial e contato do cliente.
             </p>
           </div>
-          <div className={styles.filterActions}>
+          <div className={styles.exportActions}>
             <a
-              href={`/api/marketing/carrinhos-abandonados/export?${exportQuery}`}
+              href={abandonedExportCsvHref}
               className={styles.primaryButton}
             >
-              Exportar CSV de abandonos
+              Exportar CSV
+            </a>
+            <a
+              href={abandonedExportXlsxHref}
+              className={styles.secondaryButton}
+            >
+              Exportar XLSX
             </a>
           </div>
         </div>
@@ -240,65 +286,19 @@ export default async function MarketingPage({ searchParams }: PageProps) {
           </div>
         ) : data.abandonedRows.length > 0 ? (
           <>
-            <div className={styles.callout}>
-              <h3>Preview da planilha</h3>
-              <p>
-                A leitura mostra as primeiras {DISPLAY_LIMIT} linhas. O arquivo exportado leva o
-                resultado completo do filtro.
-              </p>
-            </div>
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Checkout</th>
-                    <th>Data</th>
-                    <th>Comprador</th>
-                    <th>Contato</th>
-                    <th>Total potencial</th>
-                    <th>Cupom</th>
-                    <th>Recuperacao</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {abandonedPreview.map((row) => (
-                    <tr key={row.checkoutId}>
-                      <td>{row.checkoutId}</td>
-                      <td>{formatDateTime(row.createdAt)}</td>
-                      <td className={styles.tableCellTight}>
-                        <strong>{row.buyerName || "-"}</strong>
-                        <div>{row.buyerDocument || "Sem documento"}</div>
-                      </td>
-                      <td className={styles.tableCellTight}>
-                        <strong>{row.buyerEmail || "-"}</strong>
-                        <div>{row.buyerPhone || "Sem telefone"}</div>
-                      </td>
-                      <td>{formatMoney(row.total)}</td>
-                      <td>{row.couponCode || "-"}</td>
-                      <td className={styles.tableCellTight}>
-                        {row.recoveryUrl ? (
-                          <>
-                            <strong>Link disponivel</strong>
-                            <div>
-                              <a
-                                href={row.recoveryUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className={styles.tableLink}
-                              >
-                                Abrir checkout
-                              </a>
-                            </div>
-                          </>
-                        ) : (
-                          <strong>Sem link</strong>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <MarketingPreviewTable
+              headers={[
+                "Checkout",
+                "Data",
+                "Comprador",
+                "Contato",
+                "Total potencial",
+                "Cupom",
+                "Recuperacao",
+              ]}
+              rows={abandonedPreviewRows}
+              previewLabel="Clique em ver mais para abrir de 10 em 10. A exportacao baixa toda a base filtrada."
+            />
           </>
         ) : (
           <div className={styles.emptyState}>Nenhum carrinho abandonado encontrado nesse filtro.</div>
@@ -308,12 +308,16 @@ export default async function MarketingPage({ searchParams }: PageProps) {
   );
 }
 
-function buildExportQuery(filters: {
-  startDate: string;
-  endDate: string;
-  buyerQuery: string;
-  salesStatus: string;
-}) {
+function buildExportHref(
+  basePath: string,
+  filters: {
+    startDate: string;
+    endDate: string;
+    buyerQuery: string;
+    salesStatus: string;
+  },
+  format: "csv" | "xlsx",
+) {
   const params = new URLSearchParams();
 
   for (const [key, value] of Object.entries(filters)) {
@@ -322,5 +326,6 @@ function buildExportQuery(filters: {
     }
   }
 
-  return params.toString();
+  params.set("format", format);
+  return `${basePath}?${params.toString()}`;
 }

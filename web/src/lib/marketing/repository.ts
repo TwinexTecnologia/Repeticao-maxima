@@ -72,6 +72,8 @@ export type MarketingModuleData = {
   };
 };
 
+export type MarketingExportRow = Record<string, string | number>;
+
 export function getMarketingFilters(
   searchParams: Record<string, string | string[] | undefined>,
 ): MarketingFilters {
@@ -150,91 +152,74 @@ export async function loadMarketingModuleData(
 }
 
 export function buildSalesCsv(rows: MarketingSaleRow[]) {
+  const exportRows = buildSalesExportRows(rows);
   return buildCsv(
-    [
-      "Pedido",
-      "Data",
-      "Status",
-      "Pagamento",
-      "Envio",
-      "Total",
-      "Desconto",
-      "Cupom",
-      "Comprador",
-      "Email",
-      "Telefone",
-      "Documento",
-      "Gateway",
-      "Metodo pagamento",
-      "Opcao envio",
-      "Transportadora",
-      "Cidade",
-      "Estado",
-      "Itens",
-    ],
-    rows.map((row) => [
-      row.orderNumber,
-      formatDateTime(row.createdAt),
-      row.status,
-      row.paymentStatus,
-      row.shippingStatus,
-      formatCsvNumber(row.total),
-      formatCsvNumber(row.discount),
-      row.couponCode,
-      row.buyerName,
-      row.buyerEmail,
-      row.buyerPhone,
-      row.buyerDocument,
-      row.gateway,
-      row.paymentMethod,
-      row.shippingOption,
-      row.shippingCarrier,
-      row.shippingCity,
-      row.shippingProvince,
-      row.itemsLabel,
-    ]),
+    Object.keys(exportRows[0] ?? {}),
+    exportRows.map((row) =>
+      Object.values(row).map((value) =>
+        typeof value === "number" ? formatCsvNumber(value) : String(value),
+      ),
+    ),
   );
 }
 
 export function buildAbandonedCsv(rows: MarketingAbandonedRow[]) {
+  const exportRows = buildAbandonedExportRows(rows);
   return buildCsv(
-    [
-      "Checkout",
-      "Criado em",
-      "Atualizado em",
-      "Link recuperacao",
-      "Total potencial",
-      "Desconto",
-      "Cupom",
-      "Comprador",
-      "Email",
-      "Telefone",
-      "Documento",
-      "Gateway",
-      "Opcao envio",
-      "Cidade",
-      "Estado",
-      "Pais",
-    ],
-    rows.map((row) => [
-      row.checkoutId,
-      formatDateTime(row.createdAt),
-      formatDateTime(row.updatedAt),
-      row.recoveryUrl,
-      formatCsvNumber(row.total),
-      formatCsvNumber(row.discount),
-      row.couponCode,
-      row.buyerName,
-      row.buyerEmail,
-      row.buyerPhone,
-      row.buyerDocument,
-      row.gateway,
-      row.shippingOption,
-      row.shippingCity,
-      row.shippingProvince,
-      row.shippingCountry,
-    ]),
+    Object.keys(exportRows[0] ?? {}),
+    exportRows.map((row) =>
+      Object.values(row).map((value) =>
+        typeof value === "number" ? formatCsvNumber(value) : String(value),
+      ),
+    ),
   );
+}
+
+export function buildSalesExportRows(rows: MarketingSaleRow[]): MarketingExportRow[] {
+  return rows.map((row) => ({
+    Pedido: row.orderNumber,
+    Data: formatDateTime(row.createdAt),
+    Status: row.status,
+    Pagamento: row.paymentStatus,
+    Envio: row.shippingStatus,
+    Total: row.total,
+    Desconto: row.discount,
+    Cupom: row.couponCode,
+    Comprador: row.buyerName,
+    Email: row.buyerEmail,
+    Telefone: row.buyerPhone,
+    Documento: row.buyerDocument,
+    Gateway: row.gateway,
+    "Metodo pagamento": row.paymentMethod,
+    "Opcao envio": row.shippingOption,
+    Transportadora: row.shippingCarrier,
+    Cidade: row.shippingCity,
+    Estado: row.shippingProvince,
+    Itens: row.itemsLabel,
+  }));
+}
+
+export function buildAbandonedExportRows(
+  rows: MarketingAbandonedRow[],
+): MarketingExportRow[] {
+  return rows.map((row) => ({
+    Checkout: row.checkoutId,
+    "Criado em": formatDateTime(row.createdAt),
+    "Atualizado em": formatDateTime(row.updatedAt),
+    "Link recuperacao": row.recoveryUrl,
+    "Total potencial": row.total,
+    Desconto: row.discount,
+    Cupom: row.couponCode,
+    Comprador: row.buyerName,
+    Email: row.buyerEmail,
+    Telefone: row.buyerPhone,
+    Documento: row.buyerDocument,
+    Gateway: row.gateway,
+    "Opcao envio": row.shippingOption,
+    Cidade: row.shippingCity,
+    Estado: row.shippingProvince,
+    Pais: row.shippingCountry,
+  }));
 }
 
 export function formatMoney(value: number) {

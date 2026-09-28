@@ -1,9 +1,11 @@
 import { authorizeApiAccess } from "@/lib/auth/access";
 import {
   buildSalesCsv,
+  buildSalesExportRows,
   getMarketingFilters,
   loadMarketingModuleData,
 } from "@/lib/marketing/repository";
+import * as XLSX from "xlsx";
 
 export async function GET(request: Request) {
   const authorization = await authorizeApiAccess("nuvemshop");
@@ -14,6 +16,7 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const filters = getMarketingFilters(Object.fromEntries(url.searchParams.entries()));
+  const format = normalizeExportFormat(url.searchParams.get("format"));
   const data = await loadMarketingModuleData(filters);
 
   if (data.credentialsMessage) {
@@ -24,12 +27,26 @@ export async function GET(request: Request) {
     return new Response(data.salesError, { status: 502 });
   }
 
-  const filename = `marketing-vendas-${buildDateStamp()}.csv`;
+  if (format === "xlsx") {
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(buildSalesExportRows(data.salesRows));
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Vendas");
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+
+    return new Response(buffer, {
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="marketing-vendas-${buildDateStamp()}.xlsx"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
 
   return new Response(buildSalesCsv(data.salesRows), {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Disposition": `attachment; filename="marketing-vendas-${buildDateStamp()}.csv"`,
       "Cache-Control": "no-store",
     },
   });
@@ -37,4 +54,8 @@ export async function GET(request: Request) {
 
 function buildDateStamp() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function normalizeExportFormat(value: string | null) {
+  return value?.trim().toLowerCase() === "xlsx" ? "xlsx" : "csv";
 }
