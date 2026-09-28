@@ -11,6 +11,7 @@ type NavigationIconName =
   | "estoque"
   | "pedidos"
   | "financeiro"
+  | "marketing"
   | "nuvemshop"
   | "influenciadores"
   | "empresa"
@@ -282,6 +283,16 @@ function NavigationIcon({ icon }: { icon: NavigationIconName }) {
           <circle cx="12" cy="12" r="8.5" stroke="currentColor" strokeWidth="1.8" />
           <path d="M14.9 9.4C14.5 8.5 13.5 8 12.2 8C10.7 8 9.8 8.8 9.8 9.9C9.8 11 10.5 11.5 12.4 12C14.2 12.4 15 13.1 15 14.4C15 15.8 13.8 16.8 12 16.8C10.4 16.8 9.2 16.1 8.7 14.9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
           <path d="M12 7V17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      );
+    case "marketing":
+      return (
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M4 18.5H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M6.5 16V11.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M12 16V7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M17.5 16V4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M6.5 11.5L12 7.5L17.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
         </svg>
       );
     case "nuvemshop":

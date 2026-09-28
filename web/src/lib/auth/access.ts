@@ -17,6 +17,7 @@ type NavigationIcon =
   | "estoque"
   | "pedidos"
   | "financeiro"
+  | "marketing"
   | "nuvemshop"
   | "influenciadores"
   | "empresa"
@@ -71,6 +72,13 @@ export const APP_NAVIGATION_ITEMS: AppNavigationItem[] = [
     hint: "Fluxo do mes",
     icon: "pedidos",
     permission: "pedidos",
+  },
+  {
+    href: "/marketing",
+    label: "Marketing",
+    hint: "Vendas e carrinhos",
+    icon: "marketing",
+    permission: "nuvemshop",
   },
   {
     href: "/integracoes/nuvemshop",
@@ -349,6 +357,10 @@ export function resolveRequiredPermission(path: string): UserMenuPermissionKey |
   }
 
   if (path.startsWith("/integracoes/nuvemshop")) {
+    return "nuvemshop";
+  }
+
+  if (path.startsWith("/marketing")) {
     return "nuvemshop";
   }
 

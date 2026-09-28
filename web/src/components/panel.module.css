@@ -1766,6 +1766,13 @@
   gap: 10px;
 }
 
+.exportActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
 .configGrid {
   display: grid;
   gap: 16px;
@@ -1825,6 +1832,20 @@
 .secondaryButton:hover,
 .dangerButton:hover {
   transform: translateY(-1px);
+}
+
+.previewFooter {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.previewMeta {
+  color: #6f5b82;
+  font-size: 0.92rem;
+  line-height: 1.5;
 }
 
 .authPage {
