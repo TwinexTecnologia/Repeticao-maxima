@@ -122,6 +122,24 @@ const EMPTY_PERMISSIONS: UserMenuPermissions = {
   usuarios: false,
 };
 
+export function hasPermissionAccess(
+  permission: UserMenuPermissionKey,
+  permissions: UserMenuPermissions,
+) {
+  if (permission === "pedidos") {
+    return permissions.pedidos || permissions.financeiro;
+  }
+
+  return permissions[permission];
+}
+
+export function canSeeNavigationItem(
+  item: AppNavigationItem,
+  permissions: UserMenuPermissions,
+) {
+  return hasPermissionAccess(item.permission, permissions);
+}
+
 export async function loadAuthenticatedAppUser(): Promise<AuthenticatedAppUser | null> {
   const authClientResult = await createSupabaseServerAuthClient();
 
@@ -239,7 +257,7 @@ export async function requirePageAccess(currentPath: string) {
       navigationItems:
         user.userType === "parceiro"
           ? []
-          : APP_NAVIGATION_ITEMS.filter((item) => user.permissions[item.permission]),
+          : APP_NAVIGATION_ITEMS.filter((item) => canSeeNavigationItem(item, user.permissions)),
     };
   }
 
@@ -269,7 +287,7 @@ export async function requirePageAccess(currentPath: string) {
 
   const requiredPermission = resolveRequiredPermission(currentPath);
 
-  if (requiredPermission && !user.permissions[requiredPermission]) {
+  if (requiredPermission && !hasPermissionAccess(requiredPermission, user.permissions)) {
     redirect("/acesso-negado");
   }
 
@@ -278,7 +296,7 @@ export async function requirePageAccess(currentPath: string) {
     navigationItems:
       user.userType === "parceiro"
         ? []
-        : APP_NAVIGATION_ITEMS.filter((item) => user.permissions[item.permission]),
+        : APP_NAVIGATION_ITEMS.filter((item) => canSeeNavigationItem(item, user.permissions)),
   };
 }
 
@@ -298,7 +316,7 @@ export async function authorizeApiAccess(permission: UserMenuPermissionKey) {
     };
   }
 
-  if (!user.active || !user.permissions[permission]) {
+  if (!user.active || !hasPermissionAccess(permission, user.permissions)) {
     return {
       ok: false as const,
       response: NextResponse.json(
@@ -362,6 +380,13 @@ export function resolveRequiredPermission(path: string): UserMenuPermissionKey |
 }
 
 export function isNavigationItemActive(currentPath: string, href: string) {
+  if (
+    (href === "/pedidos" || href === "/financeiro") &&
+    (currentPath.startsWith("/pedidos") || currentPath.startsWith("/financeiro"))
+  ) {
+    return true;
+  }
+
   return href === "/" ? currentPath === "/" : currentPath.startsWith(href);
 }
 
@@ -374,7 +399,7 @@ export function getDefaultAuthorizedPath(
   }
 
   return (
-    APP_NAVIGATION_ITEMS.find((item) => permissions[item.permission])?.href ||
+    APP_NAVIGATION_ITEMS.find((item) => canSeeNavigationItem(item, permissions))?.href ||
     "/acesso-negado"
   );
 }

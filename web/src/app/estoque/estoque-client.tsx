@@ -6,10 +6,10 @@ import { useRouter } from "next/navigation";
 import styles from "@/components/panel.module.css";
 import {
   type BaseStockItem,
-  type DtfArtType,
   type DtfCatalogProduct,
   type DtfStockItem,
   type NuvemshopStockProduct,
+  type OperationalDtfArtType,
   type OperationalPersistenceState,
   type StockMovement,
 } from "@/lib/operacoes/repository";
@@ -115,7 +115,7 @@ export function EstoqueClient({
   const [dtfForm, setDtfForm] = useState({
     nuvemshopProductId: dtfCatalog[0]?.productId ?? "",
     productName: dtfCatalog[0]?.productName ?? "",
-    artType: "outro" as DtfArtType,
+    artType: "outro" as OperationalDtfArtType,
     availableQty: "0",
     reorderPoint: "0",
     leadTimeDays: "5",
@@ -1661,7 +1661,7 @@ export function EstoqueClient({
                   onChange={(event) =>
                     setDtfForm((current) => ({
                       ...current,
-                      artType: event.target.value as DtfArtType,
+                      artType: event.target.value as OperationalDtfArtType,
                     }))
                   }
                 >
@@ -1840,7 +1840,7 @@ export function EstoqueClient({
                             updateDtfDraft(
                               draft.id,
                               "artType",
-                              event.target.value as DtfArtType,
+                              event.target.value as OperationalDtfArtType,
                             )
                           }
                         >
@@ -1943,7 +1943,7 @@ function formatDateTime(value: string) {
   }).format(date);
 }
 
-function labelForDtfType(value: DtfArtType) {
+function labelForDtfType(value: OperationalDtfArtType) {
   switch (value) {
     case "minimalista":
       return "Minimalista";
