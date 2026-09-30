@@ -1021,11 +1021,12 @@ export function UsuariosClient({
                     <td>{request.partnerName}</td>
                     <td>{request.couponCode}</td>
                     <td>{request.requestType === "apoio" ? "Apoio" : "Roupa"}</td>
-                    <td>{request.supportGoal || "Cupom / roupa"}</td>
+                    <td>{request.supportGoal || "Saldo / roupa"}</td>
                     <td>{formatMoney(request.requestedAmount)}</td>
                     <td>{formatDateTime(request.requestedAt)}</td>
                     <td>
                       <div style={{ display: "grid", gap: 10, minWidth: 240 }}>
+
                         {request.requestType === "roupa" ? (
                           <label className={styles.filterField}>
                             <span>Cupom liberado</span>
@@ -1060,7 +1061,7 @@ export function UsuariosClient({
                             placeholder={
                               request.requestType === "apoio"
                                 ? "Ex: pagamento programado para hoje"
-                                : "Ex: cupom liberado para voce usar"
+                                : "Ex: saldo aprovado para voce usar na loja"
                             }
                           />
                         </label>
@@ -1083,7 +1084,7 @@ export function UsuariosClient({
                             ? "Salvando..."
                             : request.requestType === "apoio"
                               ? "Marcar pago"
-                              : "Aprovar cupom"}
+                              : "Aprovar saldo"}
                         </button>
                         <button
                           type="button"

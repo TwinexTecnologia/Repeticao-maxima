@@ -3,6 +3,7 @@ import {
   NuvemshopApiError,
   NuvemshopClient,
 } from "@/lib/nuvemshop/client";
+import type { PartnerStoreCreditSession } from "@/lib/parceiros/repository";
 
 import type { CompanyCartDiscountRule } from "./repository";
 
@@ -254,6 +255,7 @@ function getInactivePromotionUpdateSettings() {
 export function buildCompanyDiscountCallbackDecision(
   payload: unknown,
   rules: CompanyCartDiscountRule[],
+  partnerSession?: PartnerStoreCreditSession | null,
 ) {
   const normalizedPayload =
     typeof payload === "object" && payload !== null
@@ -262,11 +264,6 @@ export function buildCompanyDiscountCallbackDecision(
   const publishedRules = rules.filter(
     (rule) => rule.active && rule.nuvemshopPromotionId,
   );
-
-  if (publishedRules.length === 0) {
-    return { status: 204 as const };
-  }
-
   const lineItems = extractCartLineItems(normalizedPayload);
   const currency = extractCurrency(normalizedPayload) || "BRL";
   const matchingRules = publishedRules
@@ -305,6 +302,31 @@ export function buildCompanyDiscountCallbackDecision(
         },
       },
     });
+  }
+
+  if (partnerSession?.promotionId) {
+    const cartSubtotal = extractCartSubtotal(normalizedPayload);
+    const partnerDiscountAmount = Math.min(
+      Math.max(partnerSession.availableAmount, 0),
+      cartSubtotal > 0 ? cartSubtotal : Math.max(partnerSession.availableAmount, 0),
+    );
+
+    if (partnerDiscountAmount > 0) {
+      commands.push({
+        command: "create_or_update_discount",
+        specs: {
+          promotion_id: partnerSession.promotionId,
+          currency,
+          display_text: {
+            "pt-br": "Saldo batimento de meta",
+          },
+          discount_specs: {
+            type: "fixed",
+            amount: formatAmount(partnerDiscountAmount),
+          },
+        },
+      });
+    }
   }
 
   const removablePromotionIds = publishedRules
@@ -421,6 +443,23 @@ function extractCurrency(payload: DiscountCallbackPayload) {
 
   const cartPayload = getRecordValue(payload.cart);
   return getTextValue(cartPayload?.currency);
+}
+
+function extractCartSubtotal(payload: DiscountCallbackPayload) {
+  const totalsPayload = getRecordValue(payload.totals);
+  const cartPayload = getRecordValue(payload.cart);
+  const subtotalPayload = getRecordValue(totalsPayload?.subtotal);
+
+  const directCandidates = [
+    getNumberValue(payload.subtotal),
+    getNumberValue(cartPayload?.subtotal),
+    getNumberValue(totalsPayload?.subtotal),
+    getNumberValue(subtotalPayload?.amount),
+    getNumberValue(subtotalPayload?.value),
+    getNumberValue(totalsPayload?.amount),
+  ].filter((value) => value > 0);
+
+  return directCandidates[0] ?? 0;
 }
 
 function extractMatchIds(value: Record<string, unknown>) {
@@ -571,6 +610,20 @@ function getIntegerValue(value: unknown) {
 
   if (typeof value === "string") {
     const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
+}
+
+function getNumberValue(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.replace(",", ".").trim();
+    const parsed = Number.parseFloat(normalized);
     return Number.isFinite(parsed) ? parsed : 0;
   }
 

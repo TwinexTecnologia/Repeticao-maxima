@@ -96,6 +96,10 @@ export class NuvemshopClient {
     });
   }
 
+  async getOrder(id: string | number) {
+    return this.requestJson<NuvemshopOrder>(`/orders/${id}`);
+  }
+
   async listCoupons(params: ListParams = {}) {
     const searchParams = this.buildPaginationParams(params);
     return this.requestJson<NuvemshopCoupon[]>("/coupons", {
