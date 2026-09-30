@@ -1322,6 +1322,121 @@
   box-shadow: 0 8px 22px rgba(88, 28, 135, 0.05);
 }
 
+.redemptionProductGrid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.redemptionProductCard {
+  border: 1px solid rgba(123, 44, 191, 0.12);
+  background: #ffffff;
+  border-radius: 22px;
+  padding: 0;
+  overflow: hidden;
+  text-align: left;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.redemptionProductCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 34px rgba(66, 28, 97, 0.1);
+}
+
+.redemptionProductCardActive {
+  border-color: rgba(123, 44, 191, 0.42);
+  box-shadow: 0 0 0 4px rgba(123, 44, 191, 0.08);
+}
+
+.redemptionProductImage {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  display: block;
+  background: #f4eef9;
+}
+
+.redemptionProductPlaceholder {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  text-align: center;
+  color: #6f5b82;
+  background: linear-gradient(135deg, rgba(123, 44, 191, 0.08), rgba(255, 153, 51, 0.08));
+}
+
+.redemptionProductBody {
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.redemptionProductTitle {
+  font-weight: 700;
+  color: #241535;
+  line-height: 1.35;
+}
+
+.redemptionProductMeta {
+  color: #6f5b82;
+  font-size: 0.92rem;
+}
+
+.redemptionProductFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  color: #6f5b82;
+  font-size: 0.88rem;
+}
+
+.redemptionProductFooter strong {
+  color: #4f2f6d;
+  font-size: 1rem;
+}
+
+.redemptionSummaryGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.redemptionSummaryCard {
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(123, 44, 191, 0.08);
+  background: #faf7fd;
+  display: grid;
+  gap: 8px;
+}
+
+.redemptionSummaryCard span {
+  color: #6f5b82;
+  font-size: 0.88rem;
+}
+
+.redemptionSummaryCard strong {
+  color: #241535;
+  font-size: 1.2rem;
+  line-height: 1.2;
+}
+
+.redemptionSummaryCardSuccess {
+  background: rgba(67, 160, 71, 0.08);
+  border-color: rgba(67, 160, 71, 0.16);
+}
+
+.redemptionSummaryCardDanger {
+  background: rgba(198, 40, 40, 0.08);
+  border-color: rgba(198, 40, 40, 0.16);
+}
+
 .catalogHeader {
   display: flex;
   justify-content: space-between;

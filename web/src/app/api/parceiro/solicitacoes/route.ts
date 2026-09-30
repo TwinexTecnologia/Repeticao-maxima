@@ -134,12 +134,21 @@ export async function POST(request: Request) {
         notes: `Resgate de roupa solicitado na janela ${performance.data.rollingWindow.label}.`,
       });
 
+      if (!result.ok) {
+        return NextResponse.json(
+          {
+            ok: false,
+            message: result.persistence.message,
+            request: null,
+          },
+          { status: 500 },
+        );
+      }
+
       return NextResponse.json({
-        ok: result.ok,
-        message: result.ok
-          ? "Seu resgate em roupa foi enviado para o admin."
-          : result.persistence.message,
-        request: result.ok ? result.request : null,
+        ok: true,
+        message: "Seu resgate em roupa foi enviado para o admin.",
+        request: result.request,
       });
     }
 
@@ -180,12 +189,21 @@ export async function POST(request: Request) {
       notes: `Solicitacao de apoio esportivo para ${supportGoal}.`,
     });
 
+    if (!result.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: result.persistence.message,
+          request: null,
+        },
+        { status: 500 },
+      );
+    }
+
     return NextResponse.json({
-      ok: result.ok,
-      message: result.ok
-        ? "Seu pedido de apoio foi enviado para o admin."
-        : result.persistence.message,
-      request: result.ok ? result.request : null,
+      ok: true,
+      message: "Seu pedido de apoio foi enviado para o admin.",
+      request: result.request,
     });
   } catch (error) {
     return NextResponse.json(

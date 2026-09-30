@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
 import styles from "@/components/panel.module.css";
+import { loadStoreProductSelectionOptions } from "@/lib/operacoes/repository";
 import {
   ATHLETE_SUPPORT_MINIMUM_REDEMPTION,
   ATHLETE_SUPPORT_PERCENT,
@@ -52,14 +53,16 @@ export default async function MeuDesempenhoPage({
   const customRangeEnd = normalizeDateParam(params?.rangeEnd);
   const needsRedemptionData = tab === "inicio" || tab === "resgates";
   const needsRewardRequests = tab !== "campanhas";
-  const [profilesData, campaignsData, rewardRequests, allRedemptions] = await Promise.all([
+  const [profilesData, campaignsData, rewardRequests, allRedemptions, storeProductOptions] =
+    await Promise.all([
     loadCouponPartnerProfiles(),
     loadPartnerCampaigns(),
     needsRewardRequests
       ? loadPartnerRewardRequests({ userProfileId: user.profileId })
       : Promise.resolve([]),
     needsRedemptionData ? loadPartnerRedemptions() : Promise.resolve({ redemptions: [] }),
-  ]);
+      needsRedemptionData ? loadStoreProductSelectionOptions() : Promise.resolve([]),
+    ]);
   const profile = profilesData.profiles.find(
     (item) => item.id === user.linkedPartnerId && item.active,
   );
@@ -124,6 +127,12 @@ export default async function MeuDesempenhoPage({
           item.partnerId === user.linkedPartnerId || item.couponCode === profile.couponCode,
       )
     : [];
+  const approvedClothesRequests = rewardRequests.filter(
+    (item) => item.requestType === "roupa" && item.status === "aprovado",
+  );
+  const redeemableStoreOptions = storeProductOptions.filter(
+    (item) => item.publishedStock > 0 && item.unitPrice > 0,
+  );
   const needsCampaignSnapshots = tab === "inicio" || tab === "campanhas";
   const campaignSnapshots = needsCampaignSnapshots
     ? await loadPartnerCampaignSnapshots(partnerCampaigns)
@@ -856,6 +865,8 @@ export default async function MeuDesempenhoPage({
           clothesAvailable={formatMoney(balances.clothesAvailable)}
           supportAvailable={formatMoney(balances.supportAvailable)}
           partnerRole={profile.role}
+          approvedClothesRequests={approvedClothesRequests}
+          redeemableStoreOptions={redeemableStoreOptions}
         />
       ) : null}
 
@@ -1055,7 +1066,7 @@ export default async function MeuDesempenhoPage({
                         {request.requestType === "apoio" ? "Apoio" : "Roupa"}
                       </div>
                       <span className={`${styles.pill} ${styles.pillMedium}`}>
-                        {labelForRequestStatus(request.status)}
+                        {labelForRequestStatus(request.status, request.requestType)}
                       </span>
                     </div>
                     <div className={styles.mobileListMeta}>
@@ -1069,10 +1080,10 @@ export default async function MeuDesempenhoPage({
                         <p>{request.adminMessage}</p>
                       </div>
                     ) : null}
-                    {request.couponCode ? (
+                    {request.adminCouponCode ? (
                       <div className={styles.callout} style={{ marginTop: 12 }}>
-                        <h3>Cupom</h3>
-                        <p>{request.couponCode}</p>
+                        <h3>Cupom liberado</h3>
+                        <p>{request.adminCouponCode}</p>
                       </div>
                     ) : null}
                   </div>
@@ -1151,8 +1162,8 @@ export default async function MeuDesempenhoPage({
                     <td>{request.requestType === "apoio" ? "Apoio" : "Roupa"}</td>
                     <td>{request.supportGoal || "Cupom / roupa"}</td>
                     <td>{formatMoney(request.requestedAmount)}</td>
-                    <td>{labelForRequestStatus(request.status)}</td>
-                    <td>{request.couponCode || "-"}</td>
+                    <td>{labelForRequestStatus(request.status, request.requestType)}</td>
+                    <td>{request.adminCouponCode || "-"}</td>
                     <td>{request.adminMessage || "-"}</td>
                     <td>{formatDateTime(request.requestedAt)}</td>
                   </tr>
@@ -1243,12 +1254,15 @@ function getDaysRemaining(endDate: string) {
   return Math.ceil(diff / (1000 * 60 * 60 * 24));
 }
 
-function labelForRequestStatus(value: "pendente" | "aprovado" | "pago" | "recusado") {
+function labelForRequestStatus(
+  value: "pendente" | "aprovado" | "pago" | "recusado",
+  requestType: "roupa" | "apoio",
+) {
   switch (value) {
     case "aprovado":
-      return "Cupom liberado";
+      return requestType === "roupa" ? "Pronto para resgatar" : "Aprovado";
     case "pago":
-      return "Pago";
+      return requestType === "roupa" ? "Resgate registrado" : "Pago";
     case "recusado":
       return "Recusado";
     default:
