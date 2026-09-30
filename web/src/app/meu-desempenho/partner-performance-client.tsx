@@ -15,6 +15,8 @@ type PartnerPerformanceClientProps = {
   supportAvailable: string;
   partnerRole: "influenciador" | "atleta";
   approvedClothesRequests: PartnerRewardRequest[];
+  hasOpenClothesRequest: boolean;
+  openClothesRequestStatus: "pendente" | "aprovado" | null;
   redeemableStoreOptions: StoreProductSelectionOption[];
 };
 
@@ -36,6 +38,8 @@ export function PartnerPerformanceClient({
   supportAvailable,
   partnerRole,
   approvedClothesRequests,
+  hasOpenClothesRequest,
+  openClothesRequestStatus,
   redeemableStoreOptions,
 }: PartnerPerformanceClientProps) {
   const router = useRouter();
@@ -68,7 +72,9 @@ export function PartnerPerformanceClient({
   );
   const approvedQuantity = Math.max(1, Math.trunc(Number(redemptionQuantity || "1") || 1));
   const selectedTotal = Math.round((selectedProduct?.unitPrice || 0) * approvedQuantity * 100) / 100;
-  const approvedAmount = selectedApprovedRequest?.requestedAmount || 0;
+  const approvedAmount = selectedApprovedRequest
+    ? Math.max(selectedApprovedRequest.requestedAmount - selectedApprovedRequest.consumedAmount, 0)
+    : 0;
   const remainingAfterSelection = Math.round((approvedAmount - selectedTotal) * 100) / 100;
   const exceedsApprovedAmount = remainingAfterSelection < 0;
 
@@ -189,7 +195,7 @@ export function PartnerPerformanceClient({
             {clothesAvailable}
           </div>
           <div className={styles.mobileCardHint}>
-            Ja descontando solicitacoes pendentes e aprovadas.
+            O saldo so diminui conforme voce realmente usa no resgate.
           </div>
 
           <div className={styles.filterActions} style={{ marginTop: 14 }}>
@@ -205,8 +211,14 @@ export function PartnerPerformanceClient({
 
           {!canRequestClothes ? (
             <div className={styles.callout} style={{ marginTop: 12 }}>
-              <h3>Saldo bloqueado</h3>
-              <p>Bata a meta para liberar saldo.</p>
+              <h3>{hasOpenClothesRequest ? "Solicitacao em andamento" : "Saldo bloqueado"}</h3>
+              <p>
+                {hasOpenClothesRequest
+                  ? openClothesRequestStatus === "pendente"
+                    ? "Seu pedido ja foi enviado para o admin. O saldo continua guardado para voce."
+                    : "Seu saldo ja foi aprovado. Agora e so escolher o produto e registrar o resgate."
+                  : "Bata a meta para liberar saldo."}
+              </p>
             </div>
           ) : null}
 
@@ -343,7 +355,9 @@ export function PartnerPerformanceClient({
                 >
                   {approvedClothesRequests.map((request) => (
                     <option key={request.id} value={request.id}>
-                      {`${formatMoney(request.requestedAmount)} · ${formatDate(request.requestedAt)}${
+                      {`${formatMoney(
+                        Math.max(request.requestedAmount - request.consumedAmount, 0),
+                      )} restantes · ${formatDate(request.requestedAt)}${
                         request.windowEndDate ? ` · janela ate ${request.windowEndDate}` : ""
                       }`}
                     </option>
@@ -353,7 +367,7 @@ export function PartnerPerformanceClient({
 
               <div className={styles.chipRow} style={{ marginTop: 16 }}>
                 <span className={styles.chip}>
-                  Aprovado: <strong>{selectedApprovedRequest ? formatMoney(selectedApprovedRequest.requestedAmount) : "-"}</strong>
+                  Saldo liberado: <strong>{selectedApprovedRequest ? formatMoney(approvedAmount) : "-"}</strong>
                 </span>
                 <span className={styles.chip}>
                   Cupom: <strong>{selectedApprovedRequest?.adminCouponCode || selectedApprovedRequest?.couponCode || "-"}</strong>
@@ -418,8 +432,8 @@ export function PartnerPerformanceClient({
               <div className={styles.listTitle}>Resumo do resgate</div>
               <div className={styles.redemptionSummaryGrid} style={{ marginTop: 16 }}>
                 <div className={styles.redemptionSummaryCard}>
-                  <span>Valor aprovado</span>
-                  <strong>{selectedApprovedRequest ? formatMoney(selectedApprovedRequest.requestedAmount) : "-"}</strong>
+                  <span>Saldo aprovado</span>
+                  <strong>{selectedApprovedRequest ? formatMoney(approvedAmount) : "-"}</strong>
                 </div>
                 <div className={styles.redemptionSummaryCard}>
                   <span>Preco da loja</span>
