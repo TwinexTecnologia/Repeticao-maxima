@@ -1600,6 +1600,19 @@ function getErrorMessage(error: unknown) {
     return error.message;
   }
 
+  if (isRecord(error)) {
+    const parts = [
+      typeof error.message === "string" ? error.message.trim() : "",
+      typeof error.details === "string" ? error.details.trim() : "",
+      typeof error.hint === "string" ? error.hint.trim() : "",
+      typeof error.code === "string" ? `Codigo: ${error.code.trim()}` : "",
+    ].filter(Boolean);
+
+    if (parts.length > 0) {
+      return parts.join(" | ");
+    }
+  }
+
   return "Nao foi possivel concluir a operacao no Supabase.";
 }
 

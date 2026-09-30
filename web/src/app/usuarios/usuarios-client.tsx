@@ -37,6 +37,12 @@ type PartnerApiResponse = {
   generatedPassword?: string | null;
 };
 
+type RequestReviewApiResponse = {
+  ok: boolean;
+  message?: string;
+  request?: PartnerRewardRequest;
+};
+
 type EmployeeFormState = {
   fullName: string;
   email: string;
@@ -93,17 +99,32 @@ export function UsuariosClient({
 }: UsuariosClientProps) {
   const [employees, setEmployees] = useState(initialEmployees);
   const [partners, setPartners] = useState(initialPartners);
-  const [pendingRequests] = useState(initialPendingRequests);
+  const [pendingRequests, setPendingRequests] = useState(initialPendingRequests);
   const [persistence, setPersistence] =
     useState<UserAccessPersistenceState>(initialPersistence);
   const [employeeFeedback, setEmployeeFeedback] = useState("");
   const [partnerFeedback, setPartnerFeedback] = useState("");
+  const [requestFeedback, setRequestFeedback] = useState("");
   const [partnerGeneratedPassword, setPartnerGeneratedPassword] = useState("");
   const [isSavingEmployee, setIsSavingEmployee] = useState(false);
   const [isSavingPartner, setIsSavingPartner] = useState(false);
+  const [savingRequestId, setSavingRequestId] = useState("");
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
   const [editingPartnerId, setEditingPartnerId] = useState<string | null>(null);
   const [employeeForm, setEmployeeForm] = useState<EmployeeFormState>(getDefaultEmployeeForm);
+  const [requestDrafts, setRequestDrafts] = useState<
+    Record<string, { adminCouponCode: string; adminMessage: string }>
+  >(() =>
+    Object.fromEntries(
+      initialPendingRequests.map((request) => [
+        request.id,
+        {
+          adminCouponCode: request.adminCouponCode || request.couponCode || "",
+          adminMessage: request.adminMessage || "",
+        },
+      ]),
+    ),
+  );
   const [partnerForm, setPartnerForm] = useState({
     linkedPartnerId: "",
     partnerType: "influenciador" as PartnerUserType,
@@ -187,6 +208,15 @@ export function UsuariosClient({
   const selectedPartnerOption =
     initialPartnerOptions.find((item) => item.id === partnerForm.linkedPartnerId) || null;
   const partnerAge = partnerForm.birthDate ? getAgeFromDate(partnerForm.birthDate) : null;
+
+  function getRequestDraft(request: PartnerRewardRequest) {
+    return (
+      requestDrafts[request.id] || {
+        adminCouponCode: request.adminCouponCode || request.couponCode || "",
+        adminMessage: request.adminMessage || "",
+      }
+    );
+  }
 
   async function handleSaveEmployee() {
     if (!employeeForm.fullName.trim()) {
@@ -337,6 +367,51 @@ export function UsuariosClient({
       );
     } finally {
       setIsSavingPartner(false);
+    }
+  }
+
+  async function handleReviewRequest(
+    request: PartnerRewardRequest,
+    status: "aprovado" | "pago" | "recusado",
+  ) {
+    const draft = getRequestDraft(request);
+    setSavingRequestId(request.id);
+    setRequestFeedback("");
+
+    try {
+      const response = await fetch(`/api/influenciadores/solicitacoes/${request.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          requestType: request.requestType,
+          status,
+          adminCouponCode: draft.adminCouponCode,
+          adminMessage: draft.adminMessage,
+        }),
+      });
+      const result = (await response.json()) as RequestReviewApiResponse;
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.message || "Nao foi possivel revisar a solicitacao.");
+      }
+
+      setPendingRequests((current) => current.filter((item) => item.id !== request.id));
+      setRequestDrafts((current) => {
+        const next = { ...current };
+        delete next[request.id];
+        return next;
+      });
+      setRequestFeedback(result.message || "Solicitacao atualizada com sucesso.");
+    } catch (error) {
+      setRequestFeedback(
+        error instanceof Error
+          ? error.message
+          : "Nao foi possivel revisar a solicitacao.",
+      );
+    } finally {
+      setSavingRequestId("");
     }
   }
 
@@ -799,6 +874,13 @@ export function UsuariosClient({
           </div>
         </div>
 
+        {requestFeedback ? (
+          <div className={styles.callout} style={{ marginBottom: 16 }}>
+            <h3>Retorno do admin</h3>
+            <p>{requestFeedback}</p>
+          </div>
+        ) : null}
+
         <div className={styles.mobileList}>
           {pendingRequests.length > 0 ? (
             pendingRequests.map((request) => (
@@ -819,6 +901,74 @@ export function UsuariosClient({
                     <strong>Destino</strong>
                     <span>{request.supportGoal || "Cupom / roupa"}</span>
                   </div>
+                </div>
+                <div style={{ display: "grid", gap: 12, marginTop: 16 }}>
+                  {request.requestType === "roupa" ? (
+                    <label className={styles.filterField}>
+                      <span>Cupom liberado</span>
+                      <input
+                        value={getRequestDraft(request).adminCouponCode}
+                        onChange={(event) =>
+                          setRequestDrafts((current) => ({
+                            ...current,
+                            [request.id]: {
+                              ...getRequestDraft(request),
+                              adminCouponCode: event.target.value.toUpperCase(),
+                            },
+                          }))
+                        }
+                        placeholder="Ex: ATLETA10"
+                      />
+                    </label>
+                  ) : null}
+
+                  <label className={styles.filterField}>
+                    <span>Mensagem para o parceiro</span>
+                    <input
+                      value={getRequestDraft(request).adminMessage}
+                      onChange={(event) =>
+                        setRequestDrafts((current) => ({
+                          ...current,
+                          [request.id]: {
+                            ...getRequestDraft(request),
+                            adminMessage: event.target.value,
+                          },
+                        }))
+                      }
+                      placeholder={
+                        request.requestType === "apoio"
+                          ? "Ex: pagamento programado para hoje"
+                          : "Ex: cupom liberado para voce usar"
+                      }
+                    />
+                  </label>
+                </div>
+                <div className={styles.filterActions} style={{ marginTop: 16 }}>
+                  <button
+                    type="button"
+                    className={styles.primaryButton}
+                    disabled={savingRequestId === request.id}
+                    onClick={() =>
+                      handleReviewRequest(
+                        request,
+                        request.requestType === "apoio" ? "pago" : "aprovado",
+                      )
+                    }
+                  >
+                    {savingRequestId === request.id
+                      ? "Salvando..."
+                      : request.requestType === "apoio"
+                        ? "Marcar pago"
+                        : "Aprovar cupom"}
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    disabled={savingRequestId === request.id}
+                    onClick={() => handleReviewRequest(request, "recusado")}
+                  >
+                    Recusar
+                  </button>
                 </div>
               </div>
             ))
@@ -843,6 +993,13 @@ export function UsuariosClient({
           </div>
         </div>
 
+        {requestFeedback ? (
+          <div className={styles.callout} style={{ marginBottom: 16 }}>
+            <h3>Retorno do admin</h3>
+            <p>{requestFeedback}</p>
+          </div>
+        ) : null}
+
         <div className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>
@@ -853,6 +1010,8 @@ export function UsuariosClient({
                 <th>Destino</th>
                 <th>Valor</th>
                 <th>Solicitado em</th>
+                <th>Aprovacao</th>
+                <th>Acoes</th>
               </tr>
             </thead>
             <tbody>
@@ -865,11 +1024,82 @@ export function UsuariosClient({
                     <td>{request.supportGoal || "Cupom / roupa"}</td>
                     <td>{formatMoney(request.requestedAmount)}</td>
                     <td>{formatDateTime(request.requestedAt)}</td>
+                    <td>
+                      <div style={{ display: "grid", gap: 10, minWidth: 240 }}>
+                        {request.requestType === "roupa" ? (
+                          <label className={styles.filterField}>
+                            <span>Cupom liberado</span>
+                            <input
+                              value={getRequestDraft(request).adminCouponCode}
+                              onChange={(event) =>
+                                setRequestDrafts((current) => ({
+                                  ...current,
+                                  [request.id]: {
+                                    ...getRequestDraft(request),
+                                    adminCouponCode: event.target.value.toUpperCase(),
+                                  },
+                                }))
+                              }
+                              placeholder="Ex: ATLETA10"
+                            />
+                          </label>
+                        ) : null}
+                        <label className={styles.filterField}>
+                          <span>Mensagem para o parceiro</span>
+                          <input
+                            value={getRequestDraft(request).adminMessage}
+                            onChange={(event) =>
+                              setRequestDrafts((current) => ({
+                                ...current,
+                                [request.id]: {
+                                  ...getRequestDraft(request),
+                                  adminMessage: event.target.value,
+                                },
+                              }))
+                            }
+                            placeholder={
+                              request.requestType === "apoio"
+                                ? "Ex: pagamento programado para hoje"
+                                : "Ex: cupom liberado para voce usar"
+                            }
+                          />
+                        </label>
+                      </div>
+                    </td>
+                    <td>
+                      <div className={styles.filterActions} style={{ minWidth: 220 }}>
+                        <button
+                          type="button"
+                          className={styles.primaryButton}
+                          disabled={savingRequestId === request.id}
+                          onClick={() =>
+                            handleReviewRequest(
+                              request,
+                              request.requestType === "apoio" ? "pago" : "aprovado",
+                            )
+                          }
+                        >
+                          {savingRequestId === request.id
+                            ? "Salvando..."
+                            : request.requestType === "apoio"
+                              ? "Marcar pago"
+                              : "Aprovar cupom"}
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.secondaryButton}
+                          disabled={savingRequestId === request.id}
+                          onClick={() => handleReviewRequest(request, "recusado")}
+                        >
+                          Recusar
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6}>Nenhuma solicitacao pendente agora.</td>
+                  <td colSpan={8}>Nenhuma solicitacao pendente agora.</td>
                 </tr>
               )}
             </tbody>

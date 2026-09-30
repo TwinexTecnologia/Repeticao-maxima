@@ -189,6 +189,8 @@ export type StoreProductSelectionOption = {
   color: string;
   size: string;
   publishedStock: number;
+  unitPrice: number;
+  imageUrl: string | null;
   optionLabel: string;
 };
 
@@ -3177,6 +3179,11 @@ function buildStoreProductSelectionOptions(products: NuvemshopProduct[]) {
         color: resolvedColor,
         size: resolvedSize,
         publishedStock,
+        unitPrice: Math.max(parseMoney(String(variant.price ?? "")), 0),
+        imageUrl:
+          product.images && product.images[0] && typeof product.images[0].src === "string"
+            ? product.images[0].src
+            : null,
         optionLabel: `${productName} · ${resolvedColor} · ${resolvedSize}`,
       });
     }
