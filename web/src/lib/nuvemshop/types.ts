@@ -200,6 +200,35 @@ export type NuvemshopOrder = {
   [key: string]: unknown;
 };
 
+export type NuvemshopAbandonedCheckout = {
+  id: number | string;
+  token?: string | null;
+  abandoned_checkout_url?: string | null;
+  contact_email?: string | null;
+  contact_name?: string | null;
+  contact_phone?: string | null;
+  contact_identification?: string | null;
+  shipping_city?: string | null;
+  shipping_province?: string | null;
+  shipping_country?: string | null;
+  shipping_option?: string | null;
+  gateway?: string | null;
+  subtotal?: string | null;
+  discount?: string | null;
+  total?: string | null;
+  coupon?: Array<{
+    id?: number | string;
+    code?: string | null;
+    value?: string | null;
+    type?: string | null;
+    [key: string]: unknown;
+  }> | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  completed_at?: string | null;
+  [key: string]: unknown;
+};
+
 export type DiagnosticsResourceResult = {
   label: string;
   ok: boolean;

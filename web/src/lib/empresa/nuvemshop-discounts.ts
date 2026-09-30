@@ -72,7 +72,7 @@ export async function syncCompanyRuleWithNuvemshop(
   }
 
   const client = new NuvemshopClient(credentials.credentials);
-  const activePromotionUpdateSettings = getActivePromotionUpdateSettings();
+  const activePromotionUpdateSettings = getActivePromotionUpdateSettings(rule);
 
   try {
     await client.updateDiscountsCallback(callbackUrl);
@@ -80,14 +80,10 @@ export async function syncCompanyRuleWithNuvemshop(
     if (!rule.active) {
       if (rule.nuvemshopPromotionId) {
         try {
-          await client.updatePromotion(rule.nuvemshopPromotionId, {
-            active: false,
-            combines_with_quantity_discounts: false,
-            combines_with_free_shipping: false,
-            combines_with_cart_amount_discounts: false,
-            combines_with_app_discounts: false,
-            combines_with_price_discounts: false,
-          });
+          await client.updatePromotion(
+            rule.nuvemshopPromotionId,
+            getInactivePromotionUpdateSettings(),
+          );
         } catch (error) {
           if (
             error instanceof NuvemshopApiError &&
@@ -127,14 +123,10 @@ export async function syncCompanyRuleWithNuvemshop(
     if (rule.nuvemshopPromotionId) {
       if (titleChanged) {
         try {
-          await client.updatePromotion(rule.nuvemshopPromotionId, {
-            active: false,
-            combines_with_quantity_discounts: false,
-            combines_with_free_shipping: false,
-            combines_with_cart_amount_discounts: false,
-            combines_with_app_discounts: false,
-            combines_with_price_discounts: false,
-          });
+          await client.updatePromotion(
+            rule.nuvemshopPromotionId,
+            getInactivePromotionUpdateSettings(),
+          );
         } catch (error) {
           if (!(error instanceof NuvemshopApiError && error.status === 404)) {
             throw error;
@@ -224,7 +216,7 @@ async function createActivePromotion(
   rule: CompanyCartDiscountRule,
 ) {
   const created = await client.createPromotion({
-    ...getActivePromotionCreateSettings(),
+    ...getActivePromotionCreateSettings(rule),
     name: rule.title,
   });
   const createdPromotionId = extractPromotionId(created);
@@ -238,21 +230,24 @@ async function createActivePromotion(
   return createdPromotionId;
 }
 
-function getActivePromotionCreateSettings() {
+function getActivePromotionCreateSettings(rule: CompanyCartDiscountRule) {
   return {
     allocation_type: "cross_items" as const,
-    ...getActivePromotionUpdateSettings(),
+    ...getActivePromotionUpdateSettings(rule),
   };
 }
 
-function getActivePromotionUpdateSettings() {
+function getActivePromotionUpdateSettings(rule: CompanyCartDiscountRule) {
   return {
     active: true,
-    combines_with_quantity_discounts: true,
-    combines_with_free_shipping: false,
-    combines_with_cart_amount_discounts: true,
-    combines_with_app_discounts: true,
-    combines_with_price_discounts: true,
+    combines_with_other_discounts: rule.allowCombiningWithOtherPromotions,
+  };
+}
+
+function getInactivePromotionUpdateSettings() {
+  return {
+    active: false,
+    combines_with_other_discounts: false,
   };
 }
 

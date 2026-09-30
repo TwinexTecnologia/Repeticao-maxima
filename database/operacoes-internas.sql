@@ -37,6 +37,69 @@ ALTER TABLE repeticao_maxima.dividas_internas
   ADD COLUMN IF NOT EXISTS installment_number INTEGER NOT NULL DEFAULT 1,
   ADD COLUMN IF NOT EXISTS group_id UUID NOT NULL DEFAULT gen_random_uuid();
 
+CREATE TABLE IF NOT EXISTS repeticao_maxima.financeiro_saldos_mensais (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  month_ref DATE NOT NULL,
+  opening_balance NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (opening_balance >= 0),
+  CHECK (EXTRACT(DAY FROM month_ref) = 1),
+  UNIQUE (month_ref)
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.financeiro_saldos_mensais TO anon, authenticated, service_role;
+
+CREATE TABLE IF NOT EXISTS repeticao_maxima.financeiro_movimentacoes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  movement_date DATE NOT NULL,
+  movement_type TEXT NOT NULL DEFAULT 'saida',
+  title TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL DEFAULT 'Operacional',
+  amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  payment_method TEXT NOT NULL DEFAULT 'outro',
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (movement_type IN ('entrada', 'saida')),
+  CHECK (amount >= 0),
+  CHECK (payment_method IN ('pix', 'boleto', 'cartao', 'transferencia', 'dinheiro', 'outro'))
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.financeiro_movimentacoes TO anon, authenticated, service_role;
+
+CREATE TABLE IF NOT EXISTS repeticao_maxima.financeiro_grupos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  movement_type TEXT NOT NULL DEFAULT 'saida',
+  name TEXT NOT NULL DEFAULT '',
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (movement_type IN ('entrada', 'saida')),
+  UNIQUE (movement_type, name)
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.financeiro_grupos TO anon, authenticated, service_role;
+
+CREATE TABLE IF NOT EXISTS repeticao_maxima.financeiro_subgrupos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  group_id UUID NOT NULL REFERENCES repeticao_maxima.financeiro_grupos(id) ON DELETE CASCADE,
+  name TEXT NOT NULL DEFAULT '',
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (group_id, name)
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.financeiro_subgrupos TO anon, authenticated, service_role;
+
+ALTER TABLE repeticao_maxima.financeiro_movimentacoes
+  ADD COLUMN IF NOT EXISTS group_id UUID REFERENCES repeticao_maxima.financeiro_grupos(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS subgroup_id UUID REFERENCES repeticao_maxima.financeiro_subgrupos(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS group_name TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS subgroup_name TEXT NOT NULL DEFAULT '';
+
 CREATE TABLE IF NOT EXISTS repeticao_maxima.estoque_base (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   sku TEXT NOT NULL,
@@ -91,10 +154,15 @@ CREATE TABLE IF NOT EXISTS repeticao_maxima.estoque_movimentacoes (
   sku TEXT NOT NULL DEFAULT '',
   color TEXT NOT NULL DEFAULT '',
   size TEXT NOT NULL DEFAULT '',
+  movement_date DATE NOT NULL DEFAULT CURRENT_DATE,
   movement_type TEXT NOT NULL DEFAULT 'ajuste',
   quantity INTEGER NOT NULL DEFAULT 0,
   plain_before INTEGER NOT NULL DEFAULT 0,
   plain_after INTEGER NOT NULL DEFAULT 0,
+  art_name TEXT NOT NULL DEFAULT '',
+  art_product_id TEXT NOT NULL DEFAULT '',
+  origin_type TEXT NOT NULL DEFAULT 'manual',
+  origin_reference TEXT NOT NULL DEFAULT '',
   reason_category TEXT NOT NULL DEFAULT 'ajuste_manual',
   reason_text TEXT NOT NULL DEFAULT '',
   source_module TEXT NOT NULL DEFAULT 'estoque',
@@ -106,6 +174,13 @@ CREATE TABLE IF NOT EXISTS repeticao_maxima.estoque_movimentacoes (
 );
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.estoque_movimentacoes TO anon, authenticated, service_role;
+
+ALTER TABLE repeticao_maxima.estoque_movimentacoes
+  ADD COLUMN IF NOT EXISTS movement_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  ADD COLUMN IF NOT EXISTS art_name TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS art_product_id TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS origin_type TEXT NOT NULL DEFAULT 'manual',
+  ADD COLUMN IF NOT EXISTS origin_reference TEXT NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS repeticao_maxima.promocoes_carrinho (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -341,6 +416,126 @@ CREATE TABLE IF NOT EXISTS repeticao_maxima.parceiros_campanhas_participantes (
 );
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.parceiros_campanhas_participantes TO anon, authenticated, service_role;
+
+CREATE TABLE IF NOT EXISTS repeticao_maxima.parceiros_conteudo_campanhas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL DEFAULT '',
+  summary TEXT NOT NULL DEFAULT '',
+  details TEXT NOT NULL DEFAULT '',
+  recommended_cta TEXT NOT NULL DEFAULT '',
+  image_url TEXT NOT NULL DEFAULT '',
+  start_date DATE,
+  end_date DATE,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  is_current BOOLEAN NOT NULL DEFAULT FALSE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (sort_order >= 0),
+  CHECK (end_date IS NULL OR start_date IS NULL OR end_date >= start_date)
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.parceiros_conteudo_campanhas TO anon, authenticated, service_role;
+
+CREATE TABLE IF NOT EXISTS repeticao_maxima.parceiros_conteudo_produtos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL DEFAULT '',
+  image_url TEXT NOT NULL DEFAULT '',
+  short_description TEXT NOT NULL DEFAULT '',
+  composition TEXT NOT NULL DEFAULT '',
+  differentials TEXT NOT NULL DEFAULT '',
+  product_url TEXT NOT NULL DEFAULT '',
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (sort_order >= 0)
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.parceiros_conteudo_produtos TO anon, authenticated, service_role;
+
+CREATE TABLE IF NOT EXISTS repeticao_maxima.parceiros_conteudo_assets (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  scope_type TEXT NOT NULL DEFAULT 'brand',
+  scope_id UUID,
+  category_key TEXT NOT NULL DEFAULT 'other',
+  title TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  file_url TEXT NOT NULL DEFAULT '',
+  preview_url TEXT NOT NULL DEFAULT '',
+  download_label TEXT NOT NULL DEFAULT 'Baixar',
+  asset_type TEXT NOT NULL DEFAULT 'image',
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (scope_type IN ('campaign', 'product', 'brand', 'template', 'idea')),
+  CHECK (category_key IN (
+    'story',
+    'feed',
+    'pdf',
+    'info',
+    'other',
+    'png_front',
+    'png_back',
+    'photo_official',
+    'photo_model',
+    'video',
+    'art',
+    'logos',
+    'elements',
+    'backgrounds',
+    'story_9_16',
+    'feed_4_5',
+    'template_other',
+    'treino',
+    'cupom',
+    'unboxing',
+    'look',
+    'lancamento'
+  )),
+  CHECK (asset_type IN ('image', 'video', 'pdf', 'link', 'archive', 'idea')),
+  CHECK (sort_order >= 0)
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.parceiros_conteudo_assets TO anon, authenticated, service_role;
+
+ALTER TABLE repeticao_maxima.parceiros_conteudo_campanhas
+  ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS summary TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS details TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS recommended_cta TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS image_url TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS start_date DATE,
+  ADD COLUMN IF NOT EXISTS end_date DATE,
+  ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS is_current BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE repeticao_maxima.parceiros_conteudo_produtos
+  ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS image_url TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS short_description TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS composition TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS differentials TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS product_url TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE repeticao_maxima.parceiros_conteudo_assets
+  ADD COLUMN IF NOT EXISTS scope_type TEXT NOT NULL DEFAULT 'brand',
+  ADD COLUMN IF NOT EXISTS scope_id UUID,
+  ADD COLUMN IF NOT EXISTS category_key TEXT NOT NULL DEFAULT 'other',
+  ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS file_url TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS preview_url TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS download_label TEXT NOT NULL DEFAULT 'Baixar',
+  ADD COLUMN IF NOT EXISTS asset_type TEXT NOT NULL DEFAULT 'image',
+  ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
 
 ALTER TABLE repeticao_maxima.profiles_usuarios
   ADD COLUMN IF NOT EXISTS auth_user_id UUID,
