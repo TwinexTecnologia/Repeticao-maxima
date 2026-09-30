@@ -83,6 +83,7 @@ export type PartnerRewardRequest = {
   requestType: PartnerRewardRequestType;
   supportGoal: string;
   requestedAmount: number;
+  consumedAmount: number;
   availableAmount: number;
   minimumAmount: number;
   windowStartDate: string | null;
@@ -270,6 +271,7 @@ export async function createPartnerRewardRequest(input: unknown) {
         request_type: row.requestType,
         support_goal: row.supportGoal,
         requested_amount: row.requestedAmount,
+        consumed_amount: 0,
         available_amount: row.availableAmount,
         minimum_amount: row.minimumAmount,
         window_start_date: row.windowStartDate,
@@ -353,6 +355,97 @@ export async function reviewPartnerRewardRequest(id: string, input: unknown) {
             : row.status === "recusado"
               ? "Solicitacao recusada."
               : "Solicitacao aprovada com cupom liberado.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function consumePartnerRewardRequestAmount(id: string, input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizePartnerRewardRequestConsumptionInput(input);
+
+  try {
+    const { data: existingRow, error: existingError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_REWARD_REQUEST_TABLE)
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (existingError || !existingRow) {
+      throw existingError || new Error("Nao foi possivel localizar a solicitacao para consumo.");
+    }
+
+    const request = rowToPartnerRewardRequest(existingRow);
+
+    if (request.requestType !== "roupa") {
+      throw new Error("Somente solicitacoes de roupa podem consumir saldo por resgate.");
+    }
+
+    if (request.status !== "aprovado") {
+      throw new Error("Essa solicitacao precisa estar aprovada para consumir saldo.");
+    }
+
+    const currentConsumed = Math.max(request.consumedAmount, 0);
+    const currentRemaining = Math.max(request.requestedAmount - currentConsumed, 0);
+
+    if (row.consumedAmount > currentRemaining) {
+      throw new Error("Esse resgate passa do saldo restante aprovado para essa solicitacao.");
+    }
+
+    const nextConsumed = Math.round((currentConsumed + row.consumedAmount) * 100) / 100;
+    const nextRemaining = Math.max(request.requestedAmount - nextConsumed, 0);
+    const reviewedAt = new Date().toISOString();
+
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_REWARD_REQUEST_TABLE)
+      .update({
+        consumed_amount: nextConsumed,
+        status: nextRemaining <= 0 ? "pago" : "aprovado",
+        admin_message:
+          row.adminMessage ||
+          (nextRemaining <= 0
+            ? "Saldo consumido integralmente no resgate da plataforma."
+            : request.adminMessage),
+        partner_seen_at: null,
+        reviewed_at: reviewedAt,
+        updated_at: reviewedAt,
+      })
+      .eq("id", id)
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel atualizar o saldo consumido da solicitacao.");
+    }
+
+    return {
+      ok: true as const,
+      request: rowToPartnerRewardRequest(data),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          nextRemaining <= 0
+            ? "Solicitacao consumida por completo no resgate."
+            : "Saldo da solicitacao atualizado com sucesso.",
         updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
       },
     };
@@ -1233,6 +1326,7 @@ function rowToPartnerRewardRequest(
     requestType: normalizePartnerRewardRequestType(row.request_type),
     supportGoal: String(row.support_goal ?? "").trim(),
     requestedAmount: Math.max(getNumberValue(row.requested_amount), 0),
+    consumedAmount: Math.max(getNumberValue(row.consumed_amount), 0),
     availableAmount: Math.max(getNumberValue(row.available_amount), 0),
     minimumAmount: Math.max(getNumberValue(row.minimum_amount), 0),
     windowStartDate: normalizeDate(row.window_start_date) || null,
@@ -1464,6 +1558,20 @@ function normalizePartnerRewardRequestReviewInput(input: unknown) {
     status,
     adminCouponCode,
     adminMessage,
+  };
+}
+
+function normalizePartnerRewardRequestConsumptionInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+  const consumedAmount = Math.max(getNumberValue(source.consumedAmount), 0);
+
+  if (consumedAmount <= 0) {
+    throw new Error("Informe um valor consumido valido para esse resgate.");
+  }
+
+  return {
+    consumedAmount,
+    adminMessage: String(source.adminMessage ?? "").trim(),
   };
 }
 

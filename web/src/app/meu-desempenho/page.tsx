@@ -12,6 +12,7 @@ import {
   getCurrentMonthInput,
   getGoalProgressPercent,
   getPartnerAvailableBalances,
+  getPartnerRewardRequestRemainingAmount,
   loadPartnerPerformanceSnapshot,
 } from "@/lib/parceiros/performance";
 import { loadPartnerCampaignSnapshots } from "@/lib/parceiros/campaigns";
@@ -138,9 +139,21 @@ export default async function MeuDesempenhoPage({
           item.partnerId === user.linkedPartnerId || item.couponCode === profile.couponCode,
       )
     : [];
-  const approvedClothesRequests = rewardRequests.filter(
-    (item) => item.requestType === "roupa" && item.status === "aprovado",
+  const openClothesRequests = rewardRequests.filter(
+    (item) =>
+      item.requestType === "roupa" &&
+      (item.status === "pendente" || item.status === "aprovado") &&
+      getPartnerRewardRequestRemainingAmount(item) > 0,
   );
+  const approvedClothesRequests = openClothesRequests.filter(
+    (item) => item.status === "aprovado",
+  );
+  const hasOpenClothesRequest = openClothesRequests.length > 0;
+  const openClothesRequestStatus = openClothesRequests.some((item) => item.status === "pendente")
+    ? "pendente"
+    : openClothesRequests.some((item) => item.status === "aprovado")
+      ? "aprovado"
+      : null;
   const redeemableStoreOptions = storeProductOptions.filter(
     (item) => item.publishedStock > 0 && item.unitPrice > 0,
   );
@@ -944,12 +957,14 @@ export default async function MeuDesempenhoPage({
       {tab === "inicio" || tab === "resgates" ? (
         <PartnerPerformanceClient
           selectedMonth={performance.data.selectedMonth}
-          canRequestClothes={balances.canRequestClothes}
+          canRequestClothes={balances.canRequestClothes && !hasOpenClothesRequest}
           canRequestSupport={balances.canRequestSupport}
           clothesAvailable={formatMoney(balances.clothesAvailable)}
           supportAvailable={formatMoney(balances.supportAvailable)}
           partnerRole={profile.role}
           approvedClothesRequests={approvedClothesRequests}
+          hasOpenClothesRequest={hasOpenClothesRequest}
+          openClothesRequestStatus={openClothesRequestStatus}
           redeemableStoreOptions={redeemableStoreOptions}
         />
       ) : null}
@@ -1154,7 +1169,13 @@ export default async function MeuDesempenhoPage({
                       </span>
                     </div>
                     <div className={styles.mobileListMeta}>
-                      <span>{formatMoney(request.requestedAmount)}</span>
+                      <span>
+                        {formatMoney(
+                          request.requestType === "roupa"
+                            ? getPartnerRewardRequestRemainingAmount(request)
+                            : request.requestedAmount,
+                        )}
+                      </span>
                       <span>{request.supportGoal || "Cupom / roupa"}</span>
                       <span>{formatDateTime(request.requestedAt)}</span>
                     </div>
@@ -1245,7 +1266,13 @@ export default async function MeuDesempenhoPage({
                   <tr key={request.id}>
                     <td>{request.requestType === "apoio" ? "Apoio" : "Roupa"}</td>
                     <td>{request.supportGoal || "Cupom / roupa"}</td>
-                    <td>{formatMoney(request.requestedAmount)}</td>
+                    <td>
+                      {formatMoney(
+                        request.requestType === "roupa"
+                          ? getPartnerRewardRequestRemainingAmount(request)
+                          : request.requestedAmount,
+                      )}
+                    </td>
                     <td>{labelForRequestStatus(request.status, request.requestType)}</td>
                     <td>{request.adminCouponCode || "-"}</td>
                     <td>{request.adminMessage || "-"}</td>

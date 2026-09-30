@@ -363,6 +363,7 @@ CREATE TABLE IF NOT EXISTS repeticao_maxima.parceiros_solicitacoes_resgate (
   request_type TEXT NOT NULL DEFAULT 'roupa',
   support_goal TEXT NOT NULL DEFAULT '',
   requested_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  consumed_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   available_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   minimum_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   window_start_date DATE,
@@ -379,6 +380,7 @@ CREATE TABLE IF NOT EXISTS repeticao_maxima.parceiros_solicitacoes_resgate (
   CHECK (request_type IN ('roupa', 'apoio')),
   CHECK (status IN ('pendente', 'aprovado', 'pago', 'recusado')),
   CHECK (requested_amount >= 0),
+  CHECK (consumed_amount >= 0),
   CHECK (available_amount >= 0),
   CHECK (minimum_amount >= 0)
 );
@@ -578,6 +580,7 @@ ALTER TABLE repeticao_maxima.parceiros_solicitacoes_resgate
   ADD COLUMN IF NOT EXISTS request_type TEXT NOT NULL DEFAULT 'roupa',
   ADD COLUMN IF NOT EXISTS support_goal TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS requested_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS consumed_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS available_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS minimum_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS window_start_date DATE,
