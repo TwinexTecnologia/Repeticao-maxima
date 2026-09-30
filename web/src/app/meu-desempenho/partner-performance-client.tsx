@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import styles from "@/components/panel.module.css";
-import type { StoreProductSelectionOption } from "@/lib/operacoes/repository";
 import type { PartnerRewardRequest } from "@/lib/parceiros/repository";
 
 type PartnerPerformanceClientProps = {
@@ -17,7 +16,6 @@ type PartnerPerformanceClientProps = {
   approvedClothesRequests: PartnerRewardRequest[];
   hasOpenClothesRequest: boolean;
   openClothesRequestStatus: "pendente" | "aprovado" | null;
-  redeemableStoreOptions: StoreProductSelectionOption[];
 };
 
 type PartnerRequestResponse = {
@@ -25,9 +23,10 @@ type PartnerRequestResponse = {
   message?: string;
 };
 
-type PartnerRedemptionResponse = {
+type PartnerStoreRedirectResponse = {
   ok: boolean;
   message?: string;
+  redirectUrl?: string;
 };
 
 export function PartnerPerformanceClient({
@@ -40,22 +39,17 @@ export function PartnerPerformanceClient({
   approvedClothesRequests,
   hasOpenClothesRequest,
   openClothesRequestStatus,
-  redeemableStoreOptions,
 }: PartnerPerformanceClientProps) {
   const router = useRouter();
   const [supportGoal, setSupportGoal] = useState("Pintura");
   const [requestFeedback, setRequestFeedback] = useState("");
-  const [redemptionFeedback, setRedemptionFeedback] = useState("");
+  const [storeFeedback, setStoreFeedback] = useState("");
   const [isSubmittingClothes, setIsSubmittingClothes] = useState(false);
   const [isSubmittingSupport, setIsSubmittingSupport] = useState(false);
-  const [isSubmittingRedemption, setIsSubmittingRedemption] = useState(false);
+  const [isRedirectingToStore, setIsRedirectingToStore] = useState(false);
   const [selectedApprovedRequestId, setSelectedApprovedRequestId] = useState(
     approvedClothesRequests[0]?.id || "",
   );
-  const [selectedProductSelectionId, setSelectedProductSelectionId] = useState(
-    redeemableStoreOptions[0]?.id || "",
-  );
-  const [redemptionQuantity, setRedemptionQuantity] = useState("1");
   const selectedApprovedRequest = useMemo(
     () =>
       approvedClothesRequests.find((item) => item.id === selectedApprovedRequestId) ||
@@ -63,32 +57,15 @@ export function PartnerPerformanceClient({
       null,
     [approvedClothesRequests, selectedApprovedRequestId],
   );
-  const selectedProduct = useMemo(
-    () =>
-      redeemableStoreOptions.find((item) => item.id === selectedProductSelectionId) ||
-      redeemableStoreOptions[0] ||
-      null,
-    [redeemableStoreOptions, selectedProductSelectionId],
-  );
-  const approvedQuantity = Math.max(1, Math.trunc(Number(redemptionQuantity || "1") || 1));
-  const selectedTotal = Math.round((selectedProduct?.unitPrice || 0) * approvedQuantity * 100) / 100;
   const approvedAmount = selectedApprovedRequest
     ? Math.max(selectedApprovedRequest.requestedAmount - selectedApprovedRequest.consumedAmount, 0)
     : 0;
-  const remainingAfterSelection = Math.round((approvedAmount - selectedTotal) * 100) / 100;
-  const exceedsApprovedAmount = remainingAfterSelection < 0;
 
   useEffect(() => {
     if (!approvedClothesRequests.some((item) => item.id === selectedApprovedRequestId)) {
       setSelectedApprovedRequestId(approvedClothesRequests[0]?.id || "");
     }
   }, [approvedClothesRequests, selectedApprovedRequestId]);
-
-  useEffect(() => {
-    if (!redeemableStoreOptions.some((item) => item.id === selectedProductSelectionId)) {
-      setSelectedProductSelectionId(redeemableStoreOptions[0]?.id || "");
-    }
-  }, [redeemableStoreOptions, selectedProductSelectionId]);
 
   async function handleRequest(requestType: "roupa" | "apoio") {
     if (requestType === "roupa") {
@@ -131,51 +108,44 @@ export function PartnerPerformanceClient({
     }
   }
 
-  async function handleRedeemInsidePlatform() {
+  async function handleOpenStoreWithBalance() {
     if (!selectedApprovedRequest) {
-      setRedemptionFeedback("Selecione uma aprovacao de roupa para usar nesse resgate.");
+      setStoreFeedback("Selecione uma aprovacao de roupa para usar na loja.");
       return;
     }
 
-    if (!selectedProduct) {
-      setRedemptionFeedback("Selecione um produto da loja para registrar o resgate.");
-      return;
-    }
-
-    setIsSubmittingRedemption(true);
-    setRedemptionFeedback("");
+    setIsRedirectingToStore(true);
+    setStoreFeedback("");
 
     try {
-      const response = await fetch("/api/parceiro/resgates", {
+      const response = await fetch("/api/parceiro/loja", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
           requestId: selectedApprovedRequest.id,
-          productSelectionId: selectedProduct.id,
-          quantity: approvedQuantity,
         }),
       });
-      const result = (await response.json()) as PartnerRedemptionResponse;
+      const result = (await response.json()) as PartnerStoreRedirectResponse;
 
       if (!response.ok || !result.ok) {
-        throw new Error(result.message || "Nao foi possivel registrar esse resgate.");
+        throw new Error(result.message || "Nao foi possivel abrir a loja com saldo.");
       }
 
-      setRedemptionFeedback(
-        result.message || "Resgate registrado com sucesso no seu historico.",
-      );
-      setRedemptionQuantity("1");
-      router.refresh();
+      if (!result.redirectUrl) {
+        throw new Error("A sessao foi criada, mas a URL da loja nao voltou corretamente.");
+      }
+
+      window.location.href = result.redirectUrl;
     } catch (error) {
-      setRedemptionFeedback(
+      setStoreFeedback(
         error instanceof Error
           ? error.message
-          : "Nao foi possivel registrar esse resgate.",
+          : "Nao foi possivel abrir a loja com saldo.",
       );
     } finally {
-      setIsSubmittingRedemption(false);
+      setIsRedirectingToStore(false);
     }
   }
 
@@ -216,7 +186,7 @@ export function PartnerPerformanceClient({
                 {hasOpenClothesRequest
                   ? openClothesRequestStatus === "pendente"
                     ? "Seu pedido ja foi enviado para o admin. O saldo continua guardado para voce."
-                    : "Seu saldo ja foi aprovado. Agora e so escolher o produto e registrar o resgate."
+                    : "Seu saldo ja foi aprovado. Agora voce pode entrar na loja real e comprar por la."
                   : "Bata a meta para liberar saldo."}
               </p>
             </div>
@@ -264,8 +234,7 @@ export function PartnerPerformanceClient({
           <div>
             <div className={styles.sectionTitle}>Solicitar resgate</div>
             <p className={styles.sectionSubtitle}>
-              Quando voce solicita, o admin recebe seu pedido para gerar o cupom
-              de roupa ou liberar o apoio esportivo.
+              Quando voce solicita, o admin libera seu saldo de roupa ou o apoio esportivo.
             </p>
           </div>
         </div>
@@ -332,10 +301,10 @@ export function PartnerPerformanceClient({
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
             <div>
-              <div className={styles.sectionTitle}>Resgatar na plataforma</div>
+              <div className={styles.sectionTitle}>Usar saldo na loja</div>
               <p className={styles.sectionSubtitle}>
-                Escolha o produto com o preco normal da loja. Quando confirmar, isso entra no
-                seu historico e tambem no admin como resgate por batimento de meta.
+                Abra a loja real com seu saldo pronto para o checkout. Assim voce aproveita
+                combos, frete, meios de pagamento e o catalogo normal do site.
               </p>
             </div>
             <div className={styles.chipRow}>
@@ -370,138 +339,65 @@ export function PartnerPerformanceClient({
                   Saldo liberado: <strong>{selectedApprovedRequest ? formatMoney(approvedAmount) : "-"}</strong>
                 </span>
                 <span className={styles.chip}>
-                  Cupom: <strong>{selectedApprovedRequest?.adminCouponCode || selectedApprovedRequest?.couponCode || "-"}</strong>
+                  Meta: <strong>{selectedApprovedRequest?.windowEndDate || "saldo reaproveitavel"}</strong>
                 </span>
               </div>
 
-              <div style={{ marginTop: 18 }}>
-                <div className={styles.listTitle}>Produto da loja</div>
-                <p className={styles.sectionSubtitle} style={{ marginTop: 8 }}>
-                  O valor usado abaixo e o preco normal atual da loja.
+              <div className={styles.callout} style={{ marginTop: 16 }}>
+                <h3>Como funciona agora</h3>
+                <p>
+                  O painel so prepara seu saldo. A compra acontece dentro da loja real, com o
+                  mesmo checkout, promocoes e formas de pagamento do site.
                 </p>
-                <div className={styles.redemptionProductGrid} style={{ marginTop: 16 }}>
-                  {redeemableStoreOptions.map((item) => {
-                    const isSelected = item.id === selectedProductSelectionId;
-
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className={`${styles.redemptionProductCard} ${isSelected ? styles.redemptionProductCardActive : ""}`}
-                        onClick={() => setSelectedProductSelectionId(item.id)}
-                      >
-                        {item.imageUrl ? (
-                          <img
-                            src={item.imageUrl}
-                            alt={item.optionLabel}
-                            className={styles.redemptionProductImage}
-                          />
-                        ) : (
-                          <div className={styles.redemptionProductPlaceholder}>
-                            {item.productName}
-                          </div>
-                        )}
-                        <div className={styles.redemptionProductBody}>
-                          <div className={styles.redemptionProductTitle}>{item.productName}</div>
-                          <div className={styles.redemptionProductMeta}>
-                            {item.color} · {item.size}
-                          </div>
-                          <div className={styles.redemptionProductFooter}>
-                            <strong>{formatMoney(item.unitPrice)}</strong>
-                            <span>{item.publishedStock} no site</span>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
               </div>
-
-              <label className={styles.filterField} style={{ marginTop: 16 }}>
-                <span>Quantidade</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={redemptionQuantity}
-                  onChange={(event) => setRedemptionQuantity(event.target.value)}
-                />
-              </label>
             </article>
 
             <article className={styles.catalogCard}>
-              <div className={styles.listTitle}>Resumo do resgate</div>
+              <div className={styles.listTitle}>Resumo do saldo</div>
               <div className={styles.redemptionSummaryGrid} style={{ marginTop: 16 }}>
                 <div className={styles.redemptionSummaryCard}>
                   <span>Saldo aprovado</span>
                   <strong>{selectedApprovedRequest ? formatMoney(approvedAmount) : "-"}</strong>
                 </div>
                 <div className={styles.redemptionSummaryCard}>
-                  <span>Preco da loja</span>
-                  <strong>{selectedProduct ? formatMoney(selectedProduct.unitPrice) : "-"}</strong>
+                  <span>Compra</span>
+                  <strong>Na loja real</strong>
                 </div>
                 <div className={styles.redemptionSummaryCard}>
-                  <span>Total do resgate</span>
-                  <strong>{formatMoney(selectedTotal)}</strong>
+                  <span>Combos e frete</span>
+                  <strong>Ativos</strong>
                 </div>
-                <div
-                  className={`${styles.redemptionSummaryCard} ${
-                    exceedsApprovedAmount ? styles.redemptionSummaryCardDanger : styles.redemptionSummaryCardSuccess
-                  }`}
-                >
-                  <span>{exceedsApprovedAmount ? "Ultrapassa" : "Saldo restante"}</span>
-                  <strong>{formatMoney(Math.abs(remainingAfterSelection))}</strong>
+                <div className={`${styles.redemptionSummaryCard} ${styles.redemptionSummaryCardSuccess}`}>
+                  <span>Baixa do saldo</span>
+                  <strong>So quando pagar</strong>
                 </div>
               </div>
 
               <div className={styles.callout} style={{ marginTop: 16 }}>
-                <h3>Como isso entra no sistema</h3>
+                <h3>O que acontece no checkout</h3>
                 <p>
-                  O item vira um resgate entregue no seu historico e aparece no admin com a
-                  observacao "Resgate por batimento de meta".
+                  Seu saldo entra como desconto dinamico da propria loja. O restante, se houver,
+                  continua disponivel para um proximo pedido.
                 </p>
               </div>
-
-              {selectedProduct ? (
-                <div className={styles.callout} style={{ marginTop: 16 }}>
-                  <h3>Item selecionado</h3>
-                  <p>
-                    {selectedProduct.optionLabel} · SKU {selectedProduct.sku}
-                  </p>
-                </div>
-              ) : null}
-
-              {exceedsApprovedAmount ? (
-                <div className={styles.callout} style={{ marginTop: 16 }}>
-                  <h3>Total acima do aprovado</h3>
-                  <p>
-                    Ajuste a quantidade ou escolha um item com valor menor para caber dentro do
-                    saldo liberado.
-                  </p>
-                </div>
-              ) : null}
 
               <div className={styles.filterActions} style={{ marginTop: 16 }}>
                 <button
                   type="button"
                   className={styles.primaryButton}
-                  onClick={handleRedeemInsidePlatform}
-                  disabled={
-                    !selectedApprovedRequest ||
-                    !selectedProduct ||
-                    isSubmittingRedemption ||
-                    exceedsApprovedAmount
-                  }
+                  onClick={handleOpenStoreWithBalance}
+                  disabled={!selectedApprovedRequest || isRedirectingToStore}
                 >
-                  {isSubmittingRedemption ? "Registrando..." : "Registrar resgate"}
+                  {isRedirectingToStore ? "Abrindo loja..." : "Ir para a loja usar saldo"}
                 </button>
               </div>
             </article>
           </div>
 
-          {redemptionFeedback ? (
+          {storeFeedback ? (
             <div className={styles.callout} style={{ marginTop: 18 }}>
-              <h3>Status do resgate</h3>
-              <p>{redemptionFeedback}</p>
+              <h3>Status da loja</h3>
+              <p>{storeFeedback}</p>
             </div>
           ) : null}
         </section>

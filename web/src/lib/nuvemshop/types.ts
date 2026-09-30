@@ -186,6 +186,23 @@ export type NuvemshopOrder = {
     [key: string]: unknown;
   }> | null;
   products?: NuvemshopOrderProduct[];
+  promotional_discount?: {
+    id?: number | string | null;
+    store_id?: number | string | null;
+    order_id?: number | string | null;
+    created_at?: string | null;
+    total_discount_amount?: string | null;
+    contents?: Array<{
+      amount?: string | null;
+      [key: string]: unknown;
+    }> | null;
+    promotions_applied?: Array<{
+      id?: string | null;
+      name?: string | null;
+      [key: string]: unknown;
+    }> | null;
+    [key: string]: unknown;
+  } | null;
   customer?: {
     id?: number | string | null;
     name?: string | null;

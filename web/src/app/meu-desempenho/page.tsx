@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
 import styles from "@/components/panel.module.css";
-import { loadStoreProductSelectionOptions } from "@/lib/operacoes/repository";
 import {
   ATHLETE_SUPPORT_MINIMUM_REDEMPTION,
   ATHLETE_SUPPORT_PERCENT,
@@ -54,16 +53,14 @@ export default async function MeuDesempenhoPage({
   const customRangeEnd = normalizeDateParam(params?.rangeEnd);
   const needsRedemptionData = tab === "inicio" || tab === "resgates";
   const needsRewardRequests = tab !== "campanhas";
-  const [profilesData, campaignsData, rewardRequests, allRedemptions, storeProductOptions] =
-    await Promise.all([
+  const [profilesData, campaignsData, rewardRequests, allRedemptions] = await Promise.all([
     loadCouponPartnerProfiles(),
     loadPartnerCampaigns(),
     needsRewardRequests
       ? loadPartnerRewardRequests({ userProfileId: user.profileId })
       : Promise.resolve([]),
     needsRedemptionData ? loadPartnerRedemptions() : Promise.resolve({ redemptions: [] }),
-      needsRedemptionData ? loadStoreProductSelectionOptions() : Promise.resolve([]),
-    ]);
+  ]);
   const profile = profilesData.profiles.find(
     (item) => item.id === user.linkedPartnerId && item.active,
   );
@@ -143,9 +140,6 @@ export default async function MeuDesempenhoPage({
     : openClothesRequests.some((item) => item.status === "aprovado")
       ? "aprovado"
       : null;
-  const redeemableStoreOptions = storeProductOptions.filter(
-    (item) => item.publishedStock > 0 && item.unitPrice > 0,
-  );
   const needsCampaignSnapshots = tab === "inicio" || tab === "campanhas";
   const campaignSnapshots = needsCampaignSnapshots
     ? await loadPartnerCampaignSnapshots(partnerCampaigns)
@@ -881,7 +875,6 @@ export default async function MeuDesempenhoPage({
           approvedClothesRequests={approvedClothesRequests}
           hasOpenClothesRequest={hasOpenClothesRequest}
           openClothesRequestStatus={openClothesRequestStatus}
-          redeemableStoreOptions={redeemableStoreOptions}
         />
       ) : null}
 
@@ -1092,7 +1085,7 @@ export default async function MeuDesempenhoPage({
                             : request.requestedAmount,
                         )}
                       </span>
-                      <span>{request.supportGoal || "Cupom / roupa"}</span>
+                      <span>{request.supportGoal || "Saldo / roupa"}</span>
                       <span>{formatDateTime(request.requestedAt)}</span>
                     </div>
                     {request.adminMessage ? (
@@ -1103,7 +1096,7 @@ export default async function MeuDesempenhoPage({
                     ) : null}
                     {request.adminCouponCode ? (
                       <div className={styles.callout} style={{ marginTop: 12 }}>
-                        <h3>Cupom liberado</h3>
+                        <h3>Referencia liberada</h3>
                         <p>{request.adminCouponCode}</p>
                       </div>
                     ) : null}
@@ -1171,7 +1164,7 @@ export default async function MeuDesempenhoPage({
                 <th>Destino</th>
                 <th>Valor</th>
                 <th>Status</th>
-                <th>Cupom</th>
+                <th>Referencia</th>
                 <th>Mensagem</th>
                 <th>Solicitado em</th>
               </tr>
@@ -1181,7 +1174,7 @@ export default async function MeuDesempenhoPage({
                 rewardRequests.map((request) => (
                   <tr key={request.id}>
                     <td>{request.requestType === "apoio" ? "Apoio" : "Roupa"}</td>
-                    <td>{request.supportGoal || "Cupom / roupa"}</td>
+                    <td>{request.supportGoal || "Saldo / roupa"}</td>
                     <td>
                       {formatMoney(
                         request.requestType === "roupa"
