@@ -1,4 +1,5 @@
 import type {
+  NuvemshopAbandonedCheckout,
   NuvemshopCategory,
   NuvemshopCoupon,
   NuvemshopCredentials,
@@ -102,6 +103,13 @@ export class NuvemshopClient {
   async listCoupons(params: ListParams = {}) {
     const searchParams = this.buildPaginationParams(params);
     return this.requestJson<NuvemshopCoupon[]>("/coupons", {
+      searchParams,
+    });
+  }
+
+  async listAbandonedCheckouts(params: ListParams = {}) {
+    const searchParams = this.buildPaginationParams(params);
+    return this.requestJson<NuvemshopAbandonedCheckout[]>("/checkouts", {
       searchParams,
     });
   }

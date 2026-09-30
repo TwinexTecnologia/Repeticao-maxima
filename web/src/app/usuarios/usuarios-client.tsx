@@ -43,6 +43,15 @@ type RequestReviewApiResponse = {
   request?: PartnerRewardRequest;
 };
 
+type EmployeeFormState = {
+  fullName: string;
+  email: string;
+  password: string;
+  active: boolean;
+  notes: string;
+  permissions: UserMenuPermissions;
+};
+
 const MENU_OPTIONS: Array<{
   key: UserMenuPermissionKey;
   label: string;
@@ -70,6 +79,17 @@ const DEFAULT_PERMISSIONS: UserMenuPermissions = {
   usuarios: false,
 };
 
+function getDefaultEmployeeForm(): EmployeeFormState {
+  return {
+    fullName: "",
+    email: "",
+    password: "",
+    active: true,
+    notes: "",
+    permissions: { ...DEFAULT_PERMISSIONS },
+  };
+}
+
 export function UsuariosClient({
   initialEmployees,
   initialPartners,
@@ -89,7 +109,9 @@ export function UsuariosClient({
   const [isSavingEmployee, setIsSavingEmployee] = useState(false);
   const [isSavingPartner, setIsSavingPartner] = useState(false);
   const [savingRequestId, setSavingRequestId] = useState("");
+  const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
   const [editingPartnerId, setEditingPartnerId] = useState<string | null>(null);
+  const [employeeForm, setEmployeeForm] = useState<EmployeeFormState>(getDefaultEmployeeForm);
   const [requestDrafts, setRequestDrafts] = useState<
     Record<string, { adminCouponCode: string; adminMessage: string }>
   >(() =>
@@ -103,13 +125,6 @@ export function UsuariosClient({
       ]),
     ),
   );
-  const [employeeForm, setEmployeeForm] = useState({
-    fullName: "",
-    email: "",
-    password: "",
-    notes: "",
-    permissions: { ...DEFAULT_PERMISSIONS },
-  });
   const [partnerForm, setPartnerForm] = useState({
     linkedPartnerId: "",
     partnerType: "influenciador" as PartnerUserType,
@@ -203,49 +218,90 @@ export function UsuariosClient({
     );
   }
 
-  async function handleCreateEmployee() {
+  async function handleSaveEmployee() {
+    if (!employeeForm.fullName.trim()) {
+      setEmployeeFeedback("Informe o nome do funcionario.");
+      return;
+    }
+
+    if (!editingEmployeeId && !employeeForm.email.trim()) {
+      setEmployeeFeedback("Informe o e-mail de login do funcionario.");
+      return;
+    }
+
     setIsSavingEmployee(true);
     setEmployeeFeedback("");
 
     try {
-      const response = await fetch("/api/usuarios/funcionarios", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const response = await fetch(
+        editingEmployeeId
+          ? `/api/usuarios/funcionarios/${editingEmployeeId}`
+          : "/api/usuarios/funcionarios",
+        {
+          method: editingEmployeeId ? "PUT" : "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(employeeForm),
         },
-        body: JSON.stringify(employeeForm),
-      });
+      );
       const result = (await response.json()) as EmployeeApiResponse;
 
       if (!response.ok || !result.ok || !result.employee) {
-        throw new Error(result.message || "Nao foi possivel criar o funcionario.");
+        throw new Error(
+          result.message ||
+            (editingEmployeeId
+              ? "Nao foi possivel atualizar o funcionario."
+              : "Nao foi possivel criar o funcionario."),
+        );
       }
 
       setEmployees((current) =>
-        [...current, result.employee!].sort((left, right) =>
-          left.fullName.localeCompare(right.fullName),
+        [...current.filter((item) => item.id !== result.employee!.id), result.employee!].sort(
+          (left, right) => left.fullName.localeCompare(right.fullName),
         ),
       );
       if (result.persistence) {
         setPersistence(result.persistence);
       }
-      setEmployeeForm({
-        fullName: "",
-        email: "",
-        password: "",
-        notes: "",
-        permissions: { ...DEFAULT_PERMISSIONS },
-      });
-      setEmployeeFeedback(result.message || "Funcionario criado com sucesso.");
+      setEmployeeForm(getDefaultEmployeeForm());
+      setEditingEmployeeId(null);
+      setEmployeeFeedback(
+        result.message ||
+          (editingEmployeeId
+            ? "Acessos do funcionario atualizados com sucesso."
+            : "Funcionario criado com sucesso."),
+      );
     } catch (error) {
       setEmployeeFeedback(
         error instanceof Error
           ? error.message
-          : "Nao foi possivel criar o funcionario.",
+          : editingEmployeeId
+            ? "Nao foi possivel atualizar o funcionario."
+            : "Nao foi possivel criar o funcionario.",
       );
     } finally {
       setIsSavingEmployee(false);
     }
+  }
+
+  function handleEditEmployee(employee: EmployeeAccessUser) {
+    setEditingEmployeeId(employee.id);
+    setEmployeeFeedback("");
+    setEmployeeForm({
+      fullName: employee.fullName,
+      email: employee.email,
+      password: "",
+      active: employee.active,
+      notes: employee.notes,
+      permissions: { ...employee.permissions },
+    });
+  }
+
+  function handleCancelEmployeeEdit() {
+    setEditingEmployeeId(null);
+    setEmployeeFeedback("");
+    setEmployeeForm(getDefaultEmployeeForm());
   }
 
   async function handleCreatePartner() {
@@ -481,6 +537,7 @@ export function UsuariosClient({
                 <div className={styles.sectionTitle}>Funcionario e login</div>
                 <p className={styles.sectionSubtitle}>
                   Cria o usuario interno com e-mail, senha e menus liberados.
+                  Tambem permite editar os acessos e o status de quem ja existe.
                 </p>
               </div>
             </div>
@@ -503,6 +560,7 @@ export function UsuariosClient({
                 <input
                   type="email"
                   value={employeeForm.email}
+                  disabled={Boolean(editingEmployeeId)}
                   onChange={(event) =>
                     setEmployeeForm((current) => ({
                       ...current,
@@ -511,19 +569,25 @@ export function UsuariosClient({
                   }
                 />
               </label>
-              <label className={styles.filterField}>
-                <span>Senha</span>
-                <input
-                  type="password"
-                  value={employeeForm.password}
-                  onChange={(event) =>
-                    setEmployeeForm((current) => ({
-                      ...current,
-                      password: event.target.value,
-                    }))
-                  }
-                />
-              </label>
+              {editingEmployeeId ? (
+                <div className={styles.metricHint}>
+                  O login atual continua no mesmo e-mail. Aqui voce esta editando os acessos.
+                </div>
+              ) : (
+                <label className={styles.filterField}>
+                  <span>Senha</span>
+                  <input
+                    type="password"
+                    value={employeeForm.password}
+                    onChange={(event) =>
+                      setEmployeeForm((current) => ({
+                        ...current,
+                        password: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              )}
               <label className={styles.filterField}>
                 <span>Observacao</span>
                 <input
@@ -536,6 +600,21 @@ export function UsuariosClient({
                   }
                   placeholder="Ex.: gerente operacional"
                 />
+              </label>
+              <label className={styles.filterField}>
+                <span>Status</span>
+                <select
+                  value={employeeForm.active ? "ativo" : "inativo"}
+                  onChange={(event) =>
+                    setEmployeeForm((current) => ({
+                      ...current,
+                      active: event.target.value === "ativo",
+                    }))
+                  }
+                >
+                  <option value="ativo">Ativo</option>
+                  <option value="inativo">Inativo</option>
+                </select>
               </label>
             </div>
 
@@ -565,11 +644,25 @@ export function UsuariosClient({
               <button
                 type="button"
                 className={styles.primaryButton}
-                onClick={handleCreateEmployee}
+                onClick={handleSaveEmployee}
                 disabled={!persistence.enabled || isSavingEmployee}
               >
-                {isSavingEmployee ? "Salvando..." : "Criar funcionario"}
+                {isSavingEmployee
+                  ? "Salvando..."
+                  : editingEmployeeId
+                    ? "Salvar acessos"
+                    : "Criar funcionario"}
               </button>
+              {editingEmployeeId ? (
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  onClick={handleCancelEmployeeEdit}
+                  disabled={isSavingEmployee}
+                >
+                  Cancelar
+                </button>
+              ) : null}
             </div>
           </article>
 
@@ -771,7 +864,126 @@ export function UsuariosClient({
         </div>
       </section>
 
-      <section className={styles.section}>
+      <section className={`${styles.section} ${styles.mobileOnly}`}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Solicitacoes para o admin</div>
+            <p className={styles.sectionSubtitle}>
+              Resgates e pedidos de apoio em leitura adaptada para celular.
+            </p>
+          </div>
+        </div>
+
+        {requestFeedback ? (
+          <div className={styles.callout} style={{ marginBottom: 16 }}>
+            <h3>Retorno do admin</h3>
+            <p>{requestFeedback}</p>
+          </div>
+        ) : null}
+
+        <div className={styles.mobileList}>
+          {pendingRequests.length > 0 ? (
+            pendingRequests.map((request) => (
+              <div key={request.id} className={styles.mobileListItem}>
+                <div className={styles.mobileListTitleRow}>
+                  <div className={styles.mobileListTitle}>{request.partnerName}</div>
+                  <span className={`${styles.pill} ${styles.pillMedium}`}>
+                    {request.requestType === "apoio" ? "Apoio" : "Roupa"}
+                  </span>
+                </div>
+                <div className={styles.mobileListMeta}>
+                  <span>{request.couponCode}</span>
+                  <span>{formatMoney(request.requestedAmount)}</span>
+                  <span>{formatDateTime(request.requestedAt)}</span>
+                </div>
+                <div className={styles.mobileKeyValueList}>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Destino</strong>
+                    <span>{request.supportGoal || "Cupom / roupa"}</span>
+                  </div>
+                </div>
+                <div style={{ display: "grid", gap: 12, marginTop: 16 }}>
+                  {request.requestType === "roupa" ? (
+                    <label className={styles.filterField}>
+                      <span>Cupom liberado</span>
+                      <input
+                        value={getRequestDraft(request).adminCouponCode}
+                        onChange={(event) =>
+                          setRequestDrafts((current) => ({
+                            ...current,
+                            [request.id]: {
+                              ...getRequestDraft(request),
+                              adminCouponCode: event.target.value.toUpperCase(),
+                            },
+                          }))
+                        }
+                        placeholder="Ex: ATLETA10"
+                      />
+                    </label>
+                  ) : null}
+
+                  <label className={styles.filterField}>
+                    <span>Mensagem para o parceiro</span>
+                    <input
+                      value={getRequestDraft(request).adminMessage}
+                      onChange={(event) =>
+                        setRequestDrafts((current) => ({
+                          ...current,
+                          [request.id]: {
+                            ...getRequestDraft(request),
+                            adminMessage: event.target.value,
+                          },
+                        }))
+                      }
+                      placeholder={
+                        request.requestType === "apoio"
+                          ? "Ex: pagamento programado para hoje"
+                          : "Ex: cupom liberado para voce usar"
+                      }
+                    />
+                  </label>
+                </div>
+                <div className={styles.filterActions} style={{ marginTop: 16 }}>
+                  <button
+                    type="button"
+                    className={styles.primaryButton}
+                    disabled={savingRequestId === request.id}
+                    onClick={() =>
+                      handleReviewRequest(
+                        request,
+                        request.requestType === "apoio" ? "pago" : "aprovado",
+                      )
+                    }
+                  >
+                    {savingRequestId === request.id
+                      ? "Salvando..."
+                      : request.requestType === "apoio"
+                        ? "Marcar pago"
+                        : "Aprovar cupom"}
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    disabled={savingRequestId === request.id}
+                    onClick={() => handleReviewRequest(request, "recusado")}
+                  >
+                    Recusar
+                  </button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className={styles.warningPanel}>
+              <div className={styles.warningTitle}>Nenhuma solicitacao pendente</div>
+              <p className={styles.warningText}>
+                Quando um parceiro pedir roupa ou apoio, o item aparece aqui.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className={`${styles.section} ${styles.desktopOnly}`}>
         <div className={styles.sectionHeader}>
           <div>
             <div className={styles.sectionTitle}>Solicitacoes para o admin</div>
@@ -814,6 +1026,25 @@ export function UsuariosClient({
                     <td>{formatDateTime(request.requestedAt)}</td>
                     <td>
                       <div style={{ display: "grid", gap: 10, minWidth: 240 }}>
+
+                        {request.requestType === "roupa" ? (
+                          <label className={styles.filterField}>
+                            <span>Cupom liberado</span>
+                            <input
+                              value={getRequestDraft(request).adminCouponCode}
+                              onChange={(event) =>
+                                setRequestDrafts((current) => ({
+                                  ...current,
+                                  [request.id]: {
+                                    ...getRequestDraft(request),
+                                    adminCouponCode: event.target.value.toUpperCase(),
+                                  },
+                                }))
+                              }
+                              placeholder="Ex: ATLETA10"
+                            />
+                          </label>
+                        ) : null}
                         <label className={styles.filterField}>
                           <span>Mensagem para o parceiro</span>
                           <input
@@ -877,7 +1108,59 @@ export function UsuariosClient({
         </div>
       </section>
 
-      <section className={styles.section}>
+      <section className={`${styles.section} ${styles.mobileOnly}`}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Funcionarios cadastrados</div>
+            <p className={styles.sectionSubtitle}>
+              Lista compacta com status, menus liberados e observacoes.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.mobileList}>
+          {employees.length > 0 ? (
+            employees.map((employee) => (
+              <details key={employee.id} className={styles.mobileListItem}>
+                <summary className={styles.mobileListSummary}>
+                  <div className={styles.mobileListTitleRow}>
+                    <div className={styles.mobileListTitle}>{employee.fullName}</div>
+                    <span
+                      className={`${styles.pill} ${
+                        employee.active ? styles.pillLow : styles.pillMedium
+                      }`}
+                    >
+                      {employee.active ? "Ativo" : "Inativo"}
+                    </span>
+                  </div>
+                  <div className={styles.mobileListMeta}>
+                    <span>{employee.email}</span>
+                  </div>
+                </summary>
+                <div className={styles.mobileKeyValueList}>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Menus</strong>
+                    <span>{formatPermissions(employee.permissions)}</span>
+                  </div>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Observacao</strong>
+                    <span>{employee.notes || "-"}</span>
+                  </div>
+                </div>
+              </details>
+            ))
+          ) : (
+            <div className={styles.warningPanel}>
+              <div className={styles.warningTitle}>Sem funcionarios cadastrados</div>
+              <p className={styles.warningText}>
+                Os acessos internos criados aparecem aqui automaticamente.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className={`${styles.section} ${styles.desktopOnly}`}>
         <div className={styles.sectionHeader}>
           <div>
             <div className={styles.sectionTitle}>Funcionarios cadastrados</div>
@@ -896,6 +1179,7 @@ export function UsuariosClient({
                 <th>Status</th>
                 <th>Menus</th>
                 <th>Observacao</th>
+                <th>Acoes</th>
               </tr>
             </thead>
             <tbody>
@@ -907,11 +1191,20 @@ export function UsuariosClient({
                     <td>{employee.active ? "Ativo" : "Inativo"}</td>
                     <td>{formatPermissions(employee.permissions)}</td>
                     <td>{employee.notes || "-"}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        onClick={() => handleEditEmployee(employee)}
+                      >
+                        Editar acessos
+                      </button>
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={5}>Nenhum funcionario cadastrado ainda.</td>
+                  <td colSpan={6}>Nenhum funcionario cadastrado ainda.</td>
                 </tr>
               )}
             </tbody>
@@ -919,7 +1212,79 @@ export function UsuariosClient({
         </div>
       </section>
 
-      <section className={styles.section}>
+      <section className={`${styles.section} ${styles.mobileOnly}`}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Parceiros cadastrados</div>
+            <p className={styles.sectionSubtitle}>
+              Base pessoal com leitura melhor para consultar e editar pelo celular.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.mobileList}>
+          {partners.length > 0 ? (
+            partners.map((partner) => (
+              <details key={partner.id} className={styles.mobileListItem}>
+                <summary className={styles.mobileListSummary}>
+                  <div className={styles.mobileListTitleRow}>
+                    <div className={styles.mobileListTitle}>{partner.fullName}</div>
+                    <span className={`${styles.pill} ${styles.pillMedium}`}>
+                      {labelForPartnerType(partner.partnerType)}
+                    </span>
+                  </div>
+                  <div className={styles.mobileListMeta}>
+                    <span>{partner.email}</span>
+                    <span>{partner.hasLogin ? "Login criado" : "Sem login"}</span>
+                  </div>
+                </summary>
+                <div className={styles.mobileKeyValueList}>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Idade</strong>
+                    <span>{partner.age !== null ? `${partner.age} anos` : "-"}</span>
+                  </div>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Camiseta</strong>
+                    <span>{partner.shirtSize || "-"}</span>
+                  </div>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Cupom</strong>
+                    <span>{partner.linkedCouponCode || "-"}</span>
+                  </div>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Ultimo acesso</strong>
+                    <span>
+                      {partner.lastSeenAt ? formatDateTime(partner.lastSeenAt) : "-"}
+                    </span>
+                  </div>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Vinculo</strong>
+                    <span>{partner.linkedPartnerName || "-"}</span>
+                  </div>
+                </div>
+                <div className={styles.mobileListActions}>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    onClick={() => handleEditPartner(partner)}
+                  >
+                    Editar
+                  </button>
+                </div>
+              </details>
+            ))
+          ) : (
+            <div className={styles.warningPanel}>
+              <div className={styles.warningTitle}>Sem parceiros cadastrados</div>
+              <p className={styles.warningText}>
+                Cadastre atletas, influenciadores e afiliados para operar por aqui.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className={`${styles.section} ${styles.desktopOnly}`}>
         <div className={styles.sectionHeader}>
           <div>
             <div className={styles.sectionTitle}>Parceiros cadastrados</div>

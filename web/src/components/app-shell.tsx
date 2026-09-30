@@ -3,9 +3,9 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { AuthUserMenu } from "./auth-user-menu";
+import { MobileAdminNavigation } from "./mobile-admin-navigation";
 import styles from "./panel.module.css";
 import {
-  APP_NAVIGATION_ITEMS,
   isNavigationItemActive,
   requirePageAccess,
   type AppNavigationItem,
@@ -26,10 +26,14 @@ export async function AppShell({
 }: AppShellProps) {
   const { user, navigationItems } = await requirePageAccess(currentPath);
   const isPartner = user.userType === "parceiro";
+  const mobilePrimaryItems = isPartner
+    ? []
+    : getMobilePrimaryItems(navigationItems, currentPath);
   const isPartnerHome =
     currentPath.startsWith("/meu-desempenho") &&
     (!currentPath.includes("tab=") || currentPath.includes("tab=inicio"));
   const isPartnerCampaigns = currentPath.includes("tab=campanhas");
+  const isPartnerContent = currentPath.includes("tab=conteudo");
   const isPartnerOrders = currentPath.includes("tab=pedidos");
   const isPartnerRedemptions = currentPath.includes("tab=resgates");
 
@@ -88,17 +92,22 @@ export async function AppShell({
 
       <div className={styles.content}>
         <header className={styles.topbar}>
-          {isPartner ? (
-            <div className={styles.mobileTopBrand}>
-              <Image
-                src="/logo-repeticao-maxima.png"
-                alt="Logo Repeticao Maxima"
-                width={38}
-                height={38}
-                className={styles.mobileTopLogo}
-              />
-              <div className={styles.mobileTopBrandName}>Repeticao Maxima</div>
-            </div>
+          <div className={styles.mobileTopBrand}>
+            <Image
+              src="/logo-repeticao-maxima.png"
+              alt="Logo Repeticao Maxima"
+              width={38}
+              height={38}
+              className={styles.mobileTopLogo}
+            />
+            <div className={styles.mobileTopBrandName}>Repeticao Maxima</div>
+          </div>
+          {!isPartner ? (
+            <MobileAdminNavigation
+              currentPath={currentPath}
+              navigationItems={navigationItems}
+              mobilePrimaryItems={mobilePrimaryItems}
+            />
           ) : null}
           <div className={styles.titleBlock}>
             <h1>{title}</h1>
@@ -106,6 +115,43 @@ export async function AppShell({
           </div>
           <AuthUserMenu fullName={user.fullName} email={user.email} />
         </header>
+
+        {!isPartner && navigationItems.length > 0 ? (
+          <nav className={styles.mobileModuleNav} aria-label="Modulos liberados">
+            {navigationItems.map((item) => {
+              const isActive = isNavigationItemActive(currentPath, item.href);
+
+              return (
+                <Link
+                  key={`mobile-${item.href}`}
+                  href={item.href}
+                  className={`${styles.mobileModuleLink} ${
+                    isActive ? styles.mobileModuleLinkActive : ""
+                  }`}
+                >
+                  <span className={styles.mobileModuleIcon} aria-hidden="true">
+                    <NavigationIcon icon={item.icon} />
+                  </span>
+                  <span className={styles.mobileModuleCopy}>
+                    <strong>{item.label}</strong>
+                    <span>{item.hint}</span>
+                  </span>
+                  <span className={styles.navArrow} aria-hidden="true">
+                    <svg viewBox="0 0 20 20" fill="none">
+                      <path
+                        d="M7.5 4.5L13 10L7.5 15.5"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </span>
+                </Link>
+              );
+            })}
+          </nav>
+        ) : null}
 
         {children}
       </div>
@@ -157,6 +203,46 @@ export async function AppShell({
             <span>Campanhas</span>
           </Link>
           <Link
+            href="/meu-desempenho?tab=conteudo"
+            className={`${styles.mobileTabBarLink} ${
+              isPartnerContent ? styles.mobileTabBarLinkActive : ""
+            }`}
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M5.5 6.5H18.5V18.5H5.5V6.5Z"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M8.5 4.5V8.5"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+              <path
+                d="M15.5 4.5V8.5"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+              <path
+                d="M9 12H15"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+              <path
+                d="M9 15.5H13"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+            </svg>
+            <span>Conteudo</span>
+          </Link>
+          <Link
             href="/meu-desempenho?tab=pedidos"
             className={`${styles.mobileTabBarLink} ${
               isPartnerOrders ? styles.mobileTabBarLinkActive : ""
@@ -197,30 +283,62 @@ export async function AppShell({
             </svg>
             <span>Resgates</span>
           </Link>
-          <Link
-            href="/perfil"
-            className={`${styles.mobileTabBarLink} ${
-              currentPath.startsWith("/perfil") ? styles.mobileTabBarLinkActive : ""
-            }`}
-          >
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <circle cx="12" cy="8.5" r="3.2" stroke="currentColor" strokeWidth="1.8" />
-              <path
-                d="M5.2 19C6.5 16.3 9 15 12 15C15 15 17.5 16.3 18.8 19"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-              />
-            </svg>
-            <span>Perfil</span>
-          </Link>
         </nav>
       ) : null}
     </div>
   );
 }
 
-function NavigationIcon({ icon }: { icon: AppNavigationItem["icon"] }) {
+function getMobilePrimaryItems(
+  navigationItems: AppNavigationItem[],
+  currentPath: string,
+) {
+  const preferredOrder = ["/", "/pedidos", "/estoque", "/empresa"];
+  const chosen: AppNavigationItem[] = [];
+
+  for (const href of preferredOrder) {
+    const match = navigationItems.find((item) => item.href === href);
+
+    if (match && !chosen.some((item) => item.href === match.href)) {
+      chosen.push(match);
+    }
+  }
+
+  if (chosen.length < 4) {
+    for (const item of navigationItems) {
+      if (!chosen.some((entry) => entry.href === item.href)) {
+        chosen.push(item);
+      }
+
+      if (chosen.length === 4) {
+        break;
+      }
+    }
+  }
+
+  const currentMatch = navigationItems.find((item) =>
+    isNavigationItemActive(currentPath, item.href),
+  );
+
+  if (
+    currentMatch &&
+    !chosen.some((item) => item.href === currentMatch.href)
+  ) {
+    if (chosen.length === 4) {
+      chosen[chosen.length - 1] = currentMatch;
+    } else {
+      chosen.push(currentMatch);
+    }
+  }
+
+  return chosen.slice(0, 4);
+}
+
+function NavigationIcon({
+  icon,
+}: {
+  icon: AppNavigationItem["icon"] | "perfil";
+}) {
   switch (icon) {
     case "dashboard":
       return (
@@ -264,6 +382,16 @@ function NavigationIcon({ icon }: { icon: AppNavigationItem["icon"] }) {
           <path d="M12 7V17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
       );
+    case "marketing":
+      return (
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M4 18.5H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M6.5 16V11.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M12 16V7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M17.5 16V4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M6.5 11.5L12 7.5L17.5 4.5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+        </svg>
+      );
     case "nuvemshop":
       return (
         <svg viewBox="0 0 24 24" fill="none">
@@ -297,6 +425,24 @@ function NavigationIcon({ icon }: { icon: AppNavigationItem["icon"] }) {
           <path d="M4.8 17.8C5.7 15.8 7.3 14.8 9 14.8C10.7 14.8 12.3 15.8 13.2 17.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
           <path d="M16.5 8.2H20.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
           <path d="M18.5 6.2V10.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      );
+    case "perfil":
+      return (
+        <svg viewBox="0 0 24 24" fill="none">
+          <circle
+            cx="12"
+            cy="8.5"
+            r="3.2"
+            stroke="currentColor"
+            strokeWidth="1.8"
+          />
+          <path
+            d="M5.2 19C6.5 16.3 9 15 12 15C15 15 17.5 16.3 18.8 19"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+          />
         </svg>
       );
   }

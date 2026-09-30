@@ -50,8 +50,8 @@ export default async function PoupancaAtletaPage({ searchParams }: PageProps) {
 
   return (
     <AppShell
-      title="Poupanca do atleta"
-      subtitle="Veja o saldo acumulado de apoio dos atletas e registre resgates."
+      title="Resgates de parceiros"
+      subtitle="Veja o saldo de apoio dos atletas e registre resgates de influenciadores e atletas."
       currentPath="/influenciadores/poupanca-atleta"
     >
       <section className={styles.section}>

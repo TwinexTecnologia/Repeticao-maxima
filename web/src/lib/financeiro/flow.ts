@@ -7,7 +7,7 @@ import type { NuvemshopOrder } from "@/lib/nuvemshop/types";
 import { loadDebtModuleData, type InternalDebt } from "@/lib/operacoes/repository";
 
 const PAGE_SIZE = 100;
-const MAX_PAGES = 12;
+const MAX_PAGES = 50;
 
 export type FinanceFlowOrder = {
   id: string;
@@ -23,6 +23,8 @@ export type FinanceFlowOrder = {
   hasCoupon: boolean;
   couponCode: string | null;
   discountTotal: number;
+  itemQuantity: number;
+  destinationState: string | null;
 };
 
 export type FinanceFlowDebt = {
@@ -41,6 +43,12 @@ export type MonthlyFinanceFlowData = {
   selectedMonth: string;
   monthLabel: string;
   orders: FinanceFlowOrder[];
+  allOrders: FinanceFlowOrder[];
+  period: {
+    startDate: string | null;
+    endDate: string | null;
+    label: string;
+  };
   debts: FinanceFlowDebt[];
   nuvemshop: {
     ok: boolean;
@@ -53,17 +61,23 @@ export type MonthlyFinanceFlowData = {
 };
 
 export async function loadMonthlyFinanceFlow(
-  selectedMonth?: string,
+  filters?: {
+    selectedMonth?: string;
+    startDate?: string;
+    endDate?: string;
+  },
 ): Promise<MonthlyFinanceFlowData> {
+  const selectedMonth = filters?.selectedMonth;
   const [monthStart, monthEnd, normalizedMonth] =
     getMonthRangeFromInput(selectedMonth);
   const monthLabel = new Intl.DateTimeFormat("pt-BR", {
     month: "long",
     year: "numeric",
   }).format(monthStart);
+  const dateRange = getDateRangeFilter(filters?.startDate, filters?.endDate);
 
   const [ordersResult, debtsResult] = await Promise.all([
-    loadMonthlyNuvemshopOrders(monthStart, monthEnd),
+    loadMonthlyNuvemshopOrders(monthStart, monthEnd, dateRange.startDate, dateRange.endDate),
     loadMonthlyDebts(monthStart, monthEnd),
   ]);
 
@@ -71,6 +85,12 @@ export async function loadMonthlyFinanceFlow(
     selectedMonth: normalizedMonth,
     monthLabel,
     orders: ordersResult.orders,
+    allOrders: ordersResult.allOrders,
+    period: {
+      startDate: dateRange.startDate,
+      endDate: dateRange.endDate,
+      label: buildPeriodLabel(dateRange.startDate, dateRange.endDate),
+    },
     debts: debtsResult.debts,
     nuvemshop: {
       ok: ordersResult.ok,
@@ -83,13 +103,19 @@ export async function loadMonthlyFinanceFlow(
   };
 }
 
-async function loadMonthlyNuvemshopOrders(monthStart: Date, monthEnd: Date) {
+async function loadMonthlyNuvemshopOrders(
+  monthStart: Date,
+  monthEnd: Date,
+  startDate?: string | null,
+  endDate?: string | null,
+) {
   const credentials = getNuvemshopCredentials();
 
   if (!credentials.ok) {
     return {
       ok: false,
       orders: [] as FinanceFlowOrder[],
+      allOrders: [] as FinanceFlowOrder[],
       message: `Nuvemshop sem credenciais completas: ${credentials.missing.join(", ")}.`,
     };
   }
@@ -97,18 +123,24 @@ async function loadMonthlyNuvemshopOrders(monthStart: Date, monthEnd: Date) {
   try {
     const client = new NuvemshopClient(credentials.credentials);
     const orders = await fetchAllOrders(client);
-    const currentMonthOrders = orders
-      .filter((order) => orderHasCashEffectInMonth(order, monthStart, monthEnd))
-      .map((order) => mapOrderToFlow(order))
-      .filter((order) => order.total > 0);
+    const mappedOrders = orders.map((order) => mapOrderToFlow(order)).filter((order) => order.total > 0);
+    const currentMonthOrders =
+      startDate || endDate
+        ? mappedOrders.filter((order) => orderMatchesDateRange(order, startDate, endDate))
+        : mappedOrders;
 
     return {
       ok: true,
       orders: currentMonthOrders,
+      allOrders: mappedOrders,
       message:
         currentMonthOrders.length > 0
-          ? "Entradas da Nuvemshop carregadas para o mes atual."
-          : "Nuvemshop conectada. Nenhum pedido encontrado para o mes atual.",
+          ? startDate || endDate
+            ? "Pedidos da Nuvemshop carregados para o periodo filtrado."
+            : "Base completa da Nuvemshop carregada com sucesso."
+          : startDate || endDate
+            ? "Nuvemshop conectada. Nenhum pedido encontrado para o periodo filtrado."
+            : "Nuvemshop conectada. Nenhum pedido encontrado na base carregada.",
     };
   } catch (error) {
     const message =
@@ -119,6 +151,7 @@ async function loadMonthlyNuvemshopOrders(monthStart: Date, monthEnd: Date) {
     return {
       ok: false,
       orders: [] as FinanceFlowOrder[],
+      allOrders: [] as FinanceFlowOrder[],
       message,
     };
   }
@@ -165,6 +198,31 @@ function getOrderReferenceDate(order: NuvemshopOrder) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function orderMatchesDateRange(
+  order: FinanceFlowOrder,
+  startDate?: string | null,
+  endDate?: string | null,
+) {
+  const reference = getReferenceDateFromValue(order.referenceDate);
+
+  if (!reference) {
+    return false;
+  }
+
+  const start = startDate ? getReferenceDateFromValue(`${startDate}T00:00:00`) : null;
+  const end = endDate ? getReferenceDateFromValue(`${endDate}T23:59:59`) : null;
+
+  if (start && reference < start) {
+    return false;
+  }
+
+  if (end && reference > end) {
+    return false;
+  }
+
+  return true;
+}
+
 function mapOrderToFlow(order: NuvemshopOrder): FinanceFlowOrder {
   const couponCode =
     order.coupon && order.coupon.length > 0
@@ -195,7 +253,100 @@ function mapOrderToFlow(order: NuvemshopOrder): FinanceFlowOrder {
     hasCoupon: Boolean(couponCode),
     couponCode,
     discountTotal: parseMoney(order.discount),
+    itemQuantity: getOrderItemQuantity(order),
+    destinationState: resolveOrderDestinationState(order),
   };
+}
+
+function getOrderItemQuantity(order: NuvemshopOrder) {
+  return (order.products ?? []).reduce((sum, product) => {
+    const quantity = Number.parseInt(String(product.quantity ?? "1"), 10);
+    return sum + (Number.isFinite(quantity) ? Math.max(quantity, 0) : 0);
+  }, 0);
+}
+
+function resolveOrderDestinationState(order: NuvemshopOrder) {
+  const candidatePaths = [
+    ["shipping_address", "province"],
+    ["shipping_address", "state"],
+    ["shipping_address", "province_code"],
+    ["shipping_address", "state_code"],
+    ["shipping", "address", "province"],
+    ["shipping", "address", "state"],
+    ["billing_address", "province"],
+    ["billing_address", "state"],
+    ["customer", "default_address", "province"],
+    ["customer", "default_address", "state"],
+  ] as const;
+
+  for (const path of candidatePaths) {
+    const value = getNestedString(order, path);
+    const stateCode = normalizeBrazilStateCode(value);
+
+    if (stateCode) {
+      return stateCode;
+    }
+  }
+
+  return null;
+}
+
+function getNestedString(source: unknown, path: readonly string[]) {
+  let current: unknown = source;
+
+  for (const segment of path) {
+    if (!isRecord(current)) {
+      return "";
+    }
+
+    current = current[segment];
+  }
+
+  return typeof current === "string" ? current : "";
+}
+
+function normalizeBrazilStateCode(rawValue: string) {
+  const value = rawValue.trim();
+
+  if (!value) {
+    return null;
+  }
+
+  const rawParts = value
+    .split(/[,\-/|]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const parts = rawParts.length > 0 ? rawParts : [value];
+
+  for (const part of parts) {
+    const upper = part.toUpperCase();
+
+    if (BRAZIL_STATE_CODES.has(upper)) {
+      return upper;
+    }
+
+    const normalized = normalizeText(part).replace(/\s+/g, " ").trim();
+    const directMatch = BRAZIL_STATE_NAME_TO_CODE[normalized];
+
+    if (directMatch) {
+      return directMatch;
+    }
+  }
+
+  return null;
+}
+
+function normalizeText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 async function loadMonthlyDebts(monthStart: Date, monthEnd: Date) {
@@ -265,3 +416,126 @@ function parseMoney(value?: string | null) {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : 0;
 }
+
+function getDateRangeFilter(startDate?: string, endDate?: string) {
+  const normalizedStart = normalizeDateInput(startDate);
+  const normalizedEnd = normalizeDateInput(endDate);
+
+  if (normalizedStart && normalizedEnd && normalizedStart > normalizedEnd) {
+    return {
+      startDate: normalizedEnd,
+      endDate: normalizedStart,
+    };
+  }
+
+  return {
+    startDate: normalizedStart,
+    endDate: normalizedEnd,
+  };
+}
+
+function normalizeDateInput(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  return /^\d{4}-\d{2}-\d{2}$/.test(value.trim()) ? value.trim() : null;
+}
+
+function buildPeriodLabel(startDate: string | null, endDate: string | null) {
+  if (startDate && endDate) {
+    return `${formatDateLabel(startDate)} ate ${formatDateLabel(endDate)}`;
+  }
+
+  if (startDate) {
+    return `Desde ${formatDateLabel(startDate)}`;
+  }
+
+  if (endDate) {
+    return `Ate ${formatDateLabel(endDate)}`;
+  }
+
+  return "Base completa";
+}
+
+function formatDateLabel(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+  }).format(date);
+}
+
+function getReferenceDateFromValue(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+const BRAZIL_STATE_CODES = new Set([
+  "AC",
+  "AL",
+  "AP",
+  "AM",
+  "BA",
+  "CE",
+  "DF",
+  "ES",
+  "GO",
+  "MA",
+  "MT",
+  "MS",
+  "MG",
+  "PA",
+  "PB",
+  "PR",
+  "PE",
+  "PI",
+  "RJ",
+  "RN",
+  "RS",
+  "RO",
+  "RR",
+  "SC",
+  "SP",
+  "SE",
+  "TO",
+]);
+
+const BRAZIL_STATE_NAME_TO_CODE: Record<string, string> = {
+  acre: "AC",
+  alagoas: "AL",
+  amapa: "AP",
+  amazonas: "AM",
+  bahia: "BA",
+  ceara: "CE",
+  "distrito federal": "DF",
+  espirito: "ES",
+  "espirito santo": "ES",
+  goias: "GO",
+  maranhao: "MA",
+  "mato grosso": "MT",
+  "mato grosso do sul": "MS",
+  "minas gerais": "MG",
+  para: "PA",
+  paraiba: "PB",
+  parana: "PR",
+  pernambuco: "PE",
+  piaui: "PI",
+  "rio de janeiro": "RJ",
+  "rio grande do norte": "RN",
+  "rio grande do sul": "RS",
+  rondonia: "RO",
+  roraima: "RR",
+  "santa catarina": "SC",
+  "sao paulo": "SP",
+  sergipe: "SE",
+  tocantins: "TO",
+};
