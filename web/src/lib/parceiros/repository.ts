@@ -562,10 +562,19 @@ export async function createPartnerStoreCreditSession(input: {
     const expiresAt = new Date(now.getTime() + expiresInMinutes * 60 * 1000).toISOString();
     const sessionToken = crypto.randomBytes(18).toString("base64url");
     const promotionClient = new NuvemshopClient(credentials.credentials);
+    const promotionName = buildPartnerStorePromotionName(request.partnerName, request.couponCode);
     const promotionResponse = await promotionClient.createPromotion({
-      name: buildPartnerStorePromotionName(request.partnerName, request.couponCode),
+      name: promotionName,
       active: true,
       allocation_type: "cross_items",
+      i18n: [
+        {
+          lang: "pt-br",
+          name: promotionName,
+          description: "Saldo aprovado para compra na loja real.",
+          disclaimer: "Valido somente para o parceiro autenticado durante a sessao ativa.",
+        },
+      ],
       combines_with_other_discounts: true,
       combines_with_quantity_discounts: true,
       combines_with_free_shipping: true,
@@ -626,7 +635,7 @@ export async function createPartnerStoreCreditSession(input: {
   } catch (error) {
     return {
       ok: false as const,
-      message: getErrorMessage(error),
+      message: getNuvemshopReadErrorMessage(error),
     };
   }
 }

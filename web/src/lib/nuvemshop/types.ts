@@ -26,10 +26,18 @@ export type NuvemshopPromotionResponse =
       [key: string]: unknown;
     };
 
+export type NuvemshopPromotionI18n = {
+  lang: string;
+  name: string;
+  description?: string;
+  disclaimer?: string;
+};
+
 export type NuvemshopPromotionInput = {
   name: string;
   active: boolean;
   allocation_type?: "line_items" | "cross_items";
+  i18n?: NuvemshopPromotionI18n[];
   combines_with_other_discounts?: boolean;
   combines_with_quantity_discounts?: boolean;
   combines_with_free_shipping?: boolean;
