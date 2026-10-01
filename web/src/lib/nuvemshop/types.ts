@@ -49,6 +49,18 @@ export type NuvemshopCoupon = {
   [key: string]: unknown;
 };
 
+export type NuvemshopCustomer = {
+  id: number | string;
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  identification?: string | null;
+  active?: boolean | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  [key: string]: unknown;
+};
+
 export type NuvemshopLocalizedText =
   | string
   | Record<string, string | undefined>

@@ -1,5 +1,9 @@
 import crypto from "node:crypto";
 
+import {
+  getNuvemshopCredentials,
+  NuvemshopClient,
+} from "@/lib/nuvemshop/client";
 import { loadKnownCouponsFromStore } from "@/lib/parceiros/repository";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -9,6 +13,8 @@ const OPERATIONS_SCHEMA = "repeticao_maxima";
 const USERS_TABLE = "profiles_usuarios";
 const PERMISSIONS_TABLE = "permissoes_usuario";
 const PARTNER_TABLE = "parceiros_cupons";
+const NUVEMSHOP_CUSTOMERS_PAGE_SIZE = 100;
+const NUVEMSHOP_CUSTOMERS_MAX_PAGES = 6;
 
 export type UserMenuPermissionKey =
   | "dashboard"
@@ -50,6 +56,9 @@ export type PartnerAccessUser = {
   linkedPartnerId: string | null;
   linkedPartnerName: string;
   linkedCouponCode: string;
+  nuvemshopCustomerId: string | null;
+  nuvemshopCustomerName: string;
+  nuvemshopCustomerEmail: string;
   fullName: string;
   email: string;
   birthDate: string | null;
@@ -72,6 +81,14 @@ export type UserPartnerOption = {
   source: "cadastro" | "nuvemshop";
 };
 
+export type UserStoreCustomerOption = {
+  id: string;
+  name: string;
+  email: string;
+  lookupLabel: string;
+  active: boolean;
+};
+
 const DEFAULT_PERMISSIONS: UserMenuPermissions = {
   dashboard: true,
   compras: false,
@@ -92,6 +109,7 @@ export async function loadUserAccessModuleData() {
       employees: [] as EmployeeAccessUser[],
       partners: [] as PartnerAccessUser[],
       partnerOptions: [] as UserPartnerOption[],
+      storeCustomerOptions: [] as UserStoreCustomerOption[],
       persistence: buildDisabledState(
         `Persistencia desativada. Configure ${supabase.missing.join(" e ")} para salvar usuarios no Supabase.`,
       ),
@@ -99,7 +117,13 @@ export async function loadUserAccessModuleData() {
   }
 
   try {
-    const [profilesResult, permissionsResult, partnerResult, knownCouponsResult] = await Promise.all([
+    const [
+      profilesResult,
+      permissionsResult,
+      partnerResult,
+      knownCouponsResult,
+      storeCustomerOptions,
+    ] = await Promise.all([
       supabase.client
         .schema(OPERATIONS_SCHEMA)
         .from(USERS_TABLE)
@@ -116,6 +140,7 @@ export async function loadUserAccessModuleData() {
         .select("id, name, coupon_code, role")
         .order("name", { ascending: true }),
       loadKnownCouponsFromStore(),
+      loadNuvemshopCustomerOptions(),
     ]);
 
     if (profilesResult.error) {
@@ -206,6 +231,7 @@ export async function loadUserAccessModuleData() {
       employees,
       partners,
       partnerOptions,
+      storeCustomerOptions,
       persistence: {
         enabled: true,
         source: "supabase" as const,
@@ -221,6 +247,7 @@ export async function loadUserAccessModuleData() {
       employees: [] as EmployeeAccessUser[],
       partners: [] as PartnerAccessUser[],
       partnerOptions: [] as UserPartnerOption[],
+      storeCustomerOptions: [] as UserStoreCustomerOption[],
       persistence: buildDisabledState(getErrorMessage(error)),
     };
   }
@@ -411,6 +438,20 @@ export async function updateEmployeeAccessUser(employeeId: string, input: unknow
 }
 
 export async function createPartnerAccessUser(input: unknown) {
+  return savePartnerAccessUser({ input });
+}
+
+export async function updatePartnerAccessUser(partnerId: string, input: unknown) {
+  return savePartnerAccessUser({
+    profileId: String(partnerId ?? "").trim(),
+    input,
+  });
+}
+
+async function savePartnerAccessUser(options: {
+  profileId?: string;
+  input: unknown;
+}) {
   const supabase = createSupabaseServerClient();
 
   if (!supabase.ok) {
@@ -422,12 +463,16 @@ export async function createPartnerAccessUser(input: unknown) {
     };
   }
 
-  const row = normalizePartnerInput(input);
+  const profileId = String(options.profileId ?? "").trim();
+  const row = normalizePartnerInput(options.input);
   let authUserId: string | null = null;
   let createdAuthUserId: string | null = null;
   let generatedPassword: string | null = null;
 
   try {
+    const editingProfile = profileId
+      ? await loadPartnerProfileById(supabase.client, profileId)
+      : null;
     const linkedPartnerId = await ensureLinkedPartnerProfile(
       supabase.client,
       row.linkedPartnerId,
@@ -436,11 +481,13 @@ export async function createPartnerAccessUser(input: unknown) {
       row.active,
       row.notes,
     );
-    const existingProfile = await findExistingPartnerProfile(
-      supabase.client,
-      linkedPartnerId,
-      row.email,
-    );
+    const existingProfile =
+      editingProfile ||
+      (await findExistingPartnerProfile(
+        supabase.client,
+        linkedPartnerId,
+        row.email,
+      ));
 
     if (row.createAccess) {
       if (existingProfile?.auth_user_id) {
@@ -566,6 +613,9 @@ export async function createPartnerAccessUser(input: unknown) {
       partner_type: row.partnerType,
       full_name: row.fullName,
       email: row.email,
+      nuvemshop_customer_id: row.nuvemshopCustomerId,
+      nuvemshop_customer_name: row.nuvemshopCustomerName,
+      nuvemshop_customer_email: row.nuvemshopCustomerEmail,
       birth_date: row.birthDate,
       shirt_size: row.shirtSize,
       payout_method: "pix",
@@ -607,8 +657,12 @@ export async function createPartnerAccessUser(input: unknown) {
         enabled: true,
         source: "supabase" as const,
         message: row.createAccess
-          ? "Parceiro salvo com dados pessoais e login pronto."
-          : "Parceiro salvo com dados pessoais no schema repeticao_maxima.",
+          ? profileId
+            ? "Parceiro atualizado com dados pessoais, login e vinculo da loja."
+            : "Parceiro salvo com dados pessoais, login e vinculo da loja."
+          : profileId
+            ? "Parceiro atualizado com dados pessoais e vinculo da loja."
+            : "Parceiro salvo com dados pessoais e vinculo da loja.",
         updatedAt:
           typeof profileData.updated_at === "string" ? profileData.updated_at : null,
       },
@@ -718,6 +772,7 @@ async function findExistingPartnerProfile(
       .from(USERS_TABLE)
       .select("*")
       .eq("coupon_partner_id", linkedPartnerId)
+      .eq("user_type", "parceiro")
       .maybeSingle();
 
     if (!error && data) {
@@ -735,6 +790,30 @@ async function findExistingPartnerProfile(
 
   if (error || !data) {
     return null;
+  }
+
+  return data;
+}
+
+async function loadPartnerProfileById(client: SupabaseClient, profileId: string) {
+  if (!profileId) {
+    throw new Error("Nao foi possivel identificar o parceiro que sera atualizado.");
+  }
+
+  const { data, error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(USERS_TABLE)
+    .select("*")
+    .eq("id", profileId)
+    .eq("user_type", "parceiro")
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error("Parceiro nao encontrado para atualizar.");
   }
 
   return data;
@@ -770,6 +849,13 @@ function rowToPartnerAccessUser(
     linkedPartnerId: row.coupon_partner_id ? String(row.coupon_partner_id) : null,
     linkedPartnerName: linkedPartner?.name || "",
     linkedCouponCode: linkedPartner?.couponCode || "",
+    nuvemshopCustomerId: row.nuvemshop_customer_id
+      ? String(row.nuvemshop_customer_id)
+      : null,
+    nuvemshopCustomerName: String(row.nuvemshop_customer_name ?? "").trim(),
+    nuvemshopCustomerEmail: String(row.nuvemshop_customer_email ?? "")
+      .trim()
+      .toLowerCase(),
     fullName: String(row.full_name ?? "").trim(),
     email: String(row.email ?? "").trim().toLowerCase(),
     birthDate,
@@ -852,6 +938,12 @@ function normalizePartnerInput(input: unknown) {
   const linkedPartnerId = String(source.linkedPartnerId ?? "").trim() || null;
   const partnerType = normalizePartnerUserType(source.partnerType);
   const birthDate = normalizeDate(source.birthDate) || null;
+  const nuvemshopCustomerId =
+    String(source.nuvemshopCustomerId ?? "").trim() || null;
+  const nuvemshopCustomerName = String(source.nuvemshopCustomerName ?? "").trim();
+  const nuvemshopCustomerEmail = String(source.nuvemshopCustomerEmail ?? "")
+    .trim()
+    .toLowerCase();
 
   if (!fullName) {
     throw new Error("Informe o nome do parceiro.");
@@ -865,8 +957,19 @@ function normalizePartnerInput(input: unknown) {
     throw new Error("A senha do parceiro precisa ter pelo menos 6 caracteres.");
   }
 
+  if (!nuvemshopCustomerId && (nuvemshopCustomerName || nuvemshopCustomerEmail)) {
+    throw new Error("Selecione um cliente valido da Nuvemshop para salvar o vinculo.");
+  }
+
+  if (nuvemshopCustomerId && nuvemshopCustomerEmail && !isValidEmail(nuvemshopCustomerEmail)) {
+    throw new Error("O cliente vinculado da Nuvemshop precisa ter um e-mail valido.");
+  }
+
   return {
     linkedPartnerId,
+    nuvemshopCustomerId,
+    nuvemshopCustomerName: nuvemshopCustomerId ? nuvemshopCustomerName : "",
+    nuvemshopCustomerEmail: nuvemshopCustomerId ? nuvemshopCustomerEmail : "",
     partnerType,
     fullName,
     email,
@@ -877,6 +980,56 @@ function normalizePartnerInput(input: unknown) {
     createAccess,
     password,
   };
+}
+
+async function loadNuvemshopCustomerOptions() {
+  const credentialsResult = getNuvemshopCredentials();
+
+  if (!credentialsResult.ok) {
+    return [] as UserStoreCustomerOption[];
+  }
+
+  const client = new NuvemshopClient(credentialsResult.credentials);
+  const optionsMap = new Map<string, UserStoreCustomerOption>();
+
+  try {
+    for (let page = 1; page <= NUVEMSHOP_CUSTOMERS_MAX_PAGES; page += 1) {
+      const rows = await client.listCustomers({
+        page,
+        perPage: NUVEMSHOP_CUSTOMERS_PAGE_SIZE,
+      });
+
+      for (const row of rows ?? []) {
+        const id = String(row.id ?? "").trim();
+
+        if (!id || optionsMap.has(id)) {
+          continue;
+        }
+
+        const name = String(row.name ?? "").trim();
+        const email = String(row.email ?? "").trim().toLowerCase();
+        const title = name || email || `Cliente ${id}`;
+
+        optionsMap.set(id, {
+          id,
+          name,
+          email,
+          lookupLabel: `${title} · ${email || "sem email"} · #${id}`,
+          active: row.active !== false,
+        });
+      }
+
+      if ((rows ?? []).length < NUVEMSHOP_CUSTOMERS_PAGE_SIZE) {
+        break;
+      }
+    }
+  } catch {
+    return [] as UserStoreCustomerOption[];
+  }
+
+  return Array.from(optionsMap.values()).sort((left, right) =>
+    left.lookupLabel.localeCompare(right.lookupLabel),
+  );
 }
 
 function generateTemporaryPassword() {

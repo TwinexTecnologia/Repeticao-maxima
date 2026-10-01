@@ -5,10 +5,12 @@ import {
 } from "@/lib/empresa/nuvemshop-discounts";
 import { loadPublishedCompanyDiscountRulesForCallback } from "@/lib/empresa/repository";
 import {
+  loadPartnerStoreCreditSessionByMappedCustomerId,
   loadPartnerStoreCreditSessionByProfileEmail,
   loadPartnerStoreCreditSessionByToken,
 } from "@/lib/parceiros/repository";
 import {
+  extractPartnerStoreCustomerId,
   extractPartnerStoreCustomerEmail,
   extractPartnerStoreSessionToken,
 } from "@/lib/parceiros/store-credit";
@@ -36,12 +38,17 @@ export async function POST(request: Request) {
   try {
     const payload = await request.json();
     const rules = await loadPublishedCompanyDiscountRulesForCallback();
+    const customerId = extractPartnerStoreCustomerId(payload);
     const sessionToken = extractPartnerStoreSessionToken(payload);
     const customerEmail = extractPartnerStoreCustomerEmail(payload);
+    const partnerSessionByCustomerId = customerId
+      ? await loadPartnerStoreCreditSessionByMappedCustomerId(customerId)
+      : null;
     const partnerSessionByToken = sessionToken
       ? await loadPartnerStoreCreditSessionByToken(sessionToken)
       : null;
     const partnerSession =
+      partnerSessionByCustomerId ||
       partnerSessionByToken ||
       (customerEmail
         ? await loadPartnerStoreCreditSessionByProfileEmail(customerEmail)
