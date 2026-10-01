@@ -567,7 +567,6 @@ export async function createPartnerStoreCreditSession(input: {
       name: promotionName,
       active: true,
       allocation_type: "cross_items",
-      combines_with_other_discounts: true,
       combines_with_quantity_discounts: true,
       combines_with_free_shipping: true,
       combines_with_cart_amount_discounts: true,
