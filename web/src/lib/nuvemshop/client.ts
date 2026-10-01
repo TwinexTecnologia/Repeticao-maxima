@@ -107,6 +107,11 @@ export class NuvemshopClient {
     });
   }
 
+  async listPromotions(params: ListParams = {}) {
+    const searchParams = this.buildPaginationParams(params);
+    return this.requestJson<NuvemshopPromotion[]>("/promotions", {
+      searchParams,
+      baseUrl: getNuvemshopDiscountsBaseUrl(this.credentials.baseUrl),
   async listAbandonedCheckouts(params: ListParams = {}) {
     const searchParams = this.buildPaginationParams(params);
     return this.requestJson<NuvemshopAbandonedCheckout[]>("/checkouts", {
