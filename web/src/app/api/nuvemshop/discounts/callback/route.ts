@@ -4,8 +4,14 @@ import {
   buildCompanyDiscountCallbackDecision,
 } from "@/lib/empresa/nuvemshop-discounts";
 import { loadPublishedCompanyDiscountRulesForCallback } from "@/lib/empresa/repository";
-import { loadPartnerStoreCreditSessionByToken } from "@/lib/parceiros/repository";
-import { extractPartnerStoreSessionToken } from "@/lib/parceiros/store-credit";
+import {
+  loadPartnerStoreCreditSessionByProfileEmail,
+  loadPartnerStoreCreditSessionByToken,
+} from "@/lib/parceiros/repository";
+import {
+  extractPartnerStoreCustomerEmail,
+  extractPartnerStoreSessionToken,
+} from "@/lib/parceiros/store-credit";
 
 export async function GET() {
   const rules = await loadPublishedCompanyDiscountRulesForCallback();
@@ -31,9 +37,15 @@ export async function POST(request: Request) {
     const payload = await request.json();
     const rules = await loadPublishedCompanyDiscountRulesForCallback();
     const sessionToken = extractPartnerStoreSessionToken(payload);
-    const partnerSession = sessionToken
+    const customerEmail = extractPartnerStoreCustomerEmail(payload);
+    const partnerSessionByToken = sessionToken
       ? await loadPartnerStoreCreditSessionByToken(sessionToken)
       : null;
+    const partnerSession =
+      partnerSessionByToken ||
+      (customerEmail
+        ? await loadPartnerStoreCreditSessionByProfileEmail(customerEmail)
+        : null);
     const decision = buildCompanyDiscountCallbackDecision(payload, rules, partnerSession);
 
     if (decision.status === 204) {
