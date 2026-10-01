@@ -231,6 +231,7 @@ export type NuvemshopDiagnostics = {
   missingEnv: string[];
   config: {
     baseUrl: string;
+    discountsBaseUrl: string;
     storeId: string | null;
     userAgent: string | null;
   };
