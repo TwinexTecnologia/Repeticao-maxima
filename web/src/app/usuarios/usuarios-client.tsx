@@ -12,12 +12,14 @@ import type {
   UserMenuPermissionKey,
   UserMenuPermissions,
   UserPartnerOption,
+  UserStoreCustomerOption,
 } from "@/lib/usuarios/repository";
 
 type UsuariosClientProps = {
   initialEmployees: EmployeeAccessUser[];
   initialPartners: PartnerAccessUser[];
   initialPartnerOptions: UserPartnerOption[];
+  initialStoreCustomerOptions: UserStoreCustomerOption[];
   initialPersistence: UserAccessPersistenceState;
   initialPendingRequests: PartnerRewardRequest[];
 };
@@ -94,6 +96,7 @@ export function UsuariosClient({
   initialEmployees,
   initialPartners,
   initialPartnerOptions,
+  initialStoreCustomerOptions,
   initialPersistence,
   initialPendingRequests,
 }: UsuariosClientProps) {
@@ -127,6 +130,10 @@ export function UsuariosClient({
   );
   const [partnerForm, setPartnerForm] = useState({
     linkedPartnerId: "",
+    nuvemshopCustomerLookup: "",
+    nuvemshopCustomerId: "",
+    nuvemshopCustomerName: "",
+    nuvemshopCustomerEmail: "",
     partnerType: "influenciador" as PartnerUserType,
     fullName: "",
     email: "",
@@ -175,6 +182,7 @@ export function UsuariosClient({
       (item) => item.partnerType === "influenciador",
     ).length;
     const withLogin = partners.filter((item) => item.hasLogin).length;
+    const withStoreLink = partners.filter((item) => item.nuvemshopCustomerId).length;
 
     return [
       {
@@ -198,6 +206,11 @@ export function UsuariosClient({
         detail: "Parceiros que ja tiveram acesso criado no Supabase Auth.",
       },
       {
+        label: "Login loja mapeado",
+        value: String(withStoreLink),
+        detail: "Parceiros vinculados manualmente a um cliente da Nuvemshop.",
+      },
+      {
         label: "Resgates pendentes",
         value: String(pendingRequests.length),
         detail: "Solicitacoes de parceiros aguardando sua acao de admin.",
@@ -207,6 +220,10 @@ export function UsuariosClient({
 
   const selectedPartnerOption =
     initialPartnerOptions.find((item) => item.id === partnerForm.linkedPartnerId) || null;
+  const selectedStoreCustomerOption =
+    initialStoreCustomerOptions.find(
+      (item) => item.id === partnerForm.nuvemshopCustomerId,
+    ) || null;
   const partnerAge = partnerForm.birthDate ? getAgeFromDate(partnerForm.birthDate) : null;
 
   function getRequestDraft(request: PartnerRewardRequest) {
@@ -315,22 +332,37 @@ export function UsuariosClient({
       return;
     }
 
+    if (partnerForm.nuvemshopCustomerLookup.trim() && !partnerForm.nuvemshopCustomerId) {
+      setPartnerFeedback("Selecione um cliente valido da Nuvemshop na lista.");
+      return;
+    }
+
     setIsSavingPartner(true);
     setPartnerFeedback("");
     setPartnerGeneratedPassword("");
 
     try {
-      const response = await fetch("/api/usuarios/parceiros", {
-        method: "POST",
+      const response = await fetch(
+        editingPartnerId
+          ? `/api/usuarios/parceiros/${editingPartnerId}`
+          : "/api/usuarios/parceiros",
+        {
+          method: editingPartnerId ? "PUT" : "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(partnerForm),
-      });
+        },
+      );
       const result = (await response.json()) as PartnerApiResponse;
 
       if (!response.ok || !result.ok || !result.partner) {
-        throw new Error(result.message || "Nao foi possivel salvar o parceiro.");
+        throw new Error(
+          result.message ||
+            (editingPartnerId
+              ? "Nao foi possivel atualizar o parceiro."
+              : "Nao foi possivel salvar o parceiro."),
+        );
       }
 
       if (result.generatedPassword) {
@@ -347,6 +379,10 @@ export function UsuariosClient({
       }
       setPartnerForm({
         linkedPartnerId: "",
+        nuvemshopCustomerLookup: "",
+        nuvemshopCustomerId: "",
+        nuvemshopCustomerName: "",
+        nuvemshopCustomerEmail: "",
         partnerType: "influenciador",
         fullName: "",
         email: "",
@@ -358,12 +394,19 @@ export function UsuariosClient({
         notes: "",
       });
       setEditingPartnerId(null);
-      setPartnerFeedback(result.message || "Parceiro salvo com sucesso.");
+      setPartnerFeedback(
+        result.message ||
+          (editingPartnerId
+            ? "Parceiro atualizado com sucesso."
+            : "Parceiro salvo com sucesso."),
+      );
     } catch (error) {
       setPartnerFeedback(
         error instanceof Error
           ? error.message
-          : "Nao foi possivel salvar o parceiro.",
+          : editingPartnerId
+            ? "Nao foi possivel atualizar o parceiro."
+            : "Nao foi possivel salvar o parceiro.",
       );
     } finally {
       setIsSavingPartner(false);
@@ -434,6 +477,14 @@ export function UsuariosClient({
     setPartnerFeedback("");
     setPartnerForm({
       linkedPartnerId: partner.linkedPartnerId || "",
+      nuvemshopCustomerLookup: buildStoreCustomerLookupLabel({
+        id: partner.nuvemshopCustomerId || "",
+        name: partner.nuvemshopCustomerName,
+        email: partner.nuvemshopCustomerEmail,
+      }),
+      nuvemshopCustomerId: partner.nuvemshopCustomerId || "",
+      nuvemshopCustomerName: partner.nuvemshopCustomerName,
+      nuvemshopCustomerEmail: partner.nuvemshopCustomerEmail,
       partnerType: partner.partnerType,
       fullName: partner.fullName,
       email: partner.email,
@@ -452,6 +503,10 @@ export function UsuariosClient({
     setPartnerFeedback("");
     setPartnerForm({
       linkedPartnerId: "",
+      nuvemshopCustomerLookup: "",
+      nuvemshopCustomerId: "",
+      nuvemshopCustomerName: "",
+      nuvemshopCustomerEmail: "",
       partnerType: "influenciador",
       fullName: "",
       email: "",
@@ -484,6 +539,18 @@ export function UsuariosClient({
         current.fullName ||
         (option?.source === "cadastro" ? option.name : ""),
       partnerType: option?.role || current.partnerType,
+    }));
+  }
+
+  function handleSelectStoreCustomer(value: string) {
+    const option = findStoreCustomerOption(value, initialStoreCustomerOptions);
+
+    setPartnerForm((current) => ({
+      ...current,
+      nuvemshopCustomerLookup: value,
+      nuvemshopCustomerId: option?.id || "",
+      nuvemshopCustomerName: option?.name || "",
+      nuvemshopCustomerEmail: option?.email || "",
     }));
   }
 
@@ -751,6 +818,29 @@ export function UsuariosClient({
               </label>
               <div className={styles.metricHint}>
                 Esse e-mail vira o login do parceiro.
+              </div>
+              <label className={styles.filterField}>
+                <span>Login da Nuvemshop vinculado</span>
+                <input
+                  list="nuvemshop-customers"
+                  value={partnerForm.nuvemshopCustomerLookup}
+                  onChange={(event) => handleSelectStoreCustomer(event.target.value)}
+                  placeholder="Busque por nome, e-mail ou ID da loja"
+                />
+                <datalist id="nuvemshop-customers">
+                  {initialStoreCustomerOptions.map((option) => (
+                    <option key={option.id} value={option.lookupLabel} />
+                  ))}
+                </datalist>
+              </label>
+              <div className={styles.metricHint}>
+                {selectedStoreCustomerOption
+                  ? `Cliente da loja vinculado: ${selectedStoreCustomerOption.email || "sem e-mail"}${
+                      selectedStoreCustomerOption.active ? "" : " · cadastro inativo"
+                    }.`
+                  : initialStoreCustomerOptions.length > 0
+                    ? "Escolha o cliente real da loja para o saldo identificar o checkout correto."
+                    : "Nenhum cliente da Nuvemshop foi carregado agora."}
               </div>
               <div className={styles.filterGrid}>
                 <label className={styles.filterField}>
@@ -1261,6 +1351,16 @@ export function UsuariosClient({
                     <strong>Vinculo</strong>
                     <span>{partner.linkedPartnerName || "-"}</span>
                   </div>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Login loja</strong>
+                    <span>
+                      {partner.nuvemshopCustomerEmail ||
+                        partner.nuvemshopCustomerName ||
+                        (partner.nuvemshopCustomerId
+                          ? `#${partner.nuvemshopCustomerId}`
+                          : "-")}
+                    </span>
+                  </div>
                 </div>
                 <div className={styles.mobileListActions}>
                   <button
@@ -1306,6 +1406,7 @@ export function UsuariosClient({
                 <th>Camiseta</th>
                 <th>Cupom</th>
                 <th>Login</th>
+                <th>Login loja</th>
                 <th>Ultimo acesso</th>
                 <th>Acoes</th>
               </tr>
@@ -1329,6 +1430,13 @@ export function UsuariosClient({
                     <td>{partner.shirtSize || "-"}</td>
                     <td>{partner.linkedCouponCode || "-"}</td>
                     <td>{partner.hasLogin ? "Criado" : "Ainda nao"}</td>
+                    <td>
+                      {partner.nuvemshopCustomerEmail ||
+                        partner.nuvemshopCustomerName ||
+                        (partner.nuvemshopCustomerId
+                          ? `#${partner.nuvemshopCustomerId}`
+                          : "-")}
+                    </td>
                     <td>{partner.lastSeenAt ? formatDateTime(partner.lastSeenAt) : "-"}</td>
                     <td>
                       <button
@@ -1343,7 +1451,7 @@ export function UsuariosClient({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={9}>Nenhum parceiro cadastrado ainda.</td>
+                  <td colSpan={10}>Nenhum parceiro cadastrado ainda.</td>
                 </tr>
               )}
             </tbody>
@@ -1410,4 +1518,44 @@ function formatDateTime(value?: string | null) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function buildStoreCustomerLookupLabel(customer: {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+}) {
+  const id = String(customer.id ?? "").trim();
+
+  if (!id) {
+    return "";
+  }
+
+  const name = String(customer.name ?? "").trim();
+  const email = String(customer.email ?? "").trim().toLowerCase();
+  const title = name || email || `Cliente ${id}`;
+  return `${title} · ${email || "sem email"} · #${id}`;
+}
+
+function findStoreCustomerOption(
+  value: string,
+  options: UserStoreCustomerOption[],
+) {
+  const normalized = value.trim().toLowerCase();
+
+  if (!normalized) {
+    return null;
+  }
+
+  return (
+    options.find((option) =>
+      [
+        option.lookupLabel,
+        option.email,
+        option.id,
+        option.name,
+        `#${option.id}`,
+      ].some((candidate) => candidate.trim().toLowerCase() === normalized),
+    ) || null
+  );
 }

@@ -755,6 +755,77 @@ export async function loadPartnerStoreCreditSessionByProfileEmail(profileEmail: 
   }
 }
 
+export async function loadPartnerStoreCreditSessionByMappedCustomerId(customerId: string) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return null;
+  }
+
+  const normalizedCustomerId = String(customerId ?? "").trim();
+
+  if (!normalizedCustomerId) {
+    return null;
+  }
+
+  try {
+    const { data: profile, error: profileError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from("profiles_usuarios")
+      .select("id")
+      .eq("nuvemshop_customer_id", normalizedCustomerId)
+      .eq("user_type", "parceiro")
+      .maybeSingle();
+
+    if (profileError || !profile?.id) {
+      return null;
+    }
+
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_STORE_CREDIT_SESSION_TABLE)
+      .select("*")
+      .eq("user_profile_id", String(profile.id))
+      .eq("status", "ativa")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) {
+      return null;
+    }
+
+    const session = rowToPartnerStoreCreditSession(data);
+
+    if (session.expiresAt && new Date(session.expiresAt).getTime() <= Date.now()) {
+      await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(PARTNER_STORE_CREDIT_SESSION_TABLE)
+        .update({
+          status: "expirada",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", session.id)
+        .eq("status", "ativa");
+
+      return null;
+    }
+
+    await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_STORE_CREDIT_SESSION_TABLE)
+      .update({
+        last_seen_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", session.id);
+
+    return session;
+  } catch {
+    return null;
+  }
+}
+
 export async function consumePartnerStoreCreditSessionOrder(input: {
   promotionId: string;
   orderId: string;

@@ -104,6 +104,31 @@ export function extractPartnerStoreCustomerEmail(payload: unknown) {
   return "";
 }
 
+export function extractPartnerStoreCustomerId(payload: unknown) {
+  const root = getRecordValue(payload);
+
+  if (!root) {
+    return "";
+  }
+
+  const customer = getRecordValue(root.customer);
+  const candidates = [
+    getTextValue(customer?.id),
+    getTextValue(getRecordValue(root.cart)?.customer_id),
+    getTextValue(getRecordValue(getRecordValue(root.cart)?.customer)?.id),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const normalized = normalizeCustomerId(candidate);
+
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return "";
+}
+
 function ensureTrailingSlash(value: string) {
   return value.endsWith("/") ? value : `${value}/`;
 }
@@ -124,6 +149,11 @@ function normalizeSessionToken(value: string) {
 function normalizeEmail(value: string) {
   const normalized = value.trim().toLowerCase();
   return normalized.includes("@") ? normalized : "";
+}
+
+function normalizeCustomerId(value: string) {
+  const normalized = value.trim();
+  return /^[A-Za-z0-9_-]{1,64}$/.test(normalized) ? normalized : "";
 }
 
 function getSessionTokenFromUtmCollection(value: unknown) {
