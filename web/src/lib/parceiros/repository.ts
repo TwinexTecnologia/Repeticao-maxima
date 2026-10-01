@@ -567,14 +567,6 @@ export async function createPartnerStoreCreditSession(input: {
       name: promotionName,
       active: true,
       allocation_type: "cross_items",
-      i18n: [
-        {
-          lang: "pt-br",
-          name: promotionName,
-          description: "Saldo aprovado para compra na loja real.",
-          disclaimer: "Valido somente para o parceiro autenticado durante a sessao ativa.",
-        },
-      ],
       combines_with_other_discounts: true,
       combines_with_quantity_discounts: true,
       combines_with_free_shipping: true,
