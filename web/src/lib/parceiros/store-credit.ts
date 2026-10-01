@@ -1,6 +1,7 @@
 const PARTNER_STORE_UTM_SOURCE = "painel-parceiro";
 const PARTNER_STORE_UTM_MEDIUM = "saldo";
 const PARTNER_STORE_UTM_CAMPAIGN = "batimento-meta";
+const DEFAULT_PARTNER_STOREFRONT_URL = "https://repeticaomaxima.com.br";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -8,7 +9,7 @@ export function resolvePartnerStorefrontUrl() {
   const configured =
     process.env.NUVEMSHOP_STOREFRONT_URL?.trim() ||
     process.env.NEXT_PUBLIC_STOREFRONT_URL?.trim() ||
-    "";
+    DEFAULT_PARTNER_STOREFRONT_URL;
 
   if (!configured) {
     return null;
