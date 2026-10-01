@@ -47,6 +47,8 @@ export function extractPartnerStoreSessionToken(payload: unknown) {
     getTextValue(getRecordValue(root.utm)?.utm_term),
     getTextValue(getRecordValue(root.cart)?.utm_term),
     getTextValue(getRecordValue(getRecordValue(root.cart)?.utm)?.term),
+    getSessionTokenFromUtmCollection(root.utm),
+    getSessionTokenFromUtmCollection(getRecordValue(root.cart)?.utm),
   ].filter(Boolean);
 
   for (const candidate of directCandidates) {
@@ -91,6 +93,33 @@ function extractUtmTermFromUrl(value: string) {
 function normalizeSessionToken(value: string) {
   const normalized = value.trim();
   return /^[A-Za-z0-9_-]{16,}$/.test(normalized) ? normalized : "";
+}
+
+function getSessionTokenFromUtmCollection(value: unknown) {
+  const records = getRecordArrayValue(value);
+
+  for (const record of records) {
+    const candidate = normalizeSessionToken(
+      getTextValue(record.utm_term) || getTextValue(record.term),
+    );
+
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return "";
+}
+
+function getRecordArrayValue(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter(
+    (item): item is UnknownRecord =>
+      typeof item === "object" && item !== null,
+  );
 }
 
 function getRecordValue(value: unknown) {
