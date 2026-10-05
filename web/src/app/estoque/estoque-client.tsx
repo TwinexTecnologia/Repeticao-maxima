@@ -52,7 +52,7 @@ type StockAdjustmentState = {
   reasonText: string;
 };
 
-const TRACKED_BASE_COLORS = ["Preta", "Branca", "Roxa"] as const;
+const TRACKED_BASE_COLORS = ["Preta", "Branca", "Roxa", "Rosa"] as const;
 
 export function EstoqueClient({
   initialItems,
@@ -183,6 +183,11 @@ export function EstoqueClient({
         label: "Roxa",
         value: String(sumPlainStockByColor(visibleBaseItems, "Roxa")),
         detail: "Saldo liso total da cor roxa.",
+      },
+      {
+        label: "Rosa",
+        value: String(sumPlainStockByColor(visibleBaseItems, "Rosa")),
+        detail: "Saldo liso total da cor rosa.",
       },
       {
         label: "Alocado no site",
@@ -923,6 +928,7 @@ export function EstoqueClient({
                   <option>Preta</option>
                   <option>Branca</option>
                   <option>Roxa</option>
+                  <option>Rosa</option>
                 </select>
               </label>
               <label className={styles.filterField}>
