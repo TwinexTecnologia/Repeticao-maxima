@@ -949,14 +949,6 @@ export async function loadStockLedgerModuleData(selectedMonth: string) {
   }
 }
 
-export async function createManualStockEntry(input: unknown) {
-  return saveManualStockMovement("entrada", input);
-}
-
-export async function createManualStockExit(input: unknown) {
-  return saveManualStockMovement("saida", input);
-}
-
 export async function updateManualStockMovement(id: string, input: unknown) {
   const supabase = createSupabaseServerClient();
 
@@ -1095,7 +1087,8 @@ function buildManualStockMovementPayload(
     throw new Error("Selecione a arte vendida para registrar a saida da camiseta.");
   }
 
-  const keepPlainStock = movementType === "saida" && row.alreadyPrinted;
+  const pendingSiteReview = movementType === "saida" && row.originType === "venda";
+  const keepPlainStock = movementType === "saida" && (row.alreadyPrinted || pendingSiteReview);
 
   return {
     sku: row.sku,
@@ -1111,15 +1104,22 @@ function buildManualStockMovementPayload(
     reasonCategory:
       movementType === "entrada"
         ? "entrada_manual_camiseta"
+        : pendingSiteReview
+          ? "saida_site_pendente_revisao"
         : keepPlainStock
           ? "saida_ja_estampada_sem_baixa"
           : "saida_manual_camiseta",
-    reasonText: keepPlainStock
+    reasonText: pendingSiteReview
+      ? [row.notes, "Venda do site aguardando conferencia manual antes da baixa."]
+          .filter(Boolean)
+          .join(" ")
+      : keepPlainStock
       ? [row.notes, "Ja estava estampada em outro lote; sem baixa da lisa."]
           .filter(Boolean)
           .join(" ")
       : row.notes,
     sourceModule: "estoque_manual",
+    reviewStatus: pendingSiteReview ? ("pendente" as const) : ("aprovado" as const),
   };
 }
 
@@ -1396,6 +1396,7 @@ function getStockMovementDelta(
     movementType: StockMovement["movementType"];
     quantity: number;
     reasonCategory?: string;
+    reviewStatus?: StockMovementReviewStatus;
     plainBefore?: number;
     plainAfter?: number;
   },
@@ -1405,7 +1406,12 @@ function getStockMovementDelta(
   }
 
   if (movement.movementType === "saida") {
-    return movement.reasonCategory === "saida_ja_estampada_sem_baixa" ? 0 : movement.quantity * -1;
+    return movement.reasonCategory === "saida_ja_estampada_sem_baixa" ||
+      movement.reasonCategory === "saida_site_pendente_revisao" ||
+      movement.reasonCategory === "saida_site_pendente_alerta" ||
+      movement.reviewStatus === "pendente"
+      ? 0
+      : movement.quantity * -1;
   }
 
   return (movement.plainAfter ?? 0) - (movement.plainBefore ?? 0);
@@ -1692,13 +1698,18 @@ async function saveManualStockMovement(
     const previousTotal = getIntegerValue(existingRow?.total_qty);
     const previousPrinted = Math.min(getIntegerValue(existingRow?.printed_qty), previousTotal);
     const previousPlain = Math.max(previousTotal - previousPrinted, 0);
-    const requiresManualReview = movementType === "saida" && row.originType === "venda";
-    const hasInsufficientPlain = movementType === "saida" && previousPlain < row.quantity;
-    const keepPlainStock =
-      movementType === "saida" && (row.alreadyPrinted || requiresManualReview);
+    const requiresManualReview =
+      movementPayload.movementType === "saida" &&
+      movementPayload.reviewStatus === "pendente";
+    const hasInsufficientPlain =
+      movementPayload.movementType === "saida" && previousPlain < movementPayload.quantity;
     const keepPlainStock = getStockMovementDelta(movementPayload) === 0;
 
-    if (movementType === "saida" && !keepPlainStock && previousPlain < row.quantity) {
+    if (
+      movementPayload.movementType === "saida" &&
+      !keepPlainStock &&
+      previousPlain < movementPayload.quantity
+    ) {
       throw new Error(
         `Nao ha lisa suficiente em estoque. Restam ${previousPlain} unidades para ${row.sku} ${row.color} ${row.size}.`,
       );
@@ -1706,9 +1717,9 @@ async function saveManualStockMovement(
 
     const nextTotal = keepPlainStock
       ? previousTotal
-      : movementType === "entrada"
-        ? previousTotal + row.quantity
-        : previousTotal - row.quantity;
+      : movementPayload.movementType === "entrada"
+        ? previousTotal + movementPayload.quantity
+        : previousTotal - movementPayload.quantity;
 
     let persistedRow = existingRow ?? null;
 
@@ -1749,33 +1760,23 @@ async function saveManualStockMovement(
     const nextPrinted = Math.min(getIntegerValue(persistedRow?.printed_qty), nextTotalValue);
     const nextPlain = keepPlainStock ? previousPlain : Math.max(nextTotalValue - nextPrinted, 0);
     const stockItemId = String(persistedRow?.id ?? existingRow?.id ?? "");
-    const reviewStatus: StockMovementReviewStatus = requiresManualReview ? "pendente" : "aprovado";
+    const reviewStatus: StockMovementReviewStatus = movementPayload.reviewStatus;
     const stockEffectApplied =
-      movementType === "entrada" ? true : keepPlainStock ? false : true;
+      movementPayload.movementType === "entrada" ? true : keepPlainStock ? false : true;
     const reasonCategory =
-      movementType === "entrada"
-        ? "entrada_manual_camiseta"
-        : requiresManualReview
-          ? hasInsufficientPlain
-            ? "saida_site_pendente_alerta"
-            : "saida_site_pendente_revisao"
-          : row.alreadyPrinted
-            ? "saida_ja_estampada_sem_baixa"
-            : "saida_manual_camiseta";
+      requiresManualReview && hasInsufficientPlain
+        ? "saida_site_pendente_alerta"
+        : movementPayload.reasonCategory;
     const reasonText = requiresManualReview
       ? [
           row.notes,
           hasInsufficientPlain
-            ? `Alerta: faltam ${row.quantity - previousPlain} unidades para confirmar essa baixa no estoque.`
+            ? `Alerta: faltam ${movementPayload.quantity - previousPlain} unidades para confirmar essa baixa no estoque.`
             : "Venda do site aguardando conferencia manual antes da baixa.",
         ]
           .filter(Boolean)
           .join(" ")
-      : row.alreadyPrinted
-        ? [row.notes, "Ja estava estampada em outro lote; sem baixa da lisa."]
-            .filter(Boolean)
-            .join(" ")
-        : row.notes;
+      : movementPayload.reasonText;
 
     await createStockMovement(supabase.client, {
       stockItemId,
@@ -1787,22 +1788,15 @@ async function saveManualStockMovement(
       quantity: movementPayload.quantity,
       plainBefore: previousPlain,
       plainAfter: nextPlain,
-      artName: artDetails.artName,
-      artProductId: artDetails.artProductId,
-      originType: row.originType,
-      originReference: row.originReference,
-      reasonCategory,
-      reasonText,
-      sourceModule: "estoque_manual",
-      reviewStatus,
-      stockEffectApplied,
       artName: movementPayload.artName,
       artProductId: movementPayload.artProductId,
       originType: movementPayload.originType,
       originReference: movementPayload.originReference,
-      reasonCategory: movementPayload.reasonCategory,
-      reasonText: movementPayload.reasonText,
+      reasonCategory,
+      reasonText,
       sourceModule: movementPayload.sourceModule,
+      reviewStatus,
+      stockEffectApplied,
     });
 
     return {
