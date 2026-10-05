@@ -1,7 +1,9 @@
 import type {
+  NuvemshopAbandonedCheckout,
   NuvemshopCategory,
   NuvemshopCoupon,
   NuvemshopCredentials,
+  NuvemshopCustomer,
   NuvemshopOrder,
   NuvemshopPromotion,
   NuvemshopPromotionInput,
@@ -95,9 +97,35 @@ export class NuvemshopClient {
     });
   }
 
+  async listCustomers(params: ListParams = {}) {
+    const searchParams = this.buildPaginationParams(params);
+    return this.requestJson<NuvemshopCustomer[]>("/customers", {
+      searchParams,
+    });
+  }
+
+  async getOrder(id: string | number) {
+    return this.requestJson<NuvemshopOrder>(`/orders/${id}`);
+  }
+
   async listCoupons(params: ListParams = {}) {
     const searchParams = this.buildPaginationParams(params);
     return this.requestJson<NuvemshopCoupon[]>("/coupons", {
+      searchParams,
+    });
+  }
+
+  async listPromotions(params: ListParams = {}) {
+    const searchParams = this.buildPaginationParams(params);
+    return this.requestJson<NuvemshopPromotion[]>("/promotions", {
+      searchParams,
+      baseUrl: getNuvemshopDiscountsBaseUrl(this.credentials.baseUrl),
+    });
+  }
+
+  async listAbandonedCheckouts(params: ListParams = {}) {
+    const searchParams = this.buildPaginationParams(params);
+    return this.requestJson<NuvemshopAbandonedCheckout[]>("/checkouts", {
       searchParams,
     });
   }
@@ -175,8 +203,18 @@ export class NuvemshopClient {
 
     if (!response.ok) {
       const body = await response.text();
+      const actionLabel =
+        method === "POST"
+          ? "criar"
+          : method === "PATCH"
+            ? "atualizar"
+            : method === "PUT"
+              ? "sincronizar"
+              : method === "DELETE"
+                ? "remover"
+                : "consultar";
       throw new NuvemshopApiError(
-        `Falha ao consultar ${path}`,
+        `Falha ao ${actionLabel} ${path}`,
         response.status,
         body,
       );

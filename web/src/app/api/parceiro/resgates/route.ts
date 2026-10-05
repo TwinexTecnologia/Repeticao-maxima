@@ -3,12 +3,13 @@ import { NextResponse } from "next/server";
 import { loadAuthenticatedAppUser } from "@/lib/auth/access";
 import { loadStoreProductSelectionOptions, loadStockSelectionOptions } from "@/lib/operacoes/repository";
 import {
+  consumePartnerRewardRequestAmount,
   createPartnerRedemption,
   deletePartnerRedemption,
   loadCouponPartnerProfiles,
   loadPartnerRewardRequests,
-  reviewPartnerRewardRequest,
 } from "@/lib/parceiros/repository";
+import { getPartnerRewardRequestRemainingAmount } from "@/lib/parceiros/performance";
 
 export async function POST(request: Request) {
   const user = await loadAuthenticatedAppUser();
@@ -153,8 +154,10 @@ export async function POST(request: Request) {
 
     const totalCost = Math.round(selectedProduct.unitPrice * quantity * 100) / 100;
 
-    if (totalCost > approvedRequest.requestedAmount) {
-      const maxQuantity = Math.floor(approvedRequest.requestedAmount / selectedProduct.unitPrice);
+    const remainingApprovedAmount = getPartnerRewardRequestRemainingAmount(approvedRequest);
+
+    if (totalCost > remainingApprovedAmount) {
+      const maxQuantity = Math.floor(remainingApprovedAmount / selectedProduct.unitPrice);
 
       return NextResponse.json(
         {
@@ -162,7 +165,7 @@ export async function POST(request: Request) {
           message:
             maxQuantity > 0
               ? `Esse resgate passa do valor aprovado. Com esse item, o maximo permitido agora e ${maxQuantity} unidade(s).`
-              : "O valor aprovado para essa meta ainda nao cobre o preco normal desse produto.",
+              : "O saldo restante aprovado ainda nao cobre o preco normal desse produto.",
         },
         { status: 400 },
       );
@@ -199,12 +202,16 @@ export async function POST(request: Request) {
       );
     }
 
-    const requestResult = await reviewPartnerRewardRequest(requestId, {
-      requestType: "roupa",
-      status: "pago",
-      adminCouponCode: approvedRequest.adminCouponCode || approvedRequest.couponCode,
+    const requestResult = await consumePartnerRewardRequestAmount(requestId, {
+      consumedAmount: totalCost,
       adminMessage:
-        approvedRequest.adminMessage || "Resgate registrado dentro da plataforma.",
+        remainingApprovedAmount - totalCost <= 0
+          ? "Saldo consumido integralmente no resgate da plataforma."
+          : `Resgate registrado na plataforma. Saldo restante: R$ ${(
+              remainingApprovedAmount - totalCost
+            )
+              .toFixed(2)
+              .replace(".", ",")}.`,
     });
 
     if (!requestResult.ok) {

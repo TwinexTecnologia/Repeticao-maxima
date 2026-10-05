@@ -49,6 +49,18 @@ export type NuvemshopCoupon = {
   [key: string]: unknown;
 };
 
+export type NuvemshopCustomer = {
+  id: number | string;
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  identification?: string | null;
+  active?: boolean | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  [key: string]: unknown;
+};
+
 export type NuvemshopLocalizedText =
   | string
   | Record<string, string | undefined>
@@ -186,6 +198,23 @@ export type NuvemshopOrder = {
     [key: string]: unknown;
   }> | null;
   products?: NuvemshopOrderProduct[];
+  promotional_discount?: {
+    id?: number | string | null;
+    store_id?: number | string | null;
+    order_id?: number | string | null;
+    created_at?: string | null;
+    total_discount_amount?: string | null;
+    contents?: Array<{
+      amount?: string | null;
+      [key: string]: unknown;
+    }> | null;
+    promotions_applied?: Array<{
+      id?: string | null;
+      name?: string | null;
+      [key: string]: unknown;
+    }> | null;
+    [key: string]: unknown;
+  } | null;
   customer?: {
     id?: number | string | null;
     name?: string | null;
@@ -197,6 +226,35 @@ export type NuvemshopOrder = {
   updated_at?: string | null;
   shipped_at?: string | null;
   paid_at?: string | null;
+  [key: string]: unknown;
+};
+
+export type NuvemshopAbandonedCheckout = {
+  id: number | string;
+  token?: string | null;
+  abandoned_checkout_url?: string | null;
+  contact_email?: string | null;
+  contact_name?: string | null;
+  contact_phone?: string | null;
+  contact_identification?: string | null;
+  shipping_city?: string | null;
+  shipping_province?: string | null;
+  shipping_country?: string | null;
+  shipping_option?: string | null;
+  gateway?: string | null;
+  subtotal?: string | null;
+  discount?: string | null;
+  total?: string | null;
+  coupon?: Array<{
+    id?: number | string;
+    code?: string | null;
+    value?: string | null;
+    type?: string | null;
+    [key: string]: unknown;
+  }> | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  completed_at?: string | null;
   [key: string]: unknown;
 };
 
@@ -214,6 +272,7 @@ export type NuvemshopDiagnostics = {
   missingEnv: string[];
   config: {
     baseUrl: string;
+    discountsBaseUrl: string;
     storeId: string | null;
     userAgent: string | null;
   };

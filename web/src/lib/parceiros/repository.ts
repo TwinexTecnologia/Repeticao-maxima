@@ -1,5 +1,7 @@
 "use server";
 
+import crypto from "node:crypto";
+
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import {
   getNuvemshopCredentials,
@@ -8,15 +10,21 @@ import {
 } from "@/lib/nuvemshop/client";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NuvemshopCoupon, NuvemshopOrder } from "@/lib/nuvemshop/types";
+import {
+  buildPartnerStoreRedirectUrl,
+  resolvePartnerStorefrontUrl,
+} from "@/lib/parceiros/store-credit";
 
 const OPERATIONS_SCHEMA = "repeticao_maxima";
 const COUPON_PARTNER_TABLE = "parceiros_cupons";
 const PARTNER_REDEMPTION_TABLE = "parceiros_resgates";
 const PARTNER_REWARD_REQUEST_TABLE = "parceiros_solicitacoes_resgate";
+const PARTNER_STORE_CREDIT_SESSION_TABLE = "parceiros_sessoes_credito_loja";
 const DEBTS_TABLE = "dividas_internas";
 const STOCK_TABLE = "estoque_base";
 const PAGE_SIZE = 100;
 const MAX_PAGES = 12;
+const PARTNER_STORE_SESSION_MINUTES = 120;
 
 export type PartnerRole = "influenciador" | "atleta";
 
@@ -83,6 +91,7 @@ export type PartnerRewardRequest = {
   requestType: PartnerRewardRequestType;
   supportGoal: string;
   requestedAmount: number;
+  consumedAmount: number;
   availableAmount: number;
   minimumAmount: number;
   windowStartDate: string | null;
@@ -94,6 +103,36 @@ export type PartnerRewardRequest = {
   requestedAt: string | null;
   reviewedAt: string | null;
   partnerSeenAt: string | null;
+  updatedAt: string | null;
+};
+
+export type PartnerStoreCreditSessionStatus =
+  | "ativa"
+  | "consumida"
+  | "expirada"
+  | "cancelada";
+
+export type PartnerStoreCreditSession = {
+  id: string;
+  requestId: string;
+  userProfileId: string;
+  couponPartnerId: string | null;
+  partnerName: string;
+  couponCode: string;
+  partnerRole: PartnerRole;
+  promotionId: string;
+  sessionToken: string;
+  approvedAmount: number;
+  consumedAmountSnapshot: number;
+  availableAmount: number;
+  currency: string;
+  status: PartnerStoreCreditSessionStatus;
+  orderId: string | null;
+  orderNumber: string | null;
+  expiresAt: string | null;
+  lastSeenAt: string | null;
+  usedAt: string | null;
+  createdAt: string | null;
   updatedAt: string | null;
 };
 
@@ -270,6 +309,7 @@ export async function createPartnerRewardRequest(input: unknown) {
         request_type: row.requestType,
         support_goal: row.supportGoal,
         requested_amount: row.requestedAmount,
+        consumed_amount: 0,
         available_amount: row.availableAmount,
         minimum_amount: row.minimumAmount,
         window_start_date: row.windowStartDate,
@@ -352,7 +392,7 @@ export async function reviewPartnerRewardRequest(id: string, input: unknown) {
             ? "Solicitacao marcada como paga."
             : row.status === "recusado"
               ? "Solicitacao recusada."
-              : "Solicitacao aprovada com cupom liberado.",
+              : "Saldo aprovado com sucesso para uso na loja.",
         updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
       },
     };
@@ -362,6 +402,643 @@ export async function reviewPartnerRewardRequest(id: string, input: unknown) {
       persistence: buildDisabledState(getErrorMessage(error)),
     };
   }
+}
+
+export async function consumePartnerRewardRequestAmount(id: string, input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizePartnerRewardRequestConsumptionInput(input);
+
+  try {
+    const { data: existingRow, error: existingError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_REWARD_REQUEST_TABLE)
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (existingError || !existingRow) {
+      throw existingError || new Error("Nao foi possivel localizar a solicitacao para consumo.");
+    }
+
+    const request = rowToPartnerRewardRequest(existingRow);
+
+    if (request.requestType !== "roupa") {
+      throw new Error("Somente solicitacoes de roupa podem consumir saldo por resgate.");
+    }
+
+    if (request.status !== "aprovado") {
+      throw new Error("Essa solicitacao precisa estar aprovada para consumir saldo.");
+    }
+
+    const currentConsumed = Math.max(request.consumedAmount, 0);
+    const currentRemaining = Math.max(request.requestedAmount - currentConsumed, 0);
+
+    if (row.consumedAmount > currentRemaining) {
+      throw new Error("Esse resgate passa do saldo restante aprovado para essa solicitacao.");
+    }
+
+    const nextConsumed = Math.round((currentConsumed + row.consumedAmount) * 100) / 100;
+    const nextRemaining = Math.max(request.requestedAmount - nextConsumed, 0);
+    const reviewedAt = new Date().toISOString();
+
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_REWARD_REQUEST_TABLE)
+      .update({
+        consumed_amount: nextConsumed,
+        status: nextRemaining <= 0 ? "pago" : "aprovado",
+        admin_message:
+          row.adminMessage ||
+          (nextRemaining <= 0
+            ? "Saldo consumido integralmente no resgate da plataforma."
+            : request.adminMessage),
+        partner_seen_at: null,
+        reviewed_at: reviewedAt,
+        updated_at: reviewedAt,
+      })
+      .eq("id", id)
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel atualizar o saldo consumido da solicitacao.");
+    }
+
+    return {
+      ok: true as const,
+      request: rowToPartnerRewardRequest(data),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          nextRemaining <= 0
+            ? "Solicitacao consumida por completo no resgate."
+            : "Saldo da solicitacao atualizado com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function createPartnerStoreCreditSession(input: {
+  requestId: string;
+  userProfileId: string;
+  nextPath?: string;
+  expiresInMinutes?: number;
+}) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      message: `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+    };
+  }
+
+  const storefrontUrl = resolvePartnerStorefrontUrl();
+
+  if (!storefrontUrl) {
+    return {
+      ok: false as const,
+      message:
+        "Defina NUVEMSHOP_STOREFRONT_URL para redirecionar o parceiro para a loja real.",
+    };
+  }
+
+  const credentials = getNuvemshopCredentials();
+
+  if (!credentials.ok) {
+    return {
+      ok: false as const,
+      message: `Nao foi possivel preparar a promocao da loja. Configure ${credentials.missing.join(" e ")}.`,
+    };
+  }
+
+  try {
+    const request = await loadPartnerRewardRequestById(supabase.client, input.requestId);
+
+    if (!request) {
+      throw new Error("Nao foi possivel localizar a aprovacao de saldo selecionada.");
+    }
+
+    if (request.userProfileId !== input.userProfileId) {
+      throw new Error("Esse saldo aprovado nao pertence ao parceiro logado.");
+    }
+
+    if (request.requestType !== "roupa") {
+      throw new Error("Somente saldo de roupa pode ser usado na loja real.");
+    }
+
+    if (request.status !== "aprovado") {
+      throw new Error("Esse saldo ainda nao foi aprovado para compra na loja.");
+    }
+
+    const remainingAmount = Math.max(request.requestedAmount - request.consumedAmount, 0);
+
+    if (remainingAmount <= 0) {
+      throw new Error("Esse saldo aprovado ja foi consumido por completo.");
+    }
+
+    const expiresInMinutes = Math.max(
+      Math.trunc(input.expiresInMinutes || PARTNER_STORE_SESSION_MINUTES),
+      15,
+    );
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + expiresInMinutes * 60 * 1000).toISOString();
+    const sessionToken = crypto.randomBytes(18).toString("base64url");
+    const promotionClient = new NuvemshopClient(credentials.credentials);
+    const promotionName = buildPartnerStorePromotionName(request.partnerName, request.couponCode);
+    const promotionResponse = await promotionClient.createPromotion({
+      name: promotionName,
+      active: true,
+      allocation_type: "cross_items",
+      combines_with_quantity_discounts: true,
+      combines_with_free_shipping: true,
+      combines_with_cart_amount_discounts: true,
+      combines_with_app_discounts: true,
+      combines_with_price_discounts: true,
+    });
+    const promotionId = extractPromotionId(promotionResponse);
+
+    if (!promotionId) {
+      throw new Error(
+        `A Nuvemshop respondeu sem promotion_id valido para o saldo da loja. Resposta: ${safeDescribePromotionResponse(
+          promotionResponse,
+        )}`,
+      );
+    }
+
+    await expireActiveStoreCreditSessionsForRequest(supabase.client, request.id);
+
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_STORE_CREDIT_SESSION_TABLE)
+      .insert({
+        request_id: request.id,
+        user_profile_id: request.userProfileId,
+        coupon_partner_id: request.couponPartnerId,
+        partner_name: request.partnerName,
+        coupon_code: request.couponCode,
+        partner_role: request.partnerRole,
+        promotion_id: promotionId,
+        session_token: sessionToken,
+        approved_amount: request.requestedAmount,
+        consumed_amount_snapshot: request.consumedAmount,
+        available_amount: remainingAmount,
+        currency: "BRL",
+        status: "ativa",
+        expires_at: expiresAt,
+        updated_at: now.toISOString(),
+      })
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel registrar a sessao de saldo da loja.");
+    }
+
+    const session = rowToPartnerStoreCreditSession(data);
+
+    return {
+      ok: true as const,
+      session,
+      redirectUrl: buildPartnerStoreRedirectUrl(
+        storefrontUrl,
+        session.sessionToken,
+        input.nextPath || "/",
+      ),
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      message: getNuvemshopReadErrorMessage(error),
+    };
+  }
+}
+
+export async function loadPartnerStoreCreditSessionByToken(sessionToken: string) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_STORE_CREDIT_SESSION_TABLE)
+      .select("*")
+      .eq("session_token", sessionToken)
+      .maybeSingle();
+
+    if (error || !data) {
+      return null;
+    }
+
+    const session = rowToPartnerStoreCreditSession(data);
+
+    if (session.status !== "ativa") {
+      return null;
+    }
+
+    if (session.expiresAt && new Date(session.expiresAt).getTime() <= Date.now()) {
+      await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(PARTNER_STORE_CREDIT_SESSION_TABLE)
+        .update({
+          status: "expirada",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", session.id)
+        .eq("status", "ativa");
+
+      return null;
+    }
+
+    await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_STORE_CREDIT_SESSION_TABLE)
+      .update({
+        last_seen_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", session.id);
+
+    return session;
+  } catch {
+    return null;
+  }
+}
+
+export async function loadPartnerStoreCreditSessionByProfileEmail(profileEmail: string) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return null;
+  }
+
+  const normalizedEmail = String(profileEmail ?? "").trim().toLowerCase();
+
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  try {
+    const { data: profile, error: profileError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from("profiles_usuarios")
+      .select("id")
+      .ilike("email", normalizedEmail)
+      .maybeSingle();
+
+    if (profileError || !profile?.id) {
+      return null;
+    }
+
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_STORE_CREDIT_SESSION_TABLE)
+      .select("*")
+      .eq("user_profile_id", String(profile.id))
+      .eq("status", "ativa")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) {
+      return null;
+    }
+
+    const session = rowToPartnerStoreCreditSession(data);
+
+    if (session.expiresAt && new Date(session.expiresAt).getTime() <= Date.now()) {
+      await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(PARTNER_STORE_CREDIT_SESSION_TABLE)
+        .update({
+          status: "expirada",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", session.id)
+        .eq("status", "ativa");
+
+      return null;
+    }
+
+    await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_STORE_CREDIT_SESSION_TABLE)
+      .update({
+        last_seen_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", session.id);
+
+    return session;
+  } catch {
+    return null;
+  }
+}
+
+export async function loadPartnerStoreCreditSessionByMappedCustomerId(customerId: string) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return null;
+  }
+
+  const normalizedCustomerId = String(customerId ?? "").trim();
+
+  if (!normalizedCustomerId) {
+    return null;
+  }
+
+  try {
+    const { data: profile, error: profileError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from("profiles_usuarios")
+      .select("id")
+      .eq("nuvemshop_customer_id", normalizedCustomerId)
+      .eq("user_type", "parceiro")
+      .maybeSingle();
+
+    if (profileError || !profile?.id) {
+      return null;
+    }
+
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_STORE_CREDIT_SESSION_TABLE)
+      .select("*")
+      .eq("user_profile_id", String(profile.id))
+      .eq("status", "ativa")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) {
+      return null;
+    }
+
+    const session = rowToPartnerStoreCreditSession(data);
+
+    if (session.expiresAt && new Date(session.expiresAt).getTime() <= Date.now()) {
+      await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(PARTNER_STORE_CREDIT_SESSION_TABLE)
+        .update({
+          status: "expirada",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", session.id)
+        .eq("status", "ativa");
+
+      return null;
+    }
+
+    await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_STORE_CREDIT_SESSION_TABLE)
+      .update({
+        last_seen_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", session.id);
+
+    return session;
+  } catch {
+    return null;
+  }
+}
+
+export async function consumePartnerStoreCreditSessionOrder(input: {
+  promotionId: string;
+  orderId: string;
+  orderNumber?: string | null;
+  paidAt?: string | null;
+  totalDiscountAmount: number;
+  items?: Array<{
+    name: string;
+    sku: string;
+    quantity: number;
+    unitPrice: number;
+    totalPrice: number;
+  }>;
+}) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      message: `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_STORE_CREDIT_SESSION_TABLE)
+      .select("*")
+      .eq("promotion_id", input.promotionId)
+      .maybeSingle();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel localizar a sessao de saldo usada na loja.");
+    }
+
+    const session = rowToPartnerStoreCreditSession(data);
+
+    if (session.orderId && session.orderId === input.orderId) {
+      return {
+        ok: true as const,
+        message: "Pedido ja conciliado anteriormente.",
+      };
+    }
+
+    if (session.status !== "ativa") {
+      return {
+        ok: true as const,
+        message: "Sessao ja encerrada anteriormente.",
+      };
+    }
+
+    const amountToConsume = Math.min(
+      Math.max(Math.round(input.totalDiscountAmount * 100) / 100, 0),
+      Math.max(session.availableAmount, 0),
+    );
+
+    if (amountToConsume <= 0) {
+      return {
+        ok: true as const,
+        message: "Pedido pago sem desconto valido de saldo para consumir.",
+      };
+    }
+
+    const requestResult = await consumePartnerRewardRequestAmount(session.requestId, {
+      consumedAmount: amountToConsume,
+      adminMessage: `Saldo usado na loja real no pedido #${input.orderNumber || input.orderId}.`,
+    });
+
+    if (!requestResult.ok) {
+      throw new Error(requestResult.persistence.message);
+    }
+
+    const paidAt = normalizeDate(input.paidAt) || getTodayDate();
+    const redemptionRows = (input.items || [])
+      .filter((item) => item.quantity > 0 && item.totalPrice > 0)
+      .map((item) => ({
+        partner_id: session.couponPartnerId,
+        partner_name: session.partnerName,
+        coupon_code: session.couponCode,
+        partner_role: session.partnerRole,
+        sku: item.sku || item.name,
+        color: "-",
+        size: "-",
+        quantity: item.quantity,
+        unit_cost: item.unitPrice,
+        total_cost: item.totalPrice,
+        granted_at: paidAt,
+        status: "previsto",
+        create_marketing_debt: false,
+        notes: `Resgate por batimento de meta\n[pedido] ${input.orderNumber || input.orderId}\n[item] ${item.name}`,
+        updated_at: new Date().toISOString(),
+      }));
+
+    if (redemptionRows.length > 0) {
+      const { error: redemptionError } = await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(PARTNER_REDEMPTION_TABLE)
+        .insert(redemptionRows);
+
+      if (redemptionError) {
+        throw redemptionError;
+      }
+    }
+
+    const { error: updateError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(PARTNER_STORE_CREDIT_SESSION_TABLE)
+      .update({
+        status: "consumida",
+        order_id: input.orderId,
+        order_number: input.orderNumber || null,
+        used_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", session.id);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    return {
+      ok: true as const,
+      message: "Pedido da loja conciliado com o saldo do parceiro.",
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      message: getErrorMessage(error),
+    };
+  }
+}
+
+async function loadPartnerRewardRequestById(client: SupabaseClient, id: string) {
+  const { data, error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(PARTNER_REWARD_REQUEST_TABLE)
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return rowToPartnerRewardRequest(data);
+}
+
+async function expireActiveStoreCreditSessionsForRequest(
+  client: SupabaseClient,
+  requestId: string,
+) {
+  const now = new Date().toISOString();
+
+  await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(PARTNER_STORE_CREDIT_SESSION_TABLE)
+    .update({
+      status: "expirada",
+      updated_at: now,
+    })
+    .eq("request_id", requestId)
+    .eq("status", "ativa");
+}
+
+function buildPartnerStorePromotionName(partnerName: string, couponCode: string) {
+  const normalizedCoupon = couponCode.trim().toUpperCase() || "PARCEIRO";
+  const normalizedName = partnerName.trim() || normalizedCoupon;
+  return `Saldo ${normalizedName} ${normalizedCoupon}`.slice(0, 100);
+}
+
+function extractPromotionId(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const directId = String(record.id ?? "").trim();
+
+  if (directId) {
+    return directId;
+  }
+
+  if (typeof record.data === "object" && record.data !== null) {
+    const nestedId = String((record.data as Record<string, unknown>).id ?? "").trim();
+    return nestedId || null;
+  }
+
+  return null;
+}
+
+function safeDescribePromotionResponse(value: unknown) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "[resposta nao serializavel]";
+  }
+}
+
+function normalizePartnerStoreCreditSessionStatus(
+  value: unknown,
+): PartnerStoreCreditSessionStatus {
+  const normalized = String(value ?? "").trim().toLowerCase();
+
+  if (
+    normalized === "ativa" ||
+    normalized === "consumida" ||
+    normalized === "expirada" ||
+    normalized === "cancelada"
+  ) {
+    return normalized;
+  }
+
+  return "ativa";
 }
 
 export async function createCouponPartnerProfile(input: unknown) {
@@ -1233,6 +1910,7 @@ function rowToPartnerRewardRequest(
     requestType: normalizePartnerRewardRequestType(row.request_type),
     supportGoal: String(row.support_goal ?? "").trim(),
     requestedAmount: Math.max(getNumberValue(row.requested_amount), 0),
+    consumedAmount: Math.max(getNumberValue(row.consumed_amount), 0),
     availableAmount: Math.max(getNumberValue(row.available_amount), 0),
     minimumAmount: Math.max(getNumberValue(row.minimum_amount), 0),
     windowStartDate: normalizeDate(row.window_start_date) || null,
@@ -1452,10 +2130,6 @@ function normalizePartnerRewardRequestReviewInput(input: unknown) {
     throw new Error("Escolha uma acao valida para a solicitacao.");
   }
 
-  if (requestType === "roupa" && status === "aprovado" && !adminCouponCode) {
-    throw new Error("Informe o cupom liberado para aprovar esse resgate em roupa.");
-  }
-
   if (requestType === "apoio" && status === "aprovado") {
     throw new Error("Para apoio esportivo, use marcar como pago ou recusar.");
   }
@@ -1464,6 +2138,48 @@ function normalizePartnerRewardRequestReviewInput(input: unknown) {
     status,
     adminCouponCode,
     adminMessage,
+  };
+}
+
+function normalizePartnerRewardRequestConsumptionInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+  const consumedAmount = Math.max(getNumberValue(source.consumedAmount), 0);
+
+  if (consumedAmount <= 0) {
+    throw new Error("Informe um valor consumido valido para esse resgate.");
+  }
+
+  return {
+    consumedAmount,
+    adminMessage: String(source.adminMessage ?? "").trim(),
+  };
+}
+
+function rowToPartnerStoreCreditSession(
+  row: Record<string, unknown>,
+): PartnerStoreCreditSession {
+  return {
+    id: String(row.id ?? ""),
+    requestId: String(row.request_id ?? ""),
+    userProfileId: String(row.user_profile_id ?? ""),
+    couponPartnerId: row.coupon_partner_id ? String(row.coupon_partner_id) : null,
+    partnerName: String(row.partner_name ?? "").trim(),
+    couponCode: String(row.coupon_code ?? "").trim().toUpperCase(),
+    partnerRole: normalizePartnerRole(row.partner_role),
+    promotionId: String(row.promotion_id ?? "").trim(),
+    sessionToken: String(row.session_token ?? "").trim(),
+    approvedAmount: Math.max(getNumberValue(row.approved_amount), 0),
+    consumedAmountSnapshot: Math.max(getNumberValue(row.consumed_amount_snapshot), 0),
+    availableAmount: Math.max(getNumberValue(row.available_amount), 0),
+    currency: String(row.currency ?? "BRL").trim().toUpperCase() || "BRL",
+    status: normalizePartnerStoreCreditSessionStatus(row.status),
+    orderId: row.order_id ? String(row.order_id) : null,
+    orderNumber: row.order_number ? String(row.order_number) : null,
+    expiresAt: typeof row.expires_at === "string" ? row.expires_at : null,
+    lastSeenAt: typeof row.last_seen_at === "string" ? row.last_seen_at : null,
+    usedAt: typeof row.used_at === "string" ? row.used_at : null,
+    createdAt: typeof row.created_at === "string" ? row.created_at : null,
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
   };
 }
 
