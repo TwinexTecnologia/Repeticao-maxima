@@ -10,6 +10,7 @@ import type {
   NuvemshopProduct,
   NuvemshopVariant,
 } from "@/lib/nuvemshop/types";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const OPERATIONS_SCHEMA = "repeticao_maxima";
 const DEBTS_TABLE = "dividas_internas";
@@ -22,6 +23,7 @@ const STOCK_MOVEMENTS_TABLE = "estoque_movimentacoes";
 const DTF_TABLE = "estoque_dtf";
 const NUVEMSHOP_PAGE_SIZE = 100;
 const NUVEMSHOP_MAX_PAGES = 6;
+type OperationsSupabaseClient = SupabaseClient;
 
 type ServerSupabaseClient = ReturnType<typeof createSupabaseServerClient> extends infer T
   ? T extends { ok: true; client: infer C }
@@ -147,6 +149,7 @@ export type StockSelectionOption = {
 };
 
 export type StockMovementType = "entrada" | "saida" | "ajuste";
+export type StockMovementReviewStatus = "aprovado" | "pendente" | "ignorado";
 
 export type StockMovement = {
   id: string;
@@ -167,6 +170,9 @@ export type StockMovement = {
   reasonText: string;
   sourceModule: string;
   createdAt: string | null;
+  updatedAt: string | null;
+  reviewStatus: StockMovementReviewStatus;
+  stockEffectApplied: boolean;
 };
 
 export type SiteArtSelectionOption = {
@@ -943,14 +949,6 @@ export async function loadStockLedgerModuleData(selectedMonth: string) {
   }
 }
 
-export async function createManualStockEntry(input: unknown) {
-  return saveManualStockMovement("entrada", input);
-}
-
-export async function createManualStockExit(input: unknown) {
-  return saveManualStockMovement("saida", input);
-}
-
 export async function updateManualStockMovement(id: string, input: unknown) {
   const supabase = createSupabaseServerClient();
 
@@ -1089,7 +1087,8 @@ function buildManualStockMovementPayload(
     throw new Error("Selecione a arte vendida para registrar a saida da camiseta.");
   }
 
-  const keepPlainStock = movementType === "saida" && row.alreadyPrinted;
+  const pendingSiteReview = movementType === "saida" && row.originType === "venda";
+  const keepPlainStock = movementType === "saida" && (row.alreadyPrinted || pendingSiteReview);
 
   return {
     sku: row.sku,
@@ -1105,15 +1104,22 @@ function buildManualStockMovementPayload(
     reasonCategory:
       movementType === "entrada"
         ? "entrada_manual_camiseta"
+        : pendingSiteReview
+          ? "saida_site_pendente_revisao"
         : keepPlainStock
           ? "saida_ja_estampada_sem_baixa"
           : "saida_manual_camiseta",
-    reasonText: keepPlainStock
+    reasonText: pendingSiteReview
+      ? [row.notes, "Venda do site aguardando conferencia manual antes da baixa."]
+          .filter(Boolean)
+          .join(" ")
+      : keepPlainStock
       ? [row.notes, "Ja estava estampada em outro lote; sem baixa da lisa."]
           .filter(Boolean)
           .join(" ")
       : row.notes,
     sourceModule: "estoque_manual",
+    reviewStatus: pendingSiteReview ? ("pendente" as const) : ("aprovado" as const),
   };
 }
 
@@ -1390,6 +1396,7 @@ function getStockMovementDelta(
     movementType: StockMovement["movementType"];
     quantity: number;
     reasonCategory?: string;
+    reviewStatus?: StockMovementReviewStatus;
     plainBefore?: number;
     plainAfter?: number;
   },
@@ -1399,7 +1406,12 @@ function getStockMovementDelta(
   }
 
   if (movement.movementType === "saida") {
-    return movement.reasonCategory === "saida_ja_estampada_sem_baixa" ? 0 : movement.quantity * -1;
+    return movement.reasonCategory === "saida_ja_estampada_sem_baixa" ||
+      movement.reasonCategory === "saida_site_pendente_revisao" ||
+      movement.reasonCategory === "saida_site_pendente_alerta" ||
+      movement.reviewStatus === "pendente"
+      ? 0
+      : movement.quantity * -1;
   }
 
   return (movement.plainAfter ?? 0) - (movement.plainBefore ?? 0);
@@ -1470,6 +1482,169 @@ export async function deleteManualStockMovement(id: string) {
   }
 }
 
+export async function createManualStockEntry(input: unknown) {
+  return saveManualStockMovement("entrada", input);
+}
+
+export async function createManualStockExit(input: unknown) {
+  return saveManualStockMovement("saida", input);
+}
+
+export async function reviewPendingStockMovement(movementId: string, input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const movementRecordId = String(movementId ?? "").trim();
+  const row = normalizeStockMovementReviewInput(input);
+
+  if (!movementRecordId) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Nao foi possivel identificar a saida para revisar."),
+    };
+  }
+
+  try {
+    const { data: movementData, error: movementError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_MOVEMENTS_TABLE)
+      .select("*")
+      .eq("id", movementRecordId)
+      .single();
+
+    if (movementError || !movementData) {
+      throw movementError || new Error("Nao foi possivel localizar essa saida no extrato.");
+    }
+
+    const currentMovement = rowToStockMovement(movementData as Record<string, unknown>);
+
+    if (currentMovement.movementType !== "saida") {
+      throw new Error("Apenas saidas podem ser revisadas por aqui.");
+    }
+
+    if (currentMovement.reviewStatus !== "pendente") {
+      throw new Error("Essa saida ja foi revisada. Se precisar, crie uma nova correcao manual.");
+    }
+
+    if (!row.sku || !row.color || !row.size) {
+      throw new Error("Selecione a base correta antes de aprovar ou ignorar a saida.");
+    }
+
+    if (row.quantity <= 0) {
+      throw new Error("Informe uma quantidade valida para concluir a revisao.");
+    }
+
+    const targetStockRow = await loadStockRowByBase(
+      supabase.client,
+      row.sku,
+      row.color,
+      row.size,
+    );
+    const targetPlainBefore = getPlainStockFromRow(targetStockRow);
+    const shouldApplyStock = row.decision === "aprovar" && row.deductFromStock && !row.alreadyPrinted;
+    let nextStockRow = targetStockRow;
+    let stockEffectApplied = false;
+    let reviewStatus: StockMovementReviewStatus =
+      row.decision === "ignorar" ? "ignorado" : "aprovado";
+    let reasonCategory = "saida_site_aprovada_sem_baixa";
+    let reasonText = row.notes;
+
+    if (shouldApplyStock) {
+      if (!targetStockRow?.id) {
+        throw new Error("Nao existe essa combinacao no estoque para aprovar a baixa.");
+      }
+
+      if (targetPlainBefore < row.quantity) {
+        throw new Error(
+          `Nao ha lisa suficiente para aprovar a baixa. Restam ${targetPlainBefore} unidades para ${row.sku} ${row.color} ${row.size}.`,
+        );
+      }
+
+      nextStockRow = await updateStockTotalQty(
+        supabase.client,
+        String(targetStockRow.id),
+        Math.max(getIntegerValue(targetStockRow.total_qty) - row.quantity, 0),
+      );
+      stockEffectApplied = true;
+      reasonCategory = "saida_manual_camiseta";
+      reasonText = row.notes;
+    } else if (row.alreadyPrinted) {
+      reasonCategory = "saida_ja_estampada_sem_baixa";
+      reasonText = [row.notes, "Ja estava estampada em outro lote; sem baixa da lisa."]
+        .filter(Boolean)
+        .join(" ");
+    } else if (row.decision === "ignorar") {
+      reasonCategory = "saida_site_ignorada";
+      reasonText = [row.notes, "Movimentacao ignorada apos conferencia manual."]
+        .filter(Boolean)
+        .join(" ");
+    } else {
+      reasonCategory = "saida_site_aprovada_sem_baixa";
+      reasonText = [row.notes, "Saida aprovada sem baixa no estoque."]
+        .filter(Boolean)
+        .join(" ");
+    }
+
+    const plainBefore = shouldApplyStock ? targetPlainBefore : targetPlainBefore;
+    const plainAfter = shouldApplyStock ? getPlainStockFromRow(nextStockRow) : targetPlainBefore;
+    const updatedAt = new Date().toISOString();
+    const { data: updatedMovementData, error: updatedMovementError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_MOVEMENTS_TABLE)
+      .update({
+        stock_item_id: nextStockRow?.id ? String(nextStockRow.id) : null,
+        sku: row.sku,
+        color: row.color,
+        size: row.size,
+        quantity: row.quantity,
+        plain_before: plainBefore,
+        plain_after: plainAfter,
+        origin_reference: row.originReference,
+        reason_category: reasonCategory,
+        reason_text: reasonText,
+        review_status: reviewStatus,
+        stock_effect_applied: stockEffectApplied,
+        updated_at: updatedAt,
+      })
+      .eq("id", movementRecordId)
+      .select("*")
+      .single();
+
+    if (updatedMovementError || !updatedMovementData) {
+      throw updatedMovementError || new Error("Nao foi possivel concluir a revisao da saida.");
+    }
+
+    return {
+      ok: true as const,
+      movement: rowToStockMovement(updatedMovementData as Record<string, unknown>),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          row.decision === "ignorar"
+            ? "Saida ignorada no extrato, sem baixar o estoque."
+            : stockEffectApplied
+              ? "Saida aprovada e baixada no estoque."
+              : "Saida aprovada sem baixa no estoque.",
+        updatedAt,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
 async function saveManualStockMovement(
   movementType: "entrada" | "saida",
   input: unknown,
@@ -1523,9 +1698,18 @@ async function saveManualStockMovement(
     const previousTotal = getIntegerValue(existingRow?.total_qty);
     const previousPrinted = Math.min(getIntegerValue(existingRow?.printed_qty), previousTotal);
     const previousPlain = Math.max(previousTotal - previousPrinted, 0);
+    const requiresManualReview =
+      movementPayload.movementType === "saida" &&
+      movementPayload.reviewStatus === "pendente";
+    const hasInsufficientPlain =
+      movementPayload.movementType === "saida" && previousPlain < movementPayload.quantity;
     const keepPlainStock = getStockMovementDelta(movementPayload) === 0;
 
-    if (movementType === "saida" && !keepPlainStock && previousPlain < row.quantity) {
+    if (
+      movementPayload.movementType === "saida" &&
+      !keepPlainStock &&
+      previousPlain < movementPayload.quantity
+    ) {
       throw new Error(
         `Nao ha lisa suficiente em estoque. Restam ${previousPlain} unidades para ${row.sku} ${row.color} ${row.size}.`,
       );
@@ -1533,9 +1717,9 @@ async function saveManualStockMovement(
 
     const nextTotal = keepPlainStock
       ? previousTotal
-      : movementType === "entrada"
-        ? previousTotal + row.quantity
-        : previousTotal - row.quantity;
+      : movementPayload.movementType === "entrada"
+        ? previousTotal + movementPayload.quantity
+        : previousTotal - movementPayload.quantity;
 
     let persistedRow = existingRow ?? null;
 
@@ -1574,8 +1758,25 @@ async function saveManualStockMovement(
 
     const nextTotalValue = getIntegerValue(persistedRow?.total_qty);
     const nextPrinted = Math.min(getIntegerValue(persistedRow?.printed_qty), nextTotalValue);
-    const nextPlain = Math.max(nextTotalValue - nextPrinted, 0);
+    const nextPlain = keepPlainStock ? previousPlain : Math.max(nextTotalValue - nextPrinted, 0);
     const stockItemId = String(persistedRow?.id ?? existingRow?.id ?? "");
+    const reviewStatus: StockMovementReviewStatus = movementPayload.reviewStatus;
+    const stockEffectApplied =
+      movementPayload.movementType === "entrada" ? true : keepPlainStock ? false : true;
+    const reasonCategory =
+      requiresManualReview && hasInsufficientPlain
+        ? "saida_site_pendente_alerta"
+        : movementPayload.reasonCategory;
+    const reasonText = requiresManualReview
+      ? [
+          row.notes,
+          hasInsufficientPlain
+            ? `Alerta: faltam ${movementPayload.quantity - previousPlain} unidades para confirmar essa baixa no estoque.`
+            : "Venda do site aguardando conferencia manual antes da baixa.",
+        ]
+          .filter(Boolean)
+          .join(" ")
+      : movementPayload.reasonText;
 
     await createStockMovement(supabase.client, {
       stockItemId,
@@ -1591,9 +1792,11 @@ async function saveManualStockMovement(
       artProductId: movementPayload.artProductId,
       originType: movementPayload.originType,
       originReference: movementPayload.originReference,
-      reasonCategory: movementPayload.reasonCategory,
-      reasonText: movementPayload.reasonText,
+      reasonCategory,
+      reasonText,
       sourceModule: movementPayload.sourceModule,
+      reviewStatus,
+      stockEffectApplied,
     });
 
     return {
@@ -1614,9 +1817,13 @@ async function saveManualStockMovement(
         message:
           movementType === "entrada"
             ? "Entrada de camisetas registrada com sucesso."
+            : requiresManualReview
+              ? hasInsufficientPlain
+                ? "Saida do site registrada em alerta. Revise a base antes de aprovar a baixa."
+                : "Saida do site registrada para revisao manual antes da baixa."
             : keepPlainStock
               ? "Saida registrada como ja estampada, sem baixar a lisa."
-            : "Saida de camisetas registrada com sucesso.",
+              : "Saida de camisetas registrada com sucesso.",
         updatedAt: typeof persistedRow?.updated_at === "string" ? persistedRow.updated_at : null,
       },
     };
@@ -2356,6 +2563,10 @@ function rowToStockItem(
 }
 
 function rowToStockMovement(row: Record<string, unknown>): StockMovement {
+  const movementType = normalizeStockMovementType(row.movement_type);
+  const plainBefore = Math.max(getIntegerValue(row.plain_before), 0);
+  const plainAfter = Math.max(getIntegerValue(row.plain_after), 0);
+
   return {
     id: String(row.id ?? ""),
     stockItemId: row.stock_item_id ? String(row.stock_item_id) : null,
@@ -2363,10 +2574,10 @@ function rowToStockMovement(row: Record<string, unknown>): StockMovement {
     color: String(row.color ?? ""),
     size: String(row.size ?? ""),
     movementDate: normalizeDate(row.movement_date) || getTodayDate(),
-    movementType: normalizeStockMovementType(row.movement_type),
+    movementType,
     quantity: Math.max(getIntegerValue(row.quantity), 0),
-    plainBefore: Math.max(getIntegerValue(row.plain_before), 0),
-    plainAfter: Math.max(getIntegerValue(row.plain_after), 0),
+    plainBefore,
+    plainAfter,
     artName: String(row.art_name ?? "").trim(),
     artProductId: String(row.art_product_id ?? "").trim(),
     originType: String(row.origin_type ?? "").trim(),
@@ -2375,6 +2586,14 @@ function rowToStockMovement(row: Record<string, unknown>): StockMovement {
     reasonText: String(row.reason_text ?? "").trim(),
     sourceModule: String(row.source_module ?? "").trim(),
     createdAt: typeof row.created_at === "string" ? row.created_at : null,
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+    reviewStatus: normalizeStockMovementReviewStatus(row.review_status),
+    stockEffectApplied:
+      typeof row.stock_effect_applied === "boolean"
+        ? row.stock_effect_applied
+        : movementType === "entrada"
+          ? true
+          : plainBefore !== plainAfter,
   };
 }
 
@@ -2532,6 +2751,23 @@ function normalizeManualStockMovementInput(
         alreadyPrintedValue === "yes"),
     notes: String(source.notes ?? "").trim(),
     movementType,
+  };
+}
+
+function normalizeStockMovementReviewInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+  const decisionValue = String(source.decision ?? "aprovar").trim().toLowerCase();
+
+  return {
+    sku: String(source.sku ?? "").trim(),
+    color: String(source.color ?? "").trim(),
+    size: String(source.size ?? "").trim(),
+    quantity: Math.max(getIntegerValue(source.quantity), 0),
+    originReference: String(source.originReference ?? "").trim(),
+    notes: String(source.notes ?? "").trim(),
+    alreadyPrinted: isTruthy(source.alreadyPrinted),
+    deductFromStock: isTruthy(source.deductFromStock),
+    decision: decisionValue === "ignorar" || decisionValue === "ignore" ? "ignorar" : "aprovar",
   };
 }
 
@@ -3358,6 +3594,10 @@ function normalizeColor(value: string) {
     return "roxo";
   }
 
+  if (normalized === "rosa" || normalized === "pink") {
+    return "rosa";
+  }
+
   if (
     normalized === "avela" ||
     normalized === "avelã" ||
@@ -3421,8 +3661,19 @@ function isKnownColorValue(value: string) {
     normalized === "preto" ||
     normalized === "branco" ||
     normalized === "roxo" ||
+    normalized === "rosa" ||
     normalized === "avela"
   );
+}
+
+function normalizeStockMovementReviewStatus(value: unknown): StockMovementReviewStatus {
+  const normalized = String(value ?? "").trim().toLowerCase();
+
+  if (normalized === "pendente" || normalized === "ignorado") {
+    return normalized;
+  }
+
+  return "aprovado";
 }
 
 function isKnownSizeValue(value: string) {
@@ -3781,11 +4032,7 @@ function getLatestUpdatedAt(rows: Array<Record<string, unknown>>) {
 }
 
 async function createStockMovement(
-  client: ReturnType<typeof createSupabaseServerClient> extends infer T
-    ? T extends { ok: true; client: infer C }
-      ? C
-      : never
-    : never,
+  client: OperationsSupabaseClient,
   movement: {
     stockItemId: string;
     sku: string;
@@ -3803,6 +4050,8 @@ async function createStockMovement(
     reasonCategory: string;
     reasonText: string;
     sourceModule: string;
+    reviewStatus?: StockMovementReviewStatus;
+    stockEffectApplied?: boolean;
   },
 ) {
   const { error } = await client
@@ -3825,11 +4074,83 @@ async function createStockMovement(
       reason_category: movement.reasonCategory || "ajuste_manual",
       reason_text: movement.reasonText,
       source_module: movement.sourceModule || "estoque",
+      review_status: movement.reviewStatus || "aprovado",
+      stock_effect_applied:
+        typeof movement.stockEffectApplied === "boolean"
+          ? movement.stockEffectApplied
+          : movement.movementType === "entrada",
+      updated_at: new Date().toISOString(),
     });
 
   if (error) {
     throw error;
   }
+}
+
+async function loadStockRowByBase(
+  client: OperationsSupabaseClient,
+  sku: string,
+  color: string,
+  size: string,
+) {
+  const { data, error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(STOCK_TABLE)
+    .select("*")
+    .eq("sku", sku)
+    .eq("color", color)
+    .eq("size", size)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data as Record<string, unknown> | null;
+}
+
+async function updateStockTotalQty(
+  client: OperationsSupabaseClient,
+  stockItemId: string,
+  totalQty: number,
+) {
+  const { data, error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(STOCK_TABLE)
+    .update({
+      total_qty: Math.max(totalQty, 0),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", stockItemId)
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    throw error || new Error("Nao foi possivel atualizar o saldo dessa base.");
+  }
+
+  return data as Record<string, unknown>;
+}
+
+function getPlainStockFromRow(row: Record<string, unknown> | null) {
+  if (!row) {
+    return 0;
+  }
+
+  const total = getIntegerValue(row.total_qty);
+  const printed = Math.min(getIntegerValue(row.printed_qty), total);
+  return Math.max(total - printed, 0);
+}
+
+function isTruthy(value: unknown) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return (
+    normalized === "true" ||
+    normalized === "1" ||
+    normalized === "on" ||
+    normalized === "yes" ||
+    normalized === "sim"
+  );
 }
 
 function buildDisabledState(message: string): OperationalPersistenceState {
