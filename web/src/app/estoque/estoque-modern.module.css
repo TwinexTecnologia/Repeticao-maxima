@@ -1,0 +1,314 @@
+.dashboardHero {
+  display: grid;
+  gap: 18px;
+}
+
+.dashboardTopbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.dashboardHeading {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.dashboardHeading h2 {
+  margin: 0;
+  font-size: clamp(2rem, 3vw, 2.5rem);
+  line-height: 1.05;
+  color: #25143a;
+}
+
+.dashboardHeading p {
+  margin: 0;
+  max-width: 760px;
+  color: #6f5b82;
+  line-height: 1.6;
+}
+
+.periodCard {
+  min-width: 260px;
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(123, 44, 191, 0.08);
+  box-shadow: 0 14px 30px rgba(88, 28, 135, 0.08);
+}
+
+.periodField {
+  display: grid;
+  gap: 8px;
+}
+
+.periodField span {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #6f5b82;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.periodField input {
+  width: 100%;
+}
+
+.periodActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.kpiGrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.kpiCard {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  min-height: 128px;
+  padding: 18px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(123, 44, 191, 0.08);
+  box-shadow: 0 14px 30px rgba(88, 28, 135, 0.08);
+}
+
+.kpiCardPositive .kpiIcon {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.18);
+}
+
+.kpiCardCritical .kpiIcon {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.16);
+}
+
+.kpiIcon {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+  color: #7b2cbf;
+  background: rgba(123, 44, 191, 0.1);
+  border: 1px solid rgba(123, 44, 191, 0.12);
+}
+
+.kpiIcon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.kpiBody {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.kpiLabel {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #58446f;
+}
+
+.kpiValue {
+  font-size: clamp(1.8rem, 2vw, 2.3rem);
+  line-height: 1;
+  color: #201130;
+}
+
+.kpiHint {
+  color: #7a668d;
+  line-height: 1.45;
+  font-size: 0.9rem;
+}
+
+.summaryGrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.95fr);
+}
+
+.summaryCard {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(123, 44, 191, 0.08);
+  box-shadow: 0 14px 30px rgba(88, 28, 135, 0.08);
+}
+
+.summaryHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.summaryHeader h3 {
+  margin: 0;
+  font-size: 1.35rem;
+  color: #25143a;
+}
+
+.summaryHeader p {
+  margin: 6px 0 0;
+  color: #766389;
+  line-height: 1.5;
+}
+
+.colorGrid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.colorCard {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 16px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(249, 245, 255, 0.92));
+  border: 1px solid rgba(123, 44, 191, 0.08);
+}
+
+.colorSwatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.45);
+}
+
+.swatchBlack {
+  background: linear-gradient(135deg, #1d1d1f, #4b5563);
+}
+
+.swatchWhite {
+  background: linear-gradient(135deg, #ffffff, #e7e5f4);
+  border: 1px solid rgba(123, 44, 191, 0.18);
+}
+
+.swatchPurple {
+  background: linear-gradient(135deg, #7b2cbf, #a855f7);
+}
+
+.swatchPink {
+  background: linear-gradient(135deg, #ec4899, #fb7185);
+}
+
+.colorBody {
+  display: grid;
+  gap: 2px;
+}
+
+.colorBody strong {
+  color: #312043;
+  font-size: 0.96rem;
+}
+
+.colorBody span {
+  font-size: 1.6rem;
+  line-height: 1;
+  font-weight: 800;
+  color: #201130;
+}
+
+.colorBody small {
+  color: #81708f;
+}
+
+.actionStack {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.actionButton {
+  min-width: 168px;
+  justify-content: center;
+}
+
+.actionDanger {
+  color: #dc2626;
+  border-color: rgba(239, 68, 68, 0.28);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.metaRow {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.metaBadge {
+  padding: 9px 12px;
+  border-radius: 999px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #5f447b;
+  background: rgba(123, 44, 191, 0.08);
+  border: 1px solid rgba(123, 44, 191, 0.12);
+}
+
+@media (max-width: 1320px) {
+  .kpiGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 960px) {
+  .dashboardTopbar {
+    flex-direction: column;
+  }
+
+  .periodCard {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .colorGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .dashboardHeading h2 {
+    font-size: 1.7rem;
+  }
+
+  .kpiGrid,
+  .colorGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .kpiCard {
+    min-height: 0;
+  }
+
+  .actionStack {
+    flex-direction: column;
+  }
+
+  .actionButton {
+    width: 100%;
+  }
+}
