@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
 import styles from "@/components/panel.module.css";
+import modernStyles from "./estoque-modern.module.css";
 import {
   createManualStockEntry,
   createManualStockExit,
@@ -329,6 +330,83 @@ function buildLowStockLabel(item: StockSelectionOption) {
   return `${item.sku} · ${item.color} · ${item.size}`;
 }
 
+function formatPiecesPerOrder(value: number) {
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function MetricIcon({ kind }: { kind: "stock" | "art" | "alert" | "sales" | "orders" }) {
+  if (kind === "stock") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M12 3L19 7V17L12 21L5 17V7L12 3Z"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinejoin="round"
+        />
+        <path d="M5 7L12 11L19 7" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+        <path d="M12 11V21" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+
+  if (kind === "art") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M7 5.5H17V9.5C17 11.7 15.2 13.5 13 13.5H11C8.8 13.5 7 11.7 7 9.5V5.5Z"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinejoin="round"
+        />
+        <path d="M9 20H15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M12 13.5V20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  if (kind === "alert") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M12 4L21 20H3L12 4Z"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinejoin="round"
+        />
+        <path d="M12 9V13.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M12 17H12.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  if (kind === "sales") {
+    return (
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M6.5 7.5H17.5L20 10L12 18L4 10L6.5 7.5Z"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinejoin="round"
+        />
+        <path d="M9.5 7.5L12 18L14.5 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M6 18V10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M12 18V6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M18 18V13" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M4 20H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export default async function EstoquePage({ searchParams }: PageProps) {
   const resolvedSearchParams = (await searchParams) || {};
   const selectedMonth = getSelectedMonth(resolvedSearchParams);
@@ -351,6 +429,15 @@ export default async function EstoquePage({ searchParams }: PageProps) {
     (sum, movement) => sum + (movement.movementType === "saida" ? movement.quantity : 0),
     0,
   );
+  const siteSaleMovements = stockData.movements.filter(
+    (movement) => movement.movementType === "saida" && movement.originType === "venda",
+  );
+  const soldPiecesInMonth = siteSaleMovements.reduce((sum, movement) => sum + movement.quantity, 0);
+  const soldOrdersCount = new Set(
+    siteSaleMovements.map((movement) => movement.originReference || movement.id),
+  ).size;
+  const piecesPerOrder = soldOrdersCount > 0 ? soldPiecesInMonth / soldOrdersCount : 0;
+  const artModelCount = stockData.artOptions.length;
   const pendingSiteExits = stockData.movements.filter(
     (movement) => movement.movementType === "saida" && movement.reviewStatus === "pendente",
   );
@@ -377,95 +464,170 @@ export default async function EstoquePage({ searchParams }: PageProps) {
       currentPath="/estoque"
     >
       <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <div className={styles.sectionTitle}>Estoque de camisetas</div>
-            <p className={styles.sectionSubtitle}>
-              Aqui a baixa da venda do site fica pendente para conferencia. Se a variacao vendida
-              nao existir ou estiver sem lisa, o sistema registra um alerta para voce corrigir,
-              aprovar sem baixa ou ignorar.
-            </p>
+        <div className={modernStyles.dashboardHero}>
+          <div className={modernStyles.dashboardTopbar}>
+            <div className={modernStyles.dashboardHeading}>
+              <h2>Estoque de camisetas</h2>
+              <p>
+                Controle por modelo, arte, cor e tamanho. Adicione entradas, registre saidas e
+                acompanhe o estoque em tempo real.
+              </p>
+            </div>
+
+            <form className={modernStyles.periodCard} method="get">
+              <label className={modernStyles.periodField}>
+                <span>Competencia</span>
+                <input type="month" name="month" defaultValue={selectedMonth} />
+              </label>
+              <div className={modernStyles.periodActions}>
+                <button type="submit" className={styles.primaryButton}>
+                  Atualizar
+                </button>
+              </div>
+            </form>
           </div>
-          <div className={styles.chipRow}>
-            <span className={styles.chip}>Competencia: {monthLabel}</span>
-            <span className={styles.chip}>Lisas em estoque: {String(totalPlainStock)}</span>
-            <span className={styles.chip}>Alertas pendentes: {String(pendingSiteExits.length)}</span>
-            <span className={styles.chip}>
-              Estoque baixo: {String(lowStockItems.length)} variacoes com {LOW_STOCK_THRESHOLD} ou menos
-            </span>
-            <span className={styles.chip}>
-              Estoque critico: {String(criticalLowStockItems.length)} variacoes com{" "}
-              {CRITICAL_LOW_STOCK_THRESHOLD} ou menos
-            </span>
+
+          <div className={modernStyles.kpiGrid}>
+            <article className={`${modernStyles.kpiCard} ${modernStyles.kpiCardPositive}`}>
+              <div className={modernStyles.kpiIcon}>
+                <MetricIcon kind="stock" />
+              </div>
+              <div className={modernStyles.kpiBody}>
+                <span className={modernStyles.kpiLabel}>Pecas em estoque</span>
+                <strong className={modernStyles.kpiValue}>{String(totalPlainStock)}</strong>
+                <span className={modernStyles.kpiHint}>Bases lisas disponiveis agora</span>
+              </div>
+            </article>
+
+            <article className={modernStyles.kpiCard}>
+              <div className={modernStyles.kpiIcon}>
+                <MetricIcon kind="art" />
+              </div>
+              <div className={modernStyles.kpiBody}>
+                <span className={modernStyles.kpiLabel}>Modelos/estampas</span>
+                <strong className={modernStyles.kpiValue}>{String(artModelCount)}</strong>
+                <span className={modernStyles.kpiHint}>Estampas prontas para saida</span>
+              </div>
+            </article>
+
+            <article className={`${modernStyles.kpiCard} ${modernStyles.kpiCardCritical}`}>
+              <div className={modernStyles.kpiIcon}>
+                <MetricIcon kind="alert" />
+              </div>
+              <div className={modernStyles.kpiBody}>
+                <span className={modernStyles.kpiLabel}>Estoque critico</span>
+                <strong className={modernStyles.kpiValue}>{String(criticalLowStockItems.length)}</strong>
+                <span className={modernStyles.kpiHint}>
+                  Abaixo de {CRITICAL_LOW_STOCK_THRESHOLD + 1} pecas
+                </span>
+              </div>
+            </article>
+
+            <article className={modernStyles.kpiCard}>
+              <div className={modernStyles.kpiIcon}>
+                <MetricIcon kind="sales" />
+              </div>
+              <div className={modernStyles.kpiBody}>
+                <span className={modernStyles.kpiLabel}>Pecas vendidas no mes</span>
+                <strong className={modernStyles.kpiValue}>{String(soldPiecesInMonth)}</strong>
+                <span className={modernStyles.kpiHint}>{String(soldOrdersCount)} pedidos de venda</span>
+              </div>
+            </article>
+
+            <article className={modernStyles.kpiCard}>
+              <div className={modernStyles.kpiIcon}>
+                <MetricIcon kind="orders" />
+              </div>
+              <div className={modernStyles.kpiBody}>
+                <span className={modernStyles.kpiLabel}>Pecas por pedido</span>
+                <strong className={modernStyles.kpiValue}>{formatPiecesPerOrder(piecesPerOrder)}</strong>
+                <span className={modernStyles.kpiHint}>
+                  Media nas saidas de venda do mes
+                </span>
+              </div>
+            </article>
           </div>
-        </div>
 
-        <div className={styles.metricGrid}>
-          <article className={styles.metricCard}>
-            <div className={styles.metricLabel}>Lisas em estoque</div>
-            <div className={styles.metricValue}>{String(totalPlainStock)}</div>
-            <div className={styles.metricHint}>Saldo total das bases fisicas</div>
-          </article>
+          <div className={modernStyles.summaryGrid}>
+            <article className={modernStyles.summaryCard}>
+              <div className={modernStyles.summaryHeader}>
+                <div>
+                  <h3>Estoque por cor (camisetas lisas)</h3>
+                  <p>Resumo rapido das bases fisicas disponiveis por cor.</p>
+                </div>
+              </div>
 
-          <article className={styles.metricCard}>
-            <div className={styles.metricLabel}>Preta</div>
-            <div className={styles.metricValue}>
-              {String(sumPlainStockByColor(stockData.stockOptions, "Preta"))}
-            </div>
-            <div className={styles.metricHint}>Saldo liso total da cor preta</div>
-          </article>
+              <div className={modernStyles.colorGrid}>
+                {[
+                  {
+                    label: "Preta",
+                    value: sumPlainStockByColor(stockData.stockOptions, "Preta"),
+                    swatchClass: modernStyles.swatchBlack,
+                  },
+                  {
+                    label: "Branca",
+                    value: sumPlainStockByColor(stockData.stockOptions, "Branca"),
+                    swatchClass: modernStyles.swatchWhite,
+                  },
+                  {
+                    label: "Roxa",
+                    value: sumPlainStockByColor(stockData.stockOptions, "Roxa"),
+                    swatchClass: modernStyles.swatchPurple,
+                  },
+                  {
+                    label: "Rosa",
+                    value: sumPlainStockByColor(stockData.stockOptions, "Rosa"),
+                    swatchClass: modernStyles.swatchPink,
+                  },
+                ].map((item) => (
+                  <article key={item.label} className={modernStyles.colorCard}>
+                    <span className={`${modernStyles.colorSwatch} ${item.swatchClass}`} />
+                    <div className={modernStyles.colorBody}>
+                      <strong>{item.label}</strong>
+                      <span>{String(item.value)}</span>
+                      <small>pecas</small>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </article>
 
-          <article className={styles.metricCard}>
-            <div className={styles.metricLabel}>Branca</div>
-            <div className={styles.metricValue}>
-              {String(sumPlainStockByColor(stockData.stockOptions, "Branca"))}
-            </div>
-            <div className={styles.metricHint}>Saldo liso total da cor branca</div>
-          </article>
+            <article className={modernStyles.summaryCard}>
+              <div className={modernStyles.summaryHeader}>
+                <div>
+                  <h3>Acoes rapidas</h3>
+                  <p>Pulos diretos para as acoes operacionais mais usadas.</p>
+                </div>
+              </div>
 
-          <article className={styles.metricCard}>
-            <div className={styles.metricLabel}>Roxa</div>
-            <div className={styles.metricValue}>
-              {String(sumPlainStockByColor(stockData.stockOptions, "Roxa"))}
-            </div>
-            <div className={styles.metricHint}>Saldo liso total da cor roxa</div>
-          </article>
+              <div className={modernStyles.actionStack}>
+                <a href="#entrada-estoque" className={`${styles.primaryButton} ${modernStyles.actionButton}`}>
+                  + Entrada de estoque
+                </a>
+                <a href="#baixa-manual" className={`${styles.secondaryButton} ${modernStyles.actionButton} ${modernStyles.actionDanger}`}>
+                  - Baixa manual
+                </a>
+                <a href="#saldo-atual" className={`${styles.secondaryButton} ${modernStyles.actionButton}`}>
+                  Ajustar estoque
+                </a>
+              </div>
 
-          <article className={styles.metricCard}>
-            <div className={styles.metricLabel}>Rosa</div>
-            <div className={styles.metricValue}>
-              {String(sumPlainStockByColor(stockData.stockOptions, "Rosa"))}
-            </div>
-            <div className={styles.metricHint}>Saldo liso total da cor rosa</div>
-          </article>
-
-          <article className={styles.metricCard}>
-            <div className={styles.metricLabel}>Saidas do mes</div>
-            <div className={styles.metricValue}>{String(totalExits)}</div>
-            <div className={styles.metricHint}>Lancamentos feitos no extrato deste mes</div>
-          </article>
-
-          <article className={styles.metricCard}>
-            <div className={styles.metricLabel}>Entradas do mes</div>
-            <div className={styles.metricValue}>{String(totalEntries)}</div>
-            <div className={styles.metricHint}>Reposicoes e ajustes adicionados manualmente</div>
-          </article>
-
-          <article className={styles.metricCard}>
-            <div className={styles.metricLabel}>Estoque baixo</div>
-            <div className={styles.metricValue}>{String(lowStockItems.length)}</div>
-            <div className={styles.metricHint}>
-              Variacoes com {LOW_STOCK_THRESHOLD} ou menos camisetas lisas
-            </div>
-          </article>
-
-          <article className={styles.metricCard}>
-            <div className={styles.metricLabel}>Estoque critico</div>
-            <div className={styles.metricValue}>{String(criticalLowStockItems.length)}</div>
-            <div className={styles.metricHint}>
-              Variacoes com {CRITICAL_LOW_STOCK_THRESHOLD} ou menos camisetas lisas
-            </div>
-          </article>
+              <div className={modernStyles.metaRow}>
+                <span className={modernStyles.metaBadge}>
+                  Alertas pendentes: {String(pendingSiteExits.length)}
+                </span>
+                <span className={modernStyles.metaBadge}>
+                  Estoque baixo: {String(lowStockItems.length)}
+                </span>
+                <span className={modernStyles.metaBadge}>
+                  Entradas do mes: {String(totalEntries)}
+                </span>
+                <span className={modernStyles.metaBadge}>
+                  Saidas do mes: {String(totalExits)}
+                </span>
+              </div>
+            </article>
+          </div>
         </div>
 
         {criticalLowStockItems.length > 0 ? (
@@ -533,7 +695,7 @@ export default async function EstoquePage({ searchParams }: PageProps) {
         </div>
 
         <div className={styles.configGrid}>
-          <article className={styles.configCard}>
+          <article className={styles.configCard} id="entrada-estoque">
             <div className={styles.listTitle}>Adicionar ao estoque</div>
             <p className={styles.sectionSubtitle}>
               Use aqui para chegada de lote, devolucao ou correcao de quantidade fisica.
@@ -602,7 +764,7 @@ export default async function EstoquePage({ searchParams }: PageProps) {
             </form>
           </article>
 
-          <article className={styles.configCard}>
+          <article className={styles.configCard} id="baixa-manual">
             <div className={styles.listTitle}>Registrar saida manual</div>
             <p className={styles.sectionSubtitle}>
               Quando a origem for venda, a saida entra pendente para voce revisar antes de baixar o
@@ -705,7 +867,7 @@ export default async function EstoquePage({ searchParams }: PageProps) {
         </div>
       </section>
 
-      <section className={styles.section}>
+      <section className={styles.section} id="saldo-atual">
         <div className={styles.sectionHeader}>
           <div>
             <div className={styles.sectionTitle}>Saidas do site para revisar</div>
