@@ -28,6 +28,8 @@ const EXIT_ORIGINS = [
   "amostra",
   "ajuste",
 ] as const;
+const LOW_STOCK_THRESHOLD = 5;
+const CRITICAL_LOW_STOCK_THRESHOLD = 2;
 
 type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -323,6 +325,10 @@ function sumPlainStockByColor(stockOptions: StockSelectionOption[], color: strin
   }, 0);
 }
 
+function buildLowStockLabel(item: StockSelectionOption) {
+  return `${item.sku} · ${item.color} · ${item.size}`;
+}
+
 export default async function EstoquePage({ searchParams }: PageProps) {
   const resolvedSearchParams = (await searchParams) || {};
   const selectedMonth = getSelectedMonth(resolvedSearchParams);
@@ -348,6 +354,21 @@ export default async function EstoquePage({ searchParams }: PageProps) {
   const pendingSiteExits = stockData.movements.filter(
     (movement) => movement.movementType === "saida" && movement.reviewStatus === "pendente",
   );
+  const lowStockItems = [...stockData.stockOptions]
+    .filter((item) => item.plain <= LOW_STOCK_THRESHOLD)
+    .sort((left, right) => {
+      if (left.plain !== right.plain) {
+        return left.plain - right.plain;
+      }
+
+      return buildLowStockLabel(left).localeCompare(buildLowStockLabel(right));
+    });
+  const criticalLowStockItems = lowStockItems.filter(
+    (item) => item.plain <= CRITICAL_LOW_STOCK_THRESHOLD,
+  );
+  const warningLowStockItems = lowStockItems.filter(
+    (item) => item.plain > CRITICAL_LOW_STOCK_THRESHOLD,
+  );
 
   return (
     <AppShell
@@ -369,6 +390,13 @@ export default async function EstoquePage({ searchParams }: PageProps) {
             <span className={styles.chip}>Competencia: {monthLabel}</span>
             <span className={styles.chip}>Lisas em estoque: {String(totalPlainStock)}</span>
             <span className={styles.chip}>Alertas pendentes: {String(pendingSiteExits.length)}</span>
+            <span className={styles.chip}>
+              Estoque baixo: {String(lowStockItems.length)} variacoes com {LOW_STOCK_THRESHOLD} ou menos
+            </span>
+            <span className={styles.chip}>
+              Estoque critico: {String(criticalLowStockItems.length)} variacoes com{" "}
+              {CRITICAL_LOW_STOCK_THRESHOLD} ou menos
+            </span>
           </div>
         </div>
 
@@ -422,7 +450,66 @@ export default async function EstoquePage({ searchParams }: PageProps) {
             <div className={styles.metricValue}>{String(totalEntries)}</div>
             <div className={styles.metricHint}>Reposicoes e ajustes adicionados manualmente</div>
           </article>
+
+          <article className={styles.metricCard}>
+            <div className={styles.metricLabel}>Estoque baixo</div>
+            <div className={styles.metricValue}>{String(lowStockItems.length)}</div>
+            <div className={styles.metricHint}>
+              Variacoes com {LOW_STOCK_THRESHOLD} ou menos camisetas lisas
+            </div>
+          </article>
+
+          <article className={styles.metricCard}>
+            <div className={styles.metricLabel}>Estoque critico</div>
+            <div className={styles.metricValue}>{String(criticalLowStockItems.length)}</div>
+            <div className={styles.metricHint}>
+              Variacoes com {CRITICAL_LOW_STOCK_THRESHOLD} ou menos camisetas lisas
+            </div>
+          </article>
         </div>
+
+        {criticalLowStockItems.length > 0 ? (
+          <div className={styles.warningPanel}>
+            <h3>Estoque critico por variacao</h3>
+            <p>
+              Estas bases ja chegaram em {CRITICAL_LOW_STOCK_THRESHOLD} ou menos pecas lisas e
+              precisam de atencao primeiro.
+            </p>
+            <div className={styles.chipRow}>
+              {criticalLowStockItems.map((item) => (
+                <span key={item.id} className={styles.chip}>
+                  {buildLowStockLabel(item)} · saldo {String(item.plain)}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {warningLowStockItems.length > 0 ? (
+          <div className={styles.warningPanel}>
+            <h3>Estoque baixo por variacao</h3>
+            <p>
+              Entram aqui todas as bases com {LOW_STOCK_THRESHOLD} ou menos pecas lisas. Isso vale
+              por modelo, cor e numeracao.
+            </p>
+            <div className={styles.chipRow}>
+              {warningLowStockItems.map((item) => (
+                <span key={item.id} className={styles.chip}>
+                  {buildLowStockLabel(item)} · saldo {String(item.plain)}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {lowStockItems.length === 0 ? (
+          <div className={styles.callout}>
+            <h3>Sem estoque baixo agora</h3>
+            <p>
+              Nenhuma variacao esta com {LOW_STOCK_THRESHOLD} ou menos camisetas lisas no momento.
+            </p>
+          </div>
+        ) : null}
       </section>
 
       <section className={styles.section}>
