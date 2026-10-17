@@ -166,11 +166,22 @@ CREATE TABLE IF NOT EXISTS repeticao_maxima.estoque_movimentacoes (
   reason_category TEXT NOT NULL DEFAULT 'ajuste_manual',
   reason_text TEXT NOT NULL DEFAULT '',
   source_module TEXT NOT NULL DEFAULT 'estoque',
+  review_status TEXT NOT NULL DEFAULT 'aprovado',
+  stock_effect_applied BOOLEAN NOT NULL DEFAULT TRUE,
+  correction_root_id UUID REFERENCES repeticao_maxima.estoque_movimentacoes(id) ON DELETE SET NULL,
+  correction_parent_id UUID REFERENCES repeticao_maxima.estoque_movimentacoes(id) ON DELETE SET NULL,
+  correction_role TEXT NOT NULL DEFAULT 'original',
+  correction_note TEXT NOT NULL DEFAULT '',
+  correction_request_token TEXT,
+  reversed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CHECK (movement_type IN ('entrada', 'saida', 'ajuste')),
   CHECK (quantity >= 0),
   CHECK (plain_before >= 0),
-  CHECK (plain_after >= 0)
+  CHECK (plain_after >= 0),
+  CHECK (review_status IN ('aprovado', 'pendente', 'ignorado')),
+  CHECK (correction_role IN ('original', 'estorno', 'correcao'))
 );
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON repeticao_maxima.estoque_movimentacoes TO anon, authenticated, service_role;
@@ -180,7 +191,16 @@ ALTER TABLE repeticao_maxima.estoque_movimentacoes
   ADD COLUMN IF NOT EXISTS art_name TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS art_product_id TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS origin_type TEXT NOT NULL DEFAULT 'manual',
-  ADD COLUMN IF NOT EXISTS origin_reference TEXT NOT NULL DEFAULT '';
+  ADD COLUMN IF NOT EXISTS origin_reference TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS review_status TEXT NOT NULL DEFAULT 'aprovado',
+  ADD COLUMN IF NOT EXISTS stock_effect_applied BOOLEAN NOT NULL DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS correction_root_id UUID REFERENCES repeticao_maxima.estoque_movimentacoes(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS correction_parent_id UUID REFERENCES repeticao_maxima.estoque_movimentacoes(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS correction_role TEXT NOT NULL DEFAULT 'original',
+  ADD COLUMN IF NOT EXISTS correction_note TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS correction_request_token TEXT,
+  ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS repeticao_maxima.promocoes_carrinho (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

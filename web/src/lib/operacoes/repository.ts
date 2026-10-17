@@ -145,11 +145,13 @@ export type StockSelectionOption = {
   total: number;
   printedReal: number;
   plain: number;
+  reorderPoint: number;
   notes: string;
 };
 
 export type StockMovementType = "entrada" | "saida" | "ajuste";
 export type StockMovementReviewStatus = "aprovado" | "pendente" | "ignorado";
+export type StockMovementCorrectionRole = "original" | "estorno" | "correcao";
 
 export type StockMovement = {
   id: string;
@@ -173,6 +175,12 @@ export type StockMovement = {
   updatedAt: string | null;
   reviewStatus: StockMovementReviewStatus;
   stockEffectApplied: boolean;
+  correctionRootId: string | null;
+  correctionParentId: string | null;
+  correctionRole: StockMovementCorrectionRole;
+  correctionNote: string;
+  correctionRequestToken: string;
+  reversedAt: string | null;
 };
 
 export type SiteArtSelectionOption = {
@@ -839,7 +847,7 @@ export async function loadStockSelectionOptions() {
     const { data, error } = await supabase.client
       .schema(OPERATIONS_SCHEMA)
       .from(STOCK_TABLE)
-      .select("id, sku, color, size, total_qty, printed_qty, notes")
+      .select("id, sku, color, size, total_qty, printed_qty, reorder_point, notes")
       .order("sku", { ascending: true })
       .order("color", { ascending: true })
       .order("size", { ascending: true });
@@ -860,6 +868,7 @@ export async function loadStockSelectionOptions() {
         total,
         printedReal,
         plain: Math.max(total - printedReal, 0),
+        reorderPoint: Math.max(getIntegerValue(row.reorder_point), 0),
         notes: String(row.notes ?? ""),
       };
     });
@@ -1645,6 +1654,96 @@ export async function reviewPendingStockMovement(movementId: string, input: unkn
   }
 }
 
+export async function applyStockMovementCorrection(input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeStockMovementCorrectionInput(input);
+
+  if (!row.movementId) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Nao foi possivel identificar a baixa que sera corrigida."),
+    };
+  }
+
+  if (!row.sku || !row.color || !row.size) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Selecione a base correta antes de salvar a correcao."),
+    };
+  }
+
+  if (row.quantity <= 0) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Informe uma quantidade valida para corrigir a baixa."),
+    };
+  }
+
+  if (!row.requestToken) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Nao foi possivel gerar a chave segura dessa correcao."),
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.client.rpc("apply_stock_movement_correction", {
+      p_target_movement_id: row.movementId,
+      p_sku: row.sku,
+      p_color: row.color,
+      p_size: row.size,
+      p_quantity: row.quantity,
+      p_origin_reference: row.originReference,
+      p_notes: row.notes,
+      p_request_token: row.requestToken,
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    const resultRow = Array.isArray(data) ? data[0] : data;
+    const updatedAt = new Date().toISOString();
+
+    return {
+      ok: true as const,
+      result: {
+        rootMovementId: resultRow?.root_movement_id ? String(resultRow.root_movement_id) : "",
+        reversalMovementId: resultRow?.reversal_movement_id
+          ? String(resultRow.reversal_movement_id)
+          : "",
+        correctionMovementId: resultRow?.correction_movement_id
+          ? String(resultRow.correction_movement_id)
+          : "",
+      },
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          typeof resultRow?.message === "string" && resultRow.message.trim()
+            ? resultRow.message
+            : "Correcao de baixa aplicada com sucesso.",
+        updatedAt,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
 async function saveManualStockMovement(
   movementType: "entrada" | "saida",
   input: unknown,
@@ -1809,6 +1908,7 @@ async function saveManualStockMovement(
         total: nextTotalValue,
         printedReal: nextPrinted,
         plain: nextPlain,
+        reorderPoint: Math.max(getIntegerValue(persistedRow?.reorder_point), 0),
         notes: String(persistedRow?.notes ?? "").trim(),
       } satisfies StockSelectionOption,
       persistence: {
@@ -2594,6 +2694,12 @@ function rowToStockMovement(row: Record<string, unknown>): StockMovement {
         : movementType === "entrada"
           ? true
           : plainBefore !== plainAfter,
+    correctionRootId: row.correction_root_id ? String(row.correction_root_id) : null,
+    correctionParentId: row.correction_parent_id ? String(row.correction_parent_id) : null,
+    correctionRole: normalizeStockMovementCorrectionRole(row.correction_role),
+    correctionNote: String(row.correction_note ?? "").trim(),
+    correctionRequestToken: String(row.correction_request_token ?? "").trim(),
+    reversedAt: typeof row.reversed_at === "string" ? row.reversed_at : null,
   };
 }
 
@@ -2768,6 +2874,21 @@ function normalizeStockMovementReviewInput(input: unknown) {
     alreadyPrinted: isTruthy(source.alreadyPrinted),
     deductFromStock: isTruthy(source.deductFromStock),
     decision: decisionValue === "ignorar" || decisionValue === "ignore" ? "ignorar" : "aprovar",
+  };
+}
+
+function normalizeStockMovementCorrectionInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+
+  return {
+    movementId: String(source.movementId ?? "").trim(),
+    sku: String(source.sku ?? "").trim(),
+    color: String(source.color ?? "").trim(),
+    size: String(source.size ?? "").trim(),
+    quantity: Math.max(getIntegerValue(source.quantity), 0),
+    originReference: String(source.originReference ?? "").trim(),
+    notes: String(source.notes ?? "").trim(),
+    requestToken: String(source.requestToken ?? "").trim(),
   };
 }
 
@@ -3674,6 +3795,16 @@ function normalizeStockMovementReviewStatus(value: unknown): StockMovementReview
   }
 
   return "aprovado";
+}
+
+function normalizeStockMovementCorrectionRole(value: unknown): StockMovementCorrectionRole {
+  const normalized = String(value ?? "").trim().toLowerCase();
+
+  if (normalized === "estorno" || normalized === "correcao") {
+    return normalized;
+  }
+
+  return "original";
 }
 
 function isKnownSizeValue(value: string) {
