@@ -1697,7 +1697,9 @@ export async function applyStockMovementCorrection(input: unknown) {
   }
 
   try {
-    const { data, error } = await supabase.client.rpc("apply_stock_movement_correction", {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .rpc("apply_stock_movement_correction", {
       p_target_movement_id: row.movementId,
       p_sku: row.sku,
       p_color: row.color,
@@ -1706,7 +1708,7 @@ export async function applyStockMovementCorrection(input: unknown) {
       p_origin_reference: row.originReference,
       p_notes: row.notes,
       p_request_token: row.requestToken,
-    });
+      });
 
     if (error) {
       throw error;
