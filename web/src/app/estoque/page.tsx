@@ -956,7 +956,7 @@ export default async function EstoquePage({ searchParams }: PageProps) {
                                 : styles.stockCell;
 
                             return (
-                              <td key={`${row.colorKey}-${size}`}>
+                              <td key={`${row.colorKey}-${size}`} data-label={size}>
                                 <a
                                   href={buildPageHref(resolvedSearchParams, {
                                     panel: "cell",
@@ -969,7 +969,9 @@ export default async function EstoquePage({ searchParams }: PageProps) {
                               </td>
                             );
                           })}
-                          <td className={styles.totalCell}>{String(row.total)}</td>
+                          <td className={styles.totalCell} data-label="Total">
+                            {String(row.total)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -977,9 +979,13 @@ export default async function EstoquePage({ searchParams }: PageProps) {
                       <tr>
                         <th>Total geral</th>
                         {matrix.sizes.map((size) => (
-                          <td key={`total-${size}`}>{String(matrix.totalBySize.get(size) ?? 0)}</td>
+                          <td key={`total-${size}`} data-label={size}>
+                            {String(matrix.totalBySize.get(size) ?? 0)}
+                          </td>
                         ))}
-                        <td className={styles.totalCell}>{String(matrix.grandTotal)}</td>
+                        <td className={styles.totalCell} data-label="Total">
+                          {String(matrix.grandTotal)}
+                        </td>
                       </tr>
                     </tfoot>
                   </table>
