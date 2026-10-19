@@ -4,6 +4,7 @@ import {
   getNuvemshopCredentials,
   NuvemshopClient,
 } from "@/lib/nuvemshop/client";
+import { syncPaidNuvemshopOrderToStock } from "@/lib/operacoes/repository";
 import { consumePartnerStoreCreditSessionOrder } from "@/lib/parceiros/repository";
 
 export async function GET() {
@@ -59,65 +60,116 @@ export async function POST(request: Request) {
 
     const client = new NuvemshopClient(credentials.credentials);
     const order = await client.getOrder(orderId);
+    const stockSyncResult = await syncPaidNuvemshopOrderToStock({ order });
+
+    if (!stockSyncResult.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: stockSyncResult.persistence.message,
+          stock: {
+            orderId: stockSyncResult.orderId,
+            orderLabel: stockSyncResult.orderLabel,
+            appliedCount: stockSyncResult.appliedCount,
+            pendingCount: stockSyncResult.pendingCount,
+            duplicateCount: stockSyncResult.duplicateCount,
+            ignoredCount: stockSyncResult.ignoredCount,
+          },
+        },
+        { status: 500 },
+      );
+    }
+
     const promotionsApplied = order.promotional_discount?.promotions_applied || [];
     const promotionIds = promotionsApplied
       .map((item) => String(item.id ?? "").trim())
       .filter(Boolean);
+    let partnerResult = {
+      ok: true,
+      ignored: promotionIds.length === 0,
+      message:
+        promotionIds.length === 0
+          ? "Pedido pago sem promocao de saldo do parceiro."
+          : "Saldo do parceiro ainda nao conciliado.",
+    };
 
-    if (promotionIds.length === 0) {
-      return NextResponse.json(
-        {
-          ok: true,
-          ignored: true,
-          message: "Pedido pago sem promocao de saldo do parceiro.",
-        },
-        { status: 200 },
+    if (promotionIds.length > 0) {
+      const totalDiscountAmount = parseMoney(
+        order.promotional_discount?.total_discount_amount || order.discount || "0",
       );
-    }
+      const items = (order.products || []).map((item) => {
+        const quantity = Math.max(Number(item.quantity ?? 0) || 0, 0);
+        const unitPrice = parseMoney(item.price || "0");
 
-    const totalDiscountAmount = parseMoney(
-      order.promotional_discount?.total_discount_amount || order.discount || "0",
-    );
-    const items = (order.products || []).map((item) => {
-      const quantity = Math.max(Number(item.quantity ?? 0) || 0, 0);
-      const unitPrice = parseMoney(item.price || "0");
-
-      return {
-        name: String(item.name ?? item.sku ?? "Produto da loja").trim() || "Produto da loja",
-        sku: String(item.sku ?? "").trim(),
-        quantity,
-        unitPrice,
-        totalPrice: Math.round(unitPrice * quantity * 100) / 100,
-      };
-    });
-
-    for (const promotionId of promotionIds) {
-      const result = await consumePartnerStoreCreditSessionOrder({
-        promotionId,
-        orderId: String(order.id ?? orderId),
-        orderNumber: order.number ? String(order.number) : null,
-        paidAt: order.paid_at || order.updated_at || order.created_at || null,
-        totalDiscountAmount,
-        items,
+        return {
+          name: String(item.name ?? item.sku ?? "Produto da loja").trim() || "Produto da loja",
+          sku: String(item.sku ?? "").trim(),
+          quantity,
+          unitPrice,
+          totalPrice: Math.round(unitPrice * quantity * 100) / 100,
+        };
       });
 
-      if (result.ok) {
-        return NextResponse.json(
-          {
+      for (const promotionId of promotionIds) {
+        const result = await consumePartnerStoreCreditSessionOrder({
+          promotionId,
+          orderId: String(order.id ?? orderId),
+          orderNumber: order.number ? String(order.number) : null,
+          paidAt: order.paid_at || order.updated_at || order.created_at || null,
+          totalDiscountAmount,
+          items,
+        });
+
+        if (result.ok) {
+          partnerResult = {
             ok: true,
+            ignored: false,
             message: result.message,
-          },
-          { status: 200 },
-        );
+          };
+          break;
+        }
+
+        partnerResult = {
+          ok: false,
+          ignored: false,
+          message: result.message,
+        };
       }
+    }
+
+    if (!partnerResult.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: partnerResult.message,
+          stock: {
+            orderId: stockSyncResult.orderId,
+            orderLabel: stockSyncResult.orderLabel,
+            appliedCount: stockSyncResult.appliedCount,
+            pendingCount: stockSyncResult.pendingCount,
+            duplicateCount: stockSyncResult.duplicateCount,
+            ignoredCount: stockSyncResult.ignoredCount,
+          },
+        },
+        { status: 500 },
+      );
     }
 
     return NextResponse.json(
       {
-        ok: false,
-        message: "Nenhuma sessao de saldo correspondente foi conciliada.",
+        ok: true,
+        message: stockSyncResult.persistence.message,
+        partner: partnerResult.message,
+        stock: {
+          orderId: stockSyncResult.orderId,
+          orderLabel: stockSyncResult.orderLabel,
+          appliedCount: stockSyncResult.appliedCount,
+          pendingCount: stockSyncResult.pendingCount,
+          duplicateCount: stockSyncResult.duplicateCount,
+          ignoredCount: stockSyncResult.ignoredCount,
+        },
       },
-      { status: 404 },
+      { status: 200 },
     );
   } catch (error) {
     return NextResponse.json(

@@ -7,6 +7,7 @@ import {
 import type {
   NuvemshopLocalizedText,
   NuvemshopOrder,
+  NuvemshopOrderProduct,
   NuvemshopProduct,
   NuvemshopVariant,
 } from "@/lib/nuvemshop/types";
@@ -250,6 +251,31 @@ export type NuvemshopStockProduct = {
   categories: string[];
   totalStock: number;
   variants: NuvemshopStockVariant[];
+};
+
+export type NuvemshopPaidOrderStockLineResult = {
+  originReference: string;
+  orderLabel: string;
+  itemLabel: string;
+  sku: string;
+  color: string;
+  size: string;
+  quantity: number;
+  status: "aplicado" | "pendente" | "duplicado" | "ignorado";
+  message: string;
+  movementId: string;
+};
+
+export type NuvemshopPaidOrderStockSyncResult = {
+  ok: boolean;
+  orderId: string;
+  orderLabel: string;
+  appliedCount: number;
+  pendingCount: number;
+  duplicateCount: number;
+  ignoredCount: number;
+  results: NuvemshopPaidOrderStockLineResult[];
+  persistence: OperationalPersistenceState;
 };
 
 export async function loadDebtModuleData() {
@@ -1746,6 +1772,113 @@ export async function applyStockMovementCorrection(input: unknown) {
   }
 }
 
+export async function syncPaidNuvemshopOrderToStock(input: {
+  order: NuvemshopOrder;
+  products?: NuvemshopProduct[];
+}): Promise<NuvemshopPaidOrderStockSyncResult> {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false,
+      orderId: "",
+      orderLabel: "",
+      appliedCount: 0,
+      pendingCount: 0,
+      duplicateCount: 0,
+      ignoredCount: 0,
+      results: [],
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const order = input.order;
+  const orderId = String(order.id ?? "").trim();
+  const orderLabel = formatOrderLabel(order);
+
+  if (!orderId) {
+    return {
+      ok: false,
+      orderId: "",
+      orderLabel,
+      appliedCount: 0,
+      pendingCount: 0,
+      duplicateCount: 0,
+      ignoredCount: 0,
+      results: [],
+      persistence: buildDisabledState("Nao foi possivel identificar o pedido pago da Nuvemshop."),
+    };
+  }
+
+  try {
+    const products =
+      input.products && input.products.length > 0
+        ? input.products
+        : await loadNuvemshopProductsForStockSync();
+    const variantCatalog = buildVariantCatalog(products);
+    const productBaseCatalog = buildStrictProductBaseCatalog(products);
+    const movementDate =
+      normalizeDate(order.paid_at) || normalizeDate(order.updated_at) || normalizeDate(order.created_at);
+    const results: NuvemshopPaidOrderStockLineResult[] = [];
+
+    for (const [index, product] of (order.products || []).entries()) {
+      const lineResult = await syncPaidNuvemshopOrderLine({
+        client: supabase.client,
+        order,
+        orderLabel,
+        product,
+        itemIndex: index,
+        movementDate,
+        variantCatalog,
+        productBaseCatalog,
+      });
+
+      results.push(lineResult);
+    }
+
+    const appliedCount = results.filter((item) => item.status === "aplicado").length;
+    const pendingCount = results.filter((item) => item.status === "pendente").length;
+    const duplicateCount = results.filter((item) => item.status === "duplicado").length;
+    const ignoredCount = results.filter((item) => item.status === "ignorado").length;
+
+    return {
+      ok: true,
+      orderId,
+      orderLabel,
+      appliedCount,
+      pendingCount,
+      duplicateCount,
+      ignoredCount,
+      results,
+      persistence: {
+        enabled: true,
+        source: "supabase",
+        message:
+          pendingCount > 0
+            ? `Pedido ${orderLabel} sincronizado com ${appliedCount} baixa(s) automatica(s) e ${pendingCount} pendencia(s).`
+            : duplicateCount > 0 && appliedCount === 0
+              ? `Pedido ${orderLabel} ja estava sincronizado anteriormente.`
+              : `Pedido ${orderLabel} sincronizado com ${appliedCount} baixa(s) automatica(s).`,
+        updatedAt: new Date().toISOString(),
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      orderId,
+      orderLabel,
+      appliedCount: 0,
+      pendingCount: 0,
+      duplicateCount: 0,
+      ignoredCount: 0,
+      results: [],
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
 async function saveManualStockMovement(
   movementType: "entrada" | "saida",
   input: unknown,
@@ -3181,6 +3314,366 @@ async function fetchAllNuvemshopPages<T>(
   return result;
 }
 
+async function loadNuvemshopProductsForStockSync() {
+  const credentials = getNuvemshopCredentials();
+
+  if (!credentials.ok) {
+    throw new Error(
+      `Faltam credenciais da Nuvemshop para sincronizar o estoque: ${credentials.missing.join(", ")}.`,
+    );
+  }
+
+  const client = new NuvemshopClient(credentials.credentials);
+  return fetchAllNuvemshopPages((params) => client.listProducts(params));
+}
+
+async function syncPaidNuvemshopOrderLine(input: {
+  client: OperationsSupabaseClient;
+  order: NuvemshopOrder;
+  orderLabel: string;
+  product: NuvemshopOrderProduct;
+  itemIndex: number;
+  movementDate: string;
+  variantCatalog: Map<
+    string,
+    {
+      baseCategories: string[];
+      color: string;
+      size: string;
+    }
+  >;
+  productBaseCatalog: Map<string, string[]>;
+}): Promise<NuvemshopPaidOrderStockLineResult> {
+  const quantity =
+    typeof input.product.quantity === "number" && Number.isFinite(input.product.quantity)
+      ? Math.max(Math.trunc(input.product.quantity), 0)
+      : 0;
+  const itemLabel = String(
+    input.product.name ??
+      input.product.sku ??
+      `Item ${input.itemIndex + 1} do pedido ${input.orderLabel}`,
+  ).trim() || `Item ${input.itemIndex + 1} do pedido ${input.orderLabel}`;
+  const originReference = buildNuvemshopOrderOriginReference(
+    input.order,
+    input.product,
+    input.itemIndex,
+  );
+
+  if (quantity <= 0) {
+    return {
+      originReference,
+      orderLabel: input.orderLabel,
+      itemLabel,
+      sku: "",
+      color: "",
+      size: "",
+      quantity: 0,
+      status: "ignorado",
+      message: "Item ignorado por quantidade invalida.",
+      movementId: "",
+    };
+  }
+
+  const variantId = input.product.variant_id ? String(input.product.variant_id) : "";
+  const variantEntry = variantId ? input.variantCatalog.get(variantId) : undefined;
+  const variantBaseCategories = variantEntry
+    ? getStrictStockBaseCategories(variantEntry.baseCategories)
+    : [];
+  const fallbackBaseCategories = input.product.product_id
+    ? input.productBaseCatalog.get(String(input.product.product_id)) ?? []
+    : [];
+  const fallbackVariant = getOrderProductColorAndSize(input.product);
+  const baseCategories =
+    variantBaseCategories.length > 0
+      ? variantBaseCategories
+      : fallbackBaseCategories;
+  const sku = baseCategories.length === 1 ? (baseCategories[0] ?? "") : "";
+  const color = variantEntry?.color ?? fallbackVariant.color;
+  const size = variantEntry?.size ?? fallbackVariant.size;
+  const ambiguityReason = getOrderStockResolutionIssue(baseCategories, color, size);
+
+  if (ambiguityReason) {
+    return createPendingNuvemshopOrderMovement(input.client, {
+      originReference,
+      orderLabel: input.orderLabel,
+      itemLabel,
+      sku,
+      color,
+      size,
+      quantity,
+      movementDate: input.movementDate,
+      artName: itemLabel,
+      artProductId: input.product.product_id ? String(input.product.product_id) : "",
+      reasonText: `Pedido ${input.orderLabel}: ${ambiguityReason}`,
+    });
+  }
+
+  return applyPaidNuvemshopOrderMovement(input.client, {
+    originReference,
+    orderLabel: input.orderLabel,
+    itemLabel,
+    sku,
+    color,
+    size,
+    quantity,
+    movementDate: input.movementDate,
+    artName: itemLabel,
+    artProductId: input.product.product_id ? String(input.product.product_id) : "",
+  });
+}
+
+async function applyPaidNuvemshopOrderMovement(
+  client: OperationsSupabaseClient,
+  input: {
+    originReference: string;
+    orderLabel: string;
+    itemLabel: string;
+    sku: string;
+    color: string;
+    size: string;
+    quantity: number;
+    movementDate: string;
+    artName: string;
+    artProductId: string;
+  },
+): Promise<NuvemshopPaidOrderStockLineResult> {
+  const { data, error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .rpc("apply_paid_order_stock_movement", {
+      p_sku: input.sku,
+      p_color: input.color,
+      p_size: input.size,
+      p_quantity: input.quantity,
+      p_movement_date: input.movementDate,
+      p_origin_reference: input.originReference,
+      p_origin_type: "venda",
+      p_art_name: input.artName,
+      p_art_product_id: input.artProductId,
+      p_reason_category: "saida_automatica_venda",
+      p_reason_text: `Baixa automatica do pedido ${input.orderLabel}.`,
+      p_source_module: "nuvemshop_webhook",
+    });
+
+  if (error) {
+    throw error;
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  const duplicate = Boolean(row?.duplicate);
+  const applied = Boolean(row?.applied);
+  const reviewStatus = String(row?.review_status ?? "").trim().toLowerCase();
+
+  return {
+    originReference: input.originReference,
+    orderLabel: input.orderLabel,
+    itemLabel: input.itemLabel,
+    sku: input.sku,
+    color: input.color,
+    size: input.size,
+    quantity: input.quantity,
+    status: duplicate
+      ? "duplicado"
+      : applied
+        ? "aplicado"
+        : reviewStatus === "pendente"
+          ? "pendente"
+          : "ignorado",
+    message:
+      typeof row?.message === "string" && row.message.trim()
+        ? row.message
+        : duplicate
+          ? "Item ja sincronizado anteriormente."
+          : applied
+            ? "Baixa automatica aplicada com sucesso."
+            : "Item registrado para revisao manual.",
+    movementId: row?.movement_id ? String(row.movement_id) : "",
+  };
+}
+
+async function createPendingNuvemshopOrderMovement(
+  client: OperationsSupabaseClient,
+  input: {
+    originReference: string;
+    orderLabel: string;
+    itemLabel: string;
+    sku: string;
+    color: string;
+    size: string;
+    quantity: number;
+    movementDate: string;
+    artName: string;
+    artProductId: string;
+    reasonText: string;
+  },
+): Promise<NuvemshopPaidOrderStockLineResult> {
+  const existingMovement = await findOriginalWebhookMovement(client, input.originReference);
+
+  if (existingMovement) {
+    return {
+      originReference: input.originReference,
+      orderLabel: input.orderLabel,
+      itemLabel: input.itemLabel,
+      sku: input.sku,
+      color: input.color,
+      size: input.size,
+      quantity: input.quantity,
+      status: "duplicado",
+      message: "Item ja sincronizado anteriormente.",
+      movementId: existingMovement.id,
+    };
+  }
+
+  try {
+    await createStockMovement(client, {
+      stockItemId: "",
+      sku: input.sku,
+      color: input.color,
+      size: input.size,
+      movementDate: input.movementDate,
+      movementType: "saida",
+      quantity: input.quantity,
+      plainBefore: 0,
+      plainAfter: 0,
+      artName: input.artName,
+      artProductId: input.artProductId,
+      originType: "venda",
+      originReference: input.originReference,
+      reasonCategory: "saida_site_pendente_alerta",
+      reasonText: input.reasonText,
+      sourceModule: "nuvemshop_webhook",
+      reviewStatus: "pendente",
+      stockEffectApplied: false,
+    });
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      const duplicatedMovement = await findOriginalWebhookMovement(client, input.originReference);
+      return {
+        originReference: input.originReference,
+        orderLabel: input.orderLabel,
+        itemLabel: input.itemLabel,
+        sku: input.sku,
+        color: input.color,
+        size: input.size,
+        quantity: input.quantity,
+        status: "duplicado",
+        message: "Item ja sincronizado anteriormente.",
+        movementId: duplicatedMovement?.id ?? "",
+      };
+    }
+
+    throw error;
+  }
+
+  const insertedMovement = await findOriginalWebhookMovement(client, input.originReference);
+
+  return {
+    originReference: input.originReference,
+    orderLabel: input.orderLabel,
+    itemLabel: input.itemLabel,
+    sku: input.sku,
+    color: input.color,
+    size: input.size,
+    quantity: input.quantity,
+    status: "pendente",
+    message: input.reasonText,
+    movementId: insertedMovement?.id ?? "",
+  };
+}
+
+async function findOriginalWebhookMovement(
+  client: OperationsSupabaseClient,
+  originReference: string,
+) {
+  const { data, error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(STOCK_MOVEMENTS_TABLE)
+    .select("id, stock_effect_applied, review_status")
+    .eq("source_module", "nuvemshop_webhook")
+    .eq("origin_reference", originReference)
+    .eq("correction_role", "original")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return {
+    id: String(data.id ?? ""),
+    stockEffectApplied: Boolean(data.stock_effect_applied),
+    reviewStatus: normalizeStockMovementReviewStatus(data.review_status),
+  };
+}
+
+function buildNuvemshopOrderOriginReference(
+  order: NuvemshopOrder,
+  product: NuvemshopOrderProduct,
+  itemIndex: number,
+) {
+  const orderNumber = String(order.number ?? order.id ?? "").trim() || String(order.id ?? "").trim();
+  const productId = product.product_id ? String(product.product_id) : "sem-produto";
+  const variantId = product.variant_id ? String(product.variant_id) : "sem-variante";
+
+  return `pedido ${orderNumber} · item ${itemIndex + 1} · produto ${productId} · variante ${variantId}`;
+}
+
+function getOrderStockResolutionIssue(baseCategories: string[], color: string, size: string) {
+  if (baseCategories.length === 0) {
+    return "nao foi possivel identificar a base/modelagem da venda.";
+  }
+
+  if (baseCategories.length > 1) {
+    return `o produto veio associado a mais de uma base (${baseCategories.join(", ")}).`;
+  }
+
+  if (!color && !size) {
+    return "nao foi possivel identificar a cor e o tamanho da variacao vendida.";
+  }
+
+  if (!color) {
+    return "nao foi possivel identificar a cor da variacao vendida.";
+  }
+
+  if (!size) {
+    return "nao foi possivel identificar o tamanho da variacao vendida.";
+  }
+
+  return "";
+}
+
+function buildStrictProductBaseCatalog(products: NuvemshopProduct[]) {
+  const catalog = new Map<string, string[]>();
+
+  for (const product of products) {
+    const baseCategories = getStrictStockBaseCategories(
+      (product.categories || [])
+        .map((category) => getLocalizedText(category.name))
+        .filter((value) => value && value !== "-"),
+    );
+
+    if (baseCategories.length > 0) {
+      catalog.set(String(product.id), baseCategories);
+    }
+  }
+
+  return catalog;
+}
+
+function getStrictStockBaseCategories(categories: string[]) {
+  return categories.filter((category) => !isBlockedStockCategory(category));
+}
+
+function formatOrderLabel(order: NuvemshopOrder) {
+  const number = String(order.number ?? "").trim();
+  const id = String(order.id ?? "").trim();
+  return number ? `#${number}` : id ? `#${id}` : "sem numero";
+}
+
 function buildRecentSalesMap(orders: NuvemshopOrder[]) {
   const sales = new Map<string, number>();
   const cutoff = new Date();
@@ -3868,6 +4361,14 @@ function normalizeDate(value: unknown) {
 
   const trimmed = value.trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : "";
+}
+
+function isUniqueConstraintError(error: unknown) {
+  if (!isRecord(error)) {
+    return false;
+  }
+
+  return String(error.code ?? "").trim() === "23505";
 }
 
 function normalizeMonthReference(value: unknown) {
