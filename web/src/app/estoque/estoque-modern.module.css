@@ -770,6 +770,15 @@
     grid-template-columns: 1fr;
   }
 
+  .sectionTopbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .toolbarStack {
+    justify-items: stretch;
+  }
+
   .toolbarInline,
   .panelActions,
   .filterActions,
@@ -785,6 +794,98 @@
   .ghostButton,
   .closeButton {
     width: 100%;
+  }
+
+  .viewToggle {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+
+  .viewToggleButton,
+  .viewToggleActive {
+    width: 100%;
+    min-height: 52px;
+    padding: 0 14px;
+    text-align: center;
+    line-height: 1.25;
+  }
+
+  .matrixWrap {
+    overflow-x: visible;
+  }
+
+  .matrixTable,
+  .matrixTable tbody,
+  .matrixTable tfoot,
+  .matrixTable tr {
+    display: block;
+  }
+
+  .matrixTable thead {
+    display: none;
+  }
+
+  .matrixTable tbody tr,
+  .matrixTable tfoot tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    padding: 16px 0;
+    border-bottom: 1px solid rgba(174, 183, 255, 0.1);
+  }
+
+  .matrixTable tbody tr:last-child,
+  .matrixTable tfoot tr:last-child {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+
+  .matrixTable tbody th,
+  .matrixTable tfoot th {
+    grid-column: 1 / -1;
+    padding: 0 0 4px;
+    border-bottom: 0;
+    font-size: 1.1rem;
+  }
+
+  .matrixTable tbody td,
+  .matrixTable tfoot td {
+    display: grid;
+    gap: 6px;
+    padding: 0;
+    border-bottom: 0;
+    white-space: normal;
+  }
+
+  .matrixTable tbody td::before,
+  .matrixTable tfoot td::before {
+    content: attr(data-label);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #9da7cf;
+  }
+
+  .stockCell,
+  .stockCellAlert {
+    width: 100%;
+    min-width: 0;
+    min-height: 46px;
+    border-radius: 14px;
+    font-size: 1rem;
+    font-weight: 700;
+  }
+
+  .totalCell {
+    display: flex;
+    align-items: center;
+    min-height: 46px;
+    padding: 0 14px;
+    border-radius: 14px;
+    background: rgba(139, 92, 246, 0.14);
+    border: 1px solid rgba(167, 139, 250, 0.22);
   }
 
   .alertRow {
