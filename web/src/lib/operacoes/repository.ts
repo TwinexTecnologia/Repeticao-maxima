@@ -889,7 +889,7 @@ export async function loadStockSelectionOptions() {
       return {
         id: String(row.id ?? ""),
         sku: String(row.sku ?? ""),
-        color: String(row.color ?? ""),
+        color: getPreferredColorLabel(String(row.color ?? "")),
         size: String(row.size ?? ""),
         total,
         printedReal,
@@ -2761,7 +2761,7 @@ function rowToStockItem(
   const total = getIntegerValue(row.total_qty);
   const printedReal = Math.min(getIntegerValue(row.printed_qty), total);
   const sku = String(row.sku ?? "");
-  const color = String(row.color ?? "");
+  const color = getPreferredColorLabel(String(row.color ?? ""));
   const size = String(row.size ?? "");
   const published =
     publishedByBaseColorSize.get(buildStockKey(sku, color, size)) ?? 0;
@@ -2806,7 +2806,7 @@ function rowToStockMovement(row: Record<string, unknown>): StockMovement {
     id: String(row.id ?? ""),
     stockItemId: row.stock_item_id ? String(row.stock_item_id) : null,
     sku: String(row.sku ?? ""),
-    color: String(row.color ?? ""),
+    color: getPreferredColorLabel(String(row.color ?? "")),
     size: String(row.size ?? ""),
     movementDate: normalizeDate(row.movement_date) || getTodayDate(),
     movementType,
@@ -2975,7 +2975,7 @@ function normalizeManualStockMovementInput(
 
   return {
     sku: String(source.sku ?? "").trim(),
-    color: String(source.color ?? "").trim(),
+    color: getPreferredColorLabel(String(source.color ?? "").trim()),
     size: String(source.size ?? "").trim(),
     quantity: Math.max(getIntegerValue(source.quantity), 0),
     movementDate: normalizeDate(source.movementDate) || getTodayDate(),
@@ -3001,7 +3001,7 @@ function normalizeStockMovementReviewInput(input: unknown) {
 
   return {
     sku: String(source.sku ?? "").trim(),
-    color: String(source.color ?? "").trim(),
+    color: getPreferredColorLabel(String(source.color ?? "").trim()),
     size: String(source.size ?? "").trim(),
     quantity: Math.max(getIntegerValue(source.quantity), 0),
     originReference: String(source.originReference ?? "").trim(),
@@ -3018,7 +3018,7 @@ function normalizeStockMovementCorrectionInput(input: unknown) {
   return {
     movementId: String(source.movementId ?? "").trim(),
     sku: String(source.sku ?? "").trim(),
-    color: String(source.color ?? "").trim(),
+    color: getPreferredColorLabel(String(source.color ?? "").trim()),
     size: String(source.size ?? "").trim(),
     quantity: Math.max(getIntegerValue(source.quantity), 0),
     originReference: String(source.originReference ?? "").trim(),
@@ -4084,7 +4084,10 @@ function getVariantColorAndSize(
     }
   }
 
-  return { color, size };
+  return {
+    color: getPreferredColorLabel(color),
+    size,
+  };
 }
 
 function getVariantStockValue(variant: {
@@ -4158,7 +4161,10 @@ function getOrderProductColorAndSize(product: {
     }
   }
 
-  return { color, size };
+  return {
+    color: getPreferredColorLabel(color),
+    size,
+  };
 }
 
 function getStockBaseCategories(categories: string[]) {
@@ -4224,6 +4230,38 @@ function normalizeColor(value: string) {
   }
 
   return normalized;
+}
+
+function getPreferredColorLabel(value: string) {
+  const normalized = normalizeColor(value);
+
+  if (normalized === "preto") {
+    return "Preta";
+  }
+
+  if (normalized === "branco") {
+    return "Branca";
+  }
+
+  if (normalized === "roxo") {
+    return "Roxa";
+  }
+
+  if (normalized === "rosa") {
+    return "Rosa";
+  }
+
+  if (normalized === "avela") {
+    return "Avela";
+  }
+
+  const trimmed = String(value ?? "").trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
 }
 
 function normalizeSize(value: string) {
