@@ -435,10 +435,16 @@ function buildInventoryMatrixRows(
       minimumBySize: new Map<string, number>(),
     };
     const nextValue = view === "lisas" ? item.plain : item.printedReal;
-    current.totalsBySize.set(item.size, nextValue);
+    const previousValue = current.totalsBySize.get(item.size) ?? 0;
+    const nextMinimum = item.reorderPoint > 0 ? item.reorderPoint : DEFAULT_LOW_STOCK_THRESHOLD;
+    const previousMinimum = current.minimumBySize.get(item.size);
+
+    // After normalizing colors like Preto -> Preta, equivalent rows can coexist.
+    // Aggregate the quantities instead of overwriting the same size cell.
+    current.totalsBySize.set(item.size, previousValue + nextValue);
     current.minimumBySize.set(
       item.size,
-      item.reorderPoint > 0 ? item.reorderPoint : DEFAULT_LOW_STOCK_THRESHOLD,
+      previousMinimum === undefined ? nextMinimum : Math.min(previousMinimum, nextMinimum),
     );
     current.total += nextValue;
     rowsByColor.set(key, current);
