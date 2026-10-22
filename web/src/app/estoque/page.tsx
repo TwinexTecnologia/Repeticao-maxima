@@ -9,6 +9,7 @@ import {
   applyStockMovementCorrection,
   createManualStockEntry,
   createManualStockExit,
+  importPaidNuvemshopOrderToStockReview,
   loadStockLedgerModuleData,
   reviewPendingStockMovement,
   type SiteArtSelectionOption,
@@ -320,6 +321,33 @@ async function correctStockMovementAction(formData: FormData) {
 
   revalidatePath("/estoque");
   redirect(appendFlashToRedirect(redirectTo, "success", result.persistence.message));
+}
+
+async function importNuvemshopOrderReviewAction(formData: FormData) {
+  "use server";
+
+  const redirectTo = String(formData.get("redirectTo") ?? "/estoque").trim() || "/estoque";
+  const orderId = String(formData.get("orderId") ?? "").trim();
+  const result = await importPaidNuvemshopOrderToStockReview(orderId);
+
+  if (!result.ok) {
+    redirect(
+      appendFlashToRedirect(
+        redirectTo,
+        "error",
+        result.persistence.message || "Nao foi possivel trazer a venda do site para revisao.",
+      ),
+    );
+  }
+
+  revalidatePath("/estoque");
+  redirect(
+    appendFlashToRedirect(
+      redirectTo,
+      "success",
+      result.persistence.message || "Venda do site enviada para revisao no extrato.",
+    ),
+  );
 }
 
 function buildCombinedStockBaseOptions(
@@ -751,6 +779,7 @@ export default async function EstoquePage({ searchParams }: PageProps) {
   const pendingSiteExits = stockData.movements.filter(
     (movement) => movement.movementType === "saida" && movement.reviewStatus === "pendente",
   );
+  const queuedSiteSales = stockData.approvalQueue.reduce((sum, order) => sum + order.lineCount, 0);
   const totalPlainStock = stockData.stockOptions.reduce((sum, item) => sum + item.plain, 0);
   const ledgerFilters = {
     startDate:
@@ -1054,6 +1083,9 @@ export default async function EstoquePage({ searchParams }: PageProps) {
                   <span className={styles.alertPill}>
                     Pendências de venda: {String(pendingSiteExits.length)}
                   </span>
+                  <span className={styles.alertPill}>
+                    Vendas do site ainda não lançadas: {String(queuedSiteSales)}
+                  </span>
                 </div>
 
                 {criticalItems.length > 0 ? (
@@ -1100,6 +1132,89 @@ export default async function EstoquePage({ searchParams }: PageProps) {
               <span>{stockMessage}</span>
             </div>
           ) : null}
+
+          <section className={styles.surfaceCard}>
+            <div className={styles.sectionTopbar}>
+              <div>
+                <h3 className={styles.sectionTitle}>Vendas do site para aprovar</h3>
+                <p className={styles.sectionText}>
+                  Aqui entram os pedidos pagos que o dashboard já enxerga na Nuvemshop, mas que ainda
+                  não viraram linhas do extrato de estoque para revisão.
+                </p>
+              </div>
+            </div>
+
+            <div className={styles.alertPills}>
+              <span className={styles.alertPill}>
+                Pedidos aguardando entrada no extrato: {String(stockData.approvalQueue.length)}
+              </span>
+              <span className={styles.alertPill}>
+                Camisetas aguardando revisão: {String(queuedSiteSales)}
+              </span>
+            </div>
+
+            {stockData.approvalQueue.length > 0 ? (
+              <div className={styles.saleQueueList}>
+                {stockData.approvalQueue.map((order) => (
+                  <article key={order.orderId} className={styles.saleQueueCard}>
+                    <div className={styles.saleQueueHeader}>
+                      <div className={styles.saleQueueTitleBlock}>
+                        <strong>{order.orderLabel}</strong>
+                        <span>
+                          {order.customerName} · pago em {formatDateTime(order.paidAt)}
+                        </span>
+                      </div>
+                      <form action={importNuvemshopOrderReviewAction}>
+                        <input type="hidden" name="redirectTo" value={redirectTo} />
+                        <input type="hidden" name="orderId" value={order.orderId} />
+                        <button type="submit" className={styles.primaryButton}>
+                          Trazer para revisão
+                        </button>
+                      </form>
+                    </div>
+
+                    <div className={styles.saleQueueMeta}>
+                      <span>{String(order.lineCount)} item(ns) pendentes</span>
+                      <span>{String(order.quantityTotal)} camiseta(s) no total</span>
+                    </div>
+
+                    <div className={styles.saleQueueItems}>
+                      {order.lines.slice(0, 4).map((line) => (
+                        <div key={line.originReference} className={styles.saleQueueItem}>
+                          <div>
+                            <strong>{line.itemLabel}</strong>
+                            <span>
+                              {(line.sku || "Base a confirmar")} · {(line.color || "Cor a confirmar")} ·{" "}
+                              {(line.size || "Tamanho a confirmar")} · Qtd {String(line.quantity)}
+                            </span>
+                          </div>
+                          <small
+                            className={
+                              line.resolutionStatus === "pronto"
+                                ? styles.saleQueueHintOk
+                                : styles.saleQueueHintWarn
+                            }
+                          >
+                            {line.resolutionMessage}
+                          </small>
+                        </div>
+                      ))}
+                      {order.lines.length > 4 ? (
+                        <div className={styles.saleQueueMore}>
+                          +{String(order.lines.length - 4)} item(ns) entram juntos quando você trouxer esse
+                          pedido para revisão.
+                        </div>
+                      ) : null}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className={styles.emptyInline}>
+                Nenhuma venda nova do site está aguardando entrada no extrato neste momento.
+              </div>
+            )}
+          </section>
 
           <section className={styles.surfaceCard} id="extrato">
             <div className={styles.sectionTopbar}>

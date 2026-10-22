@@ -278,6 +278,27 @@ export type NuvemshopPaidOrderStockSyncResult = {
   persistence: OperationalPersistenceState;
 };
 
+export type NuvemshopOrderApprovalQueueLine = {
+  originReference: string;
+  itemLabel: string;
+  sku: string;
+  color: string;
+  size: string;
+  quantity: number;
+  resolutionStatus: "pronto" | "pendente";
+  resolutionMessage: string;
+};
+
+export type NuvemshopOrderApprovalQueueItem = {
+  orderId: string;
+  orderLabel: string;
+  customerName: string;
+  paidAt: string | null;
+  lineCount: number;
+  quantityTotal: number;
+  lines: NuvemshopOrderApprovalQueueLine[];
+};
+
 export async function loadDebtModuleData() {
   const supabase = createSupabaseServerClient();
 
@@ -938,6 +959,7 @@ export async function loadStockLedgerModuleData(selectedMonth: string) {
       stockOptions,
       artOptions,
       movements: [] as StockMovement[],
+      approvalQueue: [] as NuvemshopOrderApprovalQueueItem[],
       persistence: buildDisabledState(
         `Persistencia desativada. Configure ${supabase.missing.join(" e ")} para salvar as movimentacoes de estoque.`,
       ),
@@ -959,11 +981,17 @@ export async function loadStockLedgerModuleData(selectedMonth: string) {
     }
 
     const movements = (data ?? []).map(rowToStockMovement);
+    const approvalQueue = await loadNuvemshopPaidOrdersForApprovalQueue(
+      monthStart,
+      monthEnd,
+      movements,
+    );
 
     return {
       stockOptions,
       artOptions,
       movements,
+      approvalQueue,
       persistence: {
         enabled: true,
         source: "supabase" as const,
@@ -979,6 +1007,7 @@ export async function loadStockLedgerModuleData(selectedMonth: string) {
       stockOptions,
       artOptions,
       movements: [] as StockMovement[],
+      approvalQueue: [] as NuvemshopOrderApprovalQueueItem[],
       persistence: buildDisabledState(getErrorMessage(error)),
     };
   }
@@ -1775,6 +1804,7 @@ export async function applyStockMovementCorrection(input: unknown) {
 export async function syncPaidNuvemshopOrderToStock(input: {
   order: NuvemshopOrder;
   products?: NuvemshopProduct[];
+  mode?: "automatic" | "pending_review";
 }): Promise<NuvemshopPaidOrderStockSyncResult> {
   const supabase = createSupabaseServerClient();
 
@@ -1813,6 +1843,7 @@ export async function syncPaidNuvemshopOrderToStock(input: {
   }
 
   try {
+    const mode = input.mode === "pending_review" ? "pending_review" : "automatic";
     const products =
       input.products && input.products.length > 0
         ? input.products
@@ -1833,6 +1864,7 @@ export async function syncPaidNuvemshopOrderToStock(input: {
         movementDate,
         variantCatalog,
         productBaseCatalog,
+        mode,
       });
 
       results.push(lineResult);
@@ -1856,8 +1888,14 @@ export async function syncPaidNuvemshopOrderToStock(input: {
         enabled: true,
         source: "supabase",
         message:
-          pendingCount > 0
-            ? `Pedido ${orderLabel} sincronizado com ${appliedCount} baixa(s) automatica(s) e ${pendingCount} pendencia(s).`
+          mode === "pending_review"
+            ? pendingCount > 0
+              ? `Pedido ${orderLabel} importado com ${pendingCount} item(ns) para revisao no extrato.`
+              : duplicateCount > 0
+                ? `Pedido ${orderLabel} ja estava disponivel para revisao no extrato.`
+                : `Pedido ${orderLabel} nao gerou novas pendencias para revisao.`
+            : pendingCount > 0
+              ? `Pedido ${orderLabel} sincronizado com ${appliedCount} baixa(s) automatica(s) e ${pendingCount} pendencia(s).`
             : duplicateCount > 0 && appliedCount === 0
               ? `Pedido ${orderLabel} ja estava sincronizado anteriormente.`
               : `Pedido ${orderLabel} sincronizado com ${appliedCount} baixa(s) automatica(s).`,
@@ -1874,6 +1912,53 @@ export async function syncPaidNuvemshopOrderToStock(input: {
       duplicateCount: 0,
       ignoredCount: 0,
       results: [],
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function importPaidNuvemshopOrderToStockReview(orderId: string) {
+  const normalizedOrderId = String(orderId ?? "").trim();
+
+  if (!normalizedOrderId) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Nao foi possivel identificar o pedido da Nuvemshop."),
+    };
+  }
+
+  const credentials = getNuvemshopCredentials();
+
+  if (!credentials.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Nuvemshop sem credenciais completas: ${credentials.missing.join(", ")}.`,
+      ),
+    };
+  }
+
+  try {
+    const client = new NuvemshopClient(credentials.credentials);
+    const order = await client.getOrder(normalizedOrderId);
+    const result = await syncPaidNuvemshopOrderToStock({
+      order,
+      mode: "pending_review",
+    });
+
+    return result.ok
+      ? {
+          ok: true as const,
+          result,
+          persistence: result.persistence,
+        }
+      : {
+          ok: false as const,
+          persistence: result.persistence,
+        };
+  } catch (error) {
+    return {
+      ok: false as const,
       persistence: buildDisabledState(getErrorMessage(error)),
     };
   }
@@ -3343,6 +3428,7 @@ async function syncPaidNuvemshopOrderLine(input: {
     }
   >;
   productBaseCatalog: Map<string, string[]>;
+  mode: "automatic" | "pending_review";
 }): Promise<NuvemshopPaidOrderStockLineResult> {
   const quantity =
     typeof input.product.quantity === "number" && Number.isFinite(input.product.quantity)
@@ -3391,6 +3477,24 @@ async function syncPaidNuvemshopOrderLine(input: {
   const color = variantEntry?.color ?? fallbackVariant.color;
   const size = variantEntry?.size ?? fallbackVariant.size;
   const ambiguityReason = getOrderStockResolutionIssue(baseCategories, color, size);
+
+  if (input.mode === "pending_review") {
+    return createPendingNuvemshopOrderMovement(input.client, {
+      originReference,
+      orderLabel: input.orderLabel,
+      itemLabel,
+      sku,
+      color,
+      size,
+      quantity,
+      movementDate: input.movementDate,
+      artName: itemLabel,
+      artProductId: input.product.product_id ? String(input.product.product_id) : "",
+      reasonText: ambiguityReason
+        ? `Pedido ${input.orderLabel}: ${ambiguityReason}`
+        : `Pedido ${input.orderLabel}: venda importada do site para revisao antes da baixa.`,
+    });
+  }
 
   if (ambiguityReason) {
     return createPendingNuvemshopOrderMovement(input.client, {
@@ -3488,6 +3592,120 @@ async function applyPaidNuvemshopOrderMovement(
             : "Item registrado para revisao manual.",
     movementId: row?.movement_id ? String(row.movement_id) : "",
   };
+}
+
+async function loadNuvemshopPaidOrdersForApprovalQueue(
+  monthStart: string,
+  monthEnd: string,
+  movements: StockMovement[],
+) {
+  const credentials = getNuvemshopCredentials();
+
+  if (!credentials.ok) {
+    return [] as NuvemshopOrderApprovalQueueItem[];
+  }
+
+  try {
+    const client = new NuvemshopClient(credentials.credentials);
+    const [orders, products] = await Promise.all([
+      fetchAllNuvemshopPages((params) => client.listOrders(params)),
+      loadNuvemshopProductsForStockSync(),
+    ]);
+    const variantCatalog = buildVariantCatalog(products);
+    const productBaseCatalog = buildStrictProductBaseCatalog(products);
+    const existingReferences = new Set(
+      movements
+        .map((movement) => movement.originReference.trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const queueItems: NuvemshopOrderApprovalQueueItem[] = [];
+
+    for (const order of orders) {
+      if (!isPaidOrderWithinRange(order, monthStart, monthEnd)) {
+        continue;
+      }
+
+      const orderId = String(order.id ?? "").trim();
+
+      if (!orderId) {
+        continue;
+      }
+
+      const lines: NuvemshopOrderApprovalQueueLine[] = [];
+
+      for (const [itemIndex, product] of (order.products || []).entries()) {
+        const quantity =
+          typeof product.quantity === "number" && Number.isFinite(product.quantity)
+            ? Math.max(Math.trunc(product.quantity), 0)
+            : 0;
+
+        if (quantity <= 0) {
+          continue;
+        }
+
+        const originReference = buildNuvemshopOrderOriginReference(order, product, itemIndex);
+
+        if (existingReferences.has(originReference.toLowerCase())) {
+          continue;
+        }
+
+        const variantId = product.variant_id ? String(product.variant_id) : "";
+        const variantEntry = variantId ? variantCatalog.get(variantId) : undefined;
+        const variantBaseCategories = variantEntry
+          ? getStrictStockBaseCategories(variantEntry.baseCategories)
+          : [];
+        const fallbackBaseCategories = product.product_id
+          ? productBaseCatalog.get(String(product.product_id)) ?? []
+          : [];
+        const fallbackVariant = getOrderProductColorAndSize(product);
+        const baseCategories =
+          variantBaseCategories.length > 0 ? variantBaseCategories : fallbackBaseCategories;
+        const sku = baseCategories.length === 1 ? (baseCategories[0] ?? "") : "";
+        const color = variantEntry?.color ?? fallbackVariant.color;
+        const size = variantEntry?.size ?? fallbackVariant.size;
+        const ambiguityReason = getOrderStockResolutionIssue(baseCategories, color, size);
+        const itemLabel =
+          String(product.name ?? product.sku ?? `Item ${itemIndex + 1}`).trim() ||
+          `Item ${itemIndex + 1}`;
+
+        lines.push({
+          originReference,
+          itemLabel,
+          sku,
+          color,
+          size,
+          quantity,
+          resolutionStatus: ambiguityReason ? "pendente" : "pronto",
+          resolutionMessage: ambiguityReason
+            ? ambiguityReason
+            : "Pronto para entrar no extrato e seguir para aprovacao manual.",
+        });
+      }
+
+      if (lines.length === 0) {
+        continue;
+      }
+
+      queueItems.push({
+        orderId,
+        orderLabel: formatOrderLabel(order),
+        customerName: getOrderCustomerLabel(order),
+        paidAt: order.paid_at || order.updated_at || order.created_at || null,
+        lineCount: lines.length,
+        quantityTotal: lines.reduce((sum, line) => sum + line.quantity, 0),
+        lines,
+      });
+    }
+
+    return queueItems.sort((left, right) =>
+      `${right.paidAt || ""}-${right.orderId}`.localeCompare(
+        `${left.paidAt || ""}-${left.orderId}`,
+        "pt-BR",
+      ),
+    );
+  } catch {
+    return [] as NuvemshopOrderApprovalQueueItem[];
+  }
 }
 
 async function createPendingNuvemshopOrderMovement(
@@ -3620,6 +3838,36 @@ function buildNuvemshopOrderOriginReference(
   const variantId = product.variant_id ? String(product.variant_id) : "sem-variante";
 
   return `pedido ${orderNumber} · item ${itemIndex + 1} · produto ${productId} · variante ${variantId}`;
+}
+
+function getOrderCustomerLabel(order: NuvemshopOrder) {
+  return (
+    String(order.contact_name ?? "").trim() ||
+    String(order.customer?.name ?? "").trim() ||
+    String(order.contact_email ?? "").trim() ||
+    "Cliente do site"
+  );
+}
+
+function isPaidOrderWithinRange(order: NuvemshopOrder, startDate: string, endDate: string) {
+  const rawReference =
+    String(order.paid_at ?? "").trim() ||
+    (String(order.payment_status ?? "").trim().toLowerCase() === "paid"
+      ? String(order.updated_at ?? "").trim() || String(order.created_at ?? "").trim()
+      : "");
+
+  if (!rawReference) {
+    return false;
+  }
+
+  const referenceDate = new Date(rawReference);
+
+  if (Number.isNaN(referenceDate.getTime())) {
+    return false;
+  }
+
+  const normalizedReference = formatDateForDb(referenceDate);
+  return normalizedReference >= startDate && normalizedReference <= endDate;
 }
 
 function getOrderStockResolutionIssue(baseCategories: string[], color: string, size: string) {
