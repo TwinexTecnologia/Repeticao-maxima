@@ -9,7 +9,6 @@ import {
   applyStockMovementCorrection,
   createManualStockEntry,
   createManualStockExit,
-  importPaidNuvemshopOrderToStockReview,
   loadStockLedgerModuleData,
   reviewPendingStockMovement,
   type SiteArtSelectionOption,
@@ -321,33 +320,6 @@ async function correctStockMovementAction(formData: FormData) {
 
   revalidatePath("/estoque");
   redirect(appendFlashToRedirect(redirectTo, "success", result.persistence.message));
-}
-
-async function importNuvemshopOrderReviewAction(formData: FormData) {
-  "use server";
-
-  const redirectTo = String(formData.get("redirectTo") ?? "/estoque").trim() || "/estoque";
-  const orderId = String(formData.get("orderId") ?? "").trim();
-  const result = await importPaidNuvemshopOrderToStockReview(orderId);
-
-  if (!result.ok) {
-    redirect(
-      appendFlashToRedirect(
-        redirectTo,
-        "error",
-        result.persistence.message || "Nao foi possivel trazer a venda do site para revisao.",
-      ),
-    );
-  }
-
-  revalidatePath("/estoque");
-  redirect(
-    appendFlashToRedirect(
-      redirectTo,
-      "success",
-      result.persistence.message || "Venda do site enviada para revisao no extrato.",
-    ),
-  );
 }
 
 function buildCombinedStockBaseOptions(
@@ -1164,7 +1136,10 @@ export default async function EstoquePage({ searchParams }: PageProps) {
                           {order.customerName} · pago em {formatDateTime(order.paidAt)}
                         </span>
                       </div>
-                      <form action={importNuvemshopOrderReviewAction}>
+                      <form
+                        method="post"
+                        action="/api/operacoes/estoque/importar-venda-revisao"
+                      >
                         <input type="hidden" name="redirectTo" value={redirectTo} />
                         <input type="hidden" name="orderId" value={order.orderId} />
                         <button type="submit" className={styles.primaryButton}>
