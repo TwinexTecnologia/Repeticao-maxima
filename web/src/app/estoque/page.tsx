@@ -752,6 +752,7 @@ export default async function EstoquePage({ searchParams }: PageProps) {
     (movement) => movement.movementType === "saida" && movement.reviewStatus === "pendente",
   );
   const queuedSiteSales = stockData.approvalQueue.reduce((sum, order) => sum + order.lineCount, 0);
+  const queuedSiteOrderIds = stockData.approvalQueue.map((order) => order.orderId).join(",");
   const totalPlainStock = stockData.stockOptions.reduce((sum, item) => sum + item.plain, 0);
   const ledgerFilters = {
     startDate:
@@ -1105,92 +1106,6 @@ export default async function EstoquePage({ searchParams }: PageProps) {
             </div>
           ) : null}
 
-          <section className={styles.surfaceCard}>
-            <div className={styles.sectionTopbar}>
-              <div>
-                <h3 className={styles.sectionTitle}>Vendas do site para aprovar</h3>
-                <p className={styles.sectionText}>
-                  Aqui entram os pedidos pagos que o dashboard já enxerga na Nuvemshop, mas que ainda
-                  não viraram linhas do extrato de estoque para revisão.
-                </p>
-              </div>
-            </div>
-
-            <div className={styles.alertPills}>
-              <span className={styles.alertPill}>
-                Pedidos aguardando entrada no extrato: {String(stockData.approvalQueue.length)}
-              </span>
-              <span className={styles.alertPill}>
-                Camisetas aguardando revisão: {String(queuedSiteSales)}
-              </span>
-            </div>
-
-            {stockData.approvalQueue.length > 0 ? (
-              <div className={styles.saleQueueList}>
-                {stockData.approvalQueue.map((order) => (
-                  <article key={order.orderId} className={styles.saleQueueCard}>
-                    <div className={styles.saleQueueHeader}>
-                      <div className={styles.saleQueueTitleBlock}>
-                        <strong>{order.orderLabel}</strong>
-                        <span>
-                          {order.customerName} · pago em {formatDateTime(order.paidAt)}
-                        </span>
-                      </div>
-                      <form
-                        method="post"
-                        action="/api/operacoes/estoque/importar-venda-revisao"
-                      >
-                        <input type="hidden" name="redirectTo" value={redirectTo} />
-                        <input type="hidden" name="orderId" value={order.orderId} />
-                        <button type="submit" className={styles.primaryButton}>
-                          Trazer para revisão
-                        </button>
-                      </form>
-                    </div>
-
-                    <div className={styles.saleQueueMeta}>
-                      <span>{String(order.lineCount)} item(ns) pendentes</span>
-                      <span>{String(order.quantityTotal)} camiseta(s) no total</span>
-                    </div>
-
-                    <div className={styles.saleQueueItems}>
-                      {order.lines.slice(0, 4).map((line) => (
-                        <div key={line.originReference} className={styles.saleQueueItem}>
-                          <div>
-                            <strong>{line.itemLabel}</strong>
-                            <span>
-                              {(line.sku || "Base a confirmar")} · {(line.color || "Cor a confirmar")} ·{" "}
-                              {(line.size || "Tamanho a confirmar")} · Qtd {String(line.quantity)}
-                            </span>
-                          </div>
-                          <small
-                            className={
-                              line.resolutionStatus === "pronto"
-                                ? styles.saleQueueHintOk
-                                : styles.saleQueueHintWarn
-                            }
-                          >
-                            {line.resolutionMessage}
-                          </small>
-                        </div>
-                      ))}
-                      {order.lines.length > 4 ? (
-                        <div className={styles.saleQueueMore}>
-                          +{String(order.lines.length - 4)} item(ns) entram juntos quando você trouxer esse
-                          pedido para revisão.
-                        </div>
-                      ) : null}
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <div className={styles.emptyInline}>
-                Nenhuma venda nova do site está aguardando entrada no extrato neste momento.
-              </div>
-            )}
-          </section>
-
           <section className={styles.surfaceCard} id="extrato">
             <div className={styles.sectionTopbar}>
               <div>
@@ -1200,7 +1115,31 @@ export default async function EstoquePage({ searchParams }: PageProps) {
                   compactos e ações auditáveis.
                 </p>
               </div>
+              {stockData.approvalQueue.length > 0 ? (
+                <form
+                  method="post"
+                  action="/api/operacoes/estoque/importar-venda-revisao"
+                  className={styles.toolbarInline}
+                >
+                  <input type="hidden" name="redirectTo" value={redirectTo} />
+                  <input type="hidden" name="orderIds" value={queuedSiteOrderIds} />
+                  <button type="submit" className={styles.primaryButton}>
+                    Trazer {String(queuedSiteSales)} venda(s) do site para o extrato
+                  </button>
+                </form>
+              ) : null}
             </div>
+
+            {stockData.approvalQueue.length > 0 ? (
+              <div className={styles.alertPills}>
+                <span className={styles.alertPill}>
+                  Pedidos do site fora do extrato: {String(stockData.approvalQueue.length)}
+                </span>
+                <span className={styles.alertPill}>
+                  Camisetas prontas para importar: {String(queuedSiteSales)}
+                </span>
+              </div>
+            ) : null}
 
             <form method="get" className={styles.filterGrid}>
               <input type="hidden" name="month" value={selectedMonth} />
@@ -1337,15 +1276,41 @@ export default async function EstoquePage({ searchParams }: PageProps) {
                               Detalhes
                             </a>
                             {movement.reviewStatus === "pendente" ? (
-                              <a
-                                href={buildPageHref(resolvedSearchParams, {
-                                  panel: "review",
-                                  movementId: movement.id,
-                                })}
-                                className={styles.inlineLink}
-                              >
-                                Revisar
-                              </a>
+                              <>
+                                <form
+                                  method="post"
+                                  action="/api/operacoes/estoque/revisar-pendente"
+                                  className={styles.inlineActionForm}
+                                >
+                                  <input type="hidden" name="redirectTo" value={redirectTo} />
+                                  <input type="hidden" name="movementId" value={movement.id} />
+                                  <input
+                                    type="hidden"
+                                    name="stockBaseKey"
+                                    value={buildStockBaseKey(movement.sku, movement.color, movement.size)}
+                                  />
+                                  <input type="hidden" name="quantity" value={String(movement.quantity)} />
+                                  <input
+                                    type="hidden"
+                                    name="originReference"
+                                    value={movement.originReference || ""}
+                                  />
+                                  <input type="hidden" name="deductFromStock" value="true" />
+                                  <input type="hidden" name="decision" value="aprovar" />
+                                  <button type="submit" className={styles.inlineActionButton}>
+                                    Aprovar rápido
+                                  </button>
+                                </form>
+                                <a
+                                  href={buildPageHref(resolvedSearchParams, {
+                                    panel: "review",
+                                    movementId: movement.id,
+                                  })}
+                                  className={styles.inlineLink}
+                                >
+                                  Revisar
+                                </a>
+                              </>
                             ) : null}
                             {canCorrectMovement(movement) ? (
                               <a
