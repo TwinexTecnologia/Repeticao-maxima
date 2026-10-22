@@ -1438,19 +1438,58 @@ export default async function EstoquePage({ searchParams }: PageProps) {
               </form>
             ) : null}
 
-            {panel === "exit" ? (
+            {panel === "exit" ? (() => {
+              const manualExitOptions = stockData.stockOptions
+                .filter((option) => option.plain > 0)
+                .sort((left, right) =>
+                  `${left.sku}-${left.color}-${left.size}`.localeCompare(
+                    `${right.sku}-${right.color}-${right.size}`,
+                    "pt-BR",
+                  ),
+                );
+              const defaultManualExitKey = manualExitOptions[0]
+                ? buildStockBaseKey(
+                    manualExitOptions[0].sku,
+                    manualExitOptions[0].color,
+                    manualExitOptions[0].size,
+                  )
+                : "";
+
+              return (
               <form action={registerStockExitAction} className={styles.panelForm}>
                 <input type="hidden" name="redirectTo" value={redirectTo} />
                 <label className={styles.field}>
                   <span>Base, cor e tamanho</span>
-                  <select name="stockBaseKey" defaultValue={combinedBaseOptions[0]?.key ?? ""} required>
-                    {combinedBaseOptions.map((option) => (
-                      <option key={option.key} value={option.key}>
-                        {option.sku} · {option.color} · {option.size} · saldo {option.plain}
-                      </option>
-                    ))}
+                  <select
+                    name="stockBaseKey"
+                    defaultValue={defaultManualExitKey}
+                    required
+                    disabled={manualExitOptions.length === 0}
+                  >
+                    {manualExitOptions.length > 0 ? (
+                      manualExitOptions.map((option) => {
+                        const optionKey = buildStockBaseKey(option.sku, option.color, option.size);
+
+                        return (
+                          <option key={optionKey} value={optionKey}>
+                            {option.sku} · {option.color} · {option.size} · saldo {option.plain}
+                          </option>
+                        );
+                      })
+                    ) : (
+                      <option value="">Nenhuma combinação com saldo disponível</option>
+                    )}
                   </select>
                 </label>
+                {manualExitOptions.length > 0 ? (
+                  <div className={styles.emptyInline}>
+                    Mostrando só as combinações que ainda têm saldo disponível para saída manual.
+                  </div>
+                ) : (
+                  <div className={styles.emptyInline}>
+                    Nenhuma combinação com saldo disponível foi encontrada para registrar saída manual.
+                  </div>
+                )}
                 <label className={styles.field}>
                   <span>Arte / produto</span>
                   <select name="artSelectionId" defaultValue="">
@@ -1493,12 +1532,13 @@ export default async function EstoquePage({ searchParams }: PageProps) {
                   <textarea name="notes" rows={3} placeholder="Motivo ou contexto da saída" />
                 </label>
                 <div className={styles.panelActions}>
-                  <button type="submit" className={styles.primaryButton}>
+                  <button type="submit" className={styles.primaryButton} disabled={manualExitOptions.length === 0}>
                     Registrar saída
                   </button>
                 </div>
               </form>
-            ) : null}
+              );
+            })() : null}
 
             {panel === "review" ? (() => {
               const movement = stockData.movements.find((item) => item.id === correctionMovementId);
@@ -1508,6 +1548,48 @@ export default async function EstoquePage({ searchParams }: PageProps) {
               }
 
               const defaultBaseKey = buildStockBaseKey(movement.sku, movement.color, movement.size);
+              const reviewBaseOptions = stockData.stockOptions
+                .filter((option) => option.plain >= movement.quantity)
+                .sort((left, right) => {
+                  const leftScore =
+                    (left.sku === movement.sku ? 4 : 0) +
+                    (left.color === movement.color ? 2 : 0) +
+                    (left.size === movement.size ? 2 : 0);
+                  const rightScore =
+                    (right.sku === movement.sku ? 4 : 0) +
+                    (right.color === movement.color ? 2 : 0) +
+                    (right.size === movement.size ? 2 : 0);
+
+                  if (leftScore !== rightScore) {
+                    return rightScore - leftScore;
+                  }
+
+                  if (left.plain !== right.plain) {
+                    return right.plain - left.plain;
+                  }
+
+                  return `${left.sku}-${left.color}-${left.size}`.localeCompare(
+                    `${right.sku}-${right.color}-${right.size}`,
+                    "pt-BR",
+                  );
+                });
+              const fallbackReviewOption = stockData.stockOptions.find(
+                (option) => buildStockBaseKey(option.sku, option.color, option.size) === defaultBaseKey,
+              );
+              const resolvedReviewBaseOptions =
+                reviewBaseOptions.length > 0
+                  ? reviewBaseOptions
+                  : fallbackReviewOption
+                    ? [fallbackReviewOption]
+                    : [];
+              const reviewSelectDefaultKey =
+                resolvedReviewBaseOptions[0]
+                  ? buildStockBaseKey(
+                      resolvedReviewBaseOptions[0].sku,
+                      resolvedReviewBaseOptions[0].color,
+                      resolvedReviewBaseOptions[0].size,
+                    )
+                  : defaultBaseKey;
 
               return (
                 <form action={reviewPendingStockExitAction} className={styles.panelForm}>
@@ -1522,14 +1604,28 @@ export default async function EstoquePage({ searchParams }: PageProps) {
                   </div>
                   <label className={styles.field}>
                     <span>Base que vai baixar</span>
-                    <select name="stockBaseKey" defaultValue={defaultBaseKey} required>
-                      {combinedBaseOptions.map((option) => (
-                        <option key={option.key} value={option.key}>
+                    <select name="stockBaseKey" defaultValue={reviewSelectDefaultKey} required>
+                      {resolvedReviewBaseOptions.map((option) => {
+                        const optionKey = buildStockBaseKey(option.sku, option.color, option.size);
+
+                        return (
+                          <option key={optionKey} value={optionKey}>
                           {option.sku} · {option.color} · {option.size} · saldo {option.plain}
-                        </option>
-                      ))}
+                          </option>
+                        );
+                      })}
                     </select>
                   </label>
+                  {reviewBaseOptions.length > 0 ? (
+                    <div className={styles.emptyInline}>
+                      Mostrando só as combinações com saldo suficiente para essa baixa.
+                    </div>
+                  ) : (
+                    <div className={styles.emptyInline}>
+                      Nenhuma combinação com saldo disponível foi encontrada. Revise manualmente antes de
+                      aprovar a baixa.
+                    </div>
+                  )}
                   <label className={styles.field}>
                     <span>Quantidade</span>
                     <input type="number" name="quantity" min="1" step="1" defaultValue={String(movement.quantity)} required />
