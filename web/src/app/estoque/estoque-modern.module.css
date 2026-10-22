@@ -479,6 +479,102 @@
   line-height: 1.6;
 }
 
+.saleQueueList {
+  display: grid;
+  gap: 14px;
+}
+
+.saleQueueCard {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 20px;
+  background: rgba(10, 15, 40, 0.78);
+  border: 1px solid rgba(174, 183, 255, 0.14);
+}
+
+.saleQueueHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.saleQueueTitleBlock {
+  display: grid;
+  gap: 6px;
+}
+
+.saleQueueTitleBlock strong {
+  color: #ffffff;
+}
+
+.saleQueueTitleBlock span {
+  color: #aeb5d6;
+  line-height: 1.5;
+}
+
+.saleQueueMeta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.saleQueueMeta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 0.84rem;
+  color: #dcd6f8;
+  background: rgba(11, 16, 43, 0.92);
+  border: 1px solid rgba(174, 183, 255, 0.12);
+}
+
+.saleQueueItems {
+  display: grid;
+  gap: 10px;
+}
+
+.saleQueueItem {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(7, 11, 33, 0.72);
+  border: 1px solid rgba(174, 183, 255, 0.1);
+}
+
+.saleQueueItem div {
+  display: grid;
+  gap: 4px;
+}
+
+.saleQueueItem strong {
+  color: #ffffff;
+}
+
+.saleQueueItem span {
+  color: #d8ddf7;
+  line-height: 1.5;
+}
+
+.saleQueueHintOk,
+.saleQueueHintWarn,
+.saleQueueMore {
+  color: #aeb5d6;
+  line-height: 1.5;
+}
+
+.saleQueueHintOk {
+  color: #c4b5fd;
+}
+
+.saleQueueHintWarn {
+  color: #f9a8d4;
+}
+
 .feedbackSuccess,
 .feedbackError {
   display: grid;
@@ -739,6 +835,11 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .saleQueueHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .panelOverlay {
     grid-template-columns: 1fr;
   }
@@ -784,7 +885,8 @@
   .filterActions,
   .metaInfo,
   .alertPills,
-  .rowActions {
+  .rowActions,
+  .saleQueueMeta {
     flex-direction: column;
     align-items: stretch;
   }
