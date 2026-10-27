@@ -276,7 +276,63 @@ export function FinanceiroClient({
         </div>
       </section>
 
-      <section className={styles.section}>
+      <section className={`${styles.section} ${styles.mobileOnly}`}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Saidas do mes</div>
+            <p className={styles.sectionSubtitle}>
+              Dividas e compromissos do mes em leitura adaptada para celular.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.mobileList}>
+          {cashFlow.debtRows.length > 0 ? (
+            cashFlow.debtRows.map((row) => (
+              <div key={row.id} className={styles.mobileListItem}>
+                <div className={styles.mobileListTitleRow}>
+                  <div className={styles.mobileListTitle}>{row.title}</div>
+                  <span
+                    className={`${styles.pill} ${
+                      row.status === "paga"
+                        ? styles.pillLow
+                        : row.status === "cancelada"
+                          ? styles.pillMedium
+                          : styles.pillHigh
+                    }`}
+                  >
+                    {labelForDebtStatus(row.status)}
+                  </span>
+                </div>
+                <div className={styles.mobileListMeta}>
+                  <span>{row.category}</span>
+                  <span>{formatMoney(row.amount)}</span>
+                  <span>{formatDate(row.dueDate)}</span>
+                </div>
+                <div className={styles.mobileKeyValueList}>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Pagamento</strong>
+                    <span>{labelForPaymentMethod(row.paymentMethod)}</span>
+                  </div>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Parcela</strong>
+                    <span>{row.installmentLabel}</span>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className={styles.warningPanel}>
+              <div className={styles.warningTitle}>Nenhuma divida no mes</div>
+              <p className={styles.warningText}>
+                Nao encontramos saidas vindas do modulo de Compras e Dividas.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className={`${styles.section} ${styles.desktopOnly}`}>
         <div className={styles.sectionHeader}>
           <div>
             <div className={styles.sectionTitle}>Saidas do mes</div>
@@ -333,7 +389,64 @@ export function FinanceiroClient({
         </div>
       </section>
 
-      <section className={styles.section}>
+      <section className={`${styles.section} ${styles.mobileOnly}`}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Pedidos da Nuvemshop no mes</div>
+            <p className={styles.sectionSubtitle}>
+              Visual rapido dos pedidos e do liquido estimado para operar pelo celular.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.mobileList}>
+          {cashFlow.nuvemRows.length > 0 ? (
+            cashFlow.nuvemRows.map((row) => (
+              <details key={row.id} className={styles.mobileListItem}>
+                <summary className={styles.mobileListSummary}>
+                  <div className={styles.mobileListTitleRow}>
+                    <div className={styles.mobileListTitle}>Pedido #{row.number}</div>
+                    <span className={`${styles.pill} ${styles.pillLow}`}>
+                      {formatMoney(row.netReceived)}
+                    </span>
+                  </div>
+                  <div className={styles.mobileListMeta}>
+                    <span>{row.customerName}</span>
+                    <span>{row.referenceDate ? formatDateTime(row.referenceDate) : "-"}</span>
+                  </div>
+                </summary>
+                <div className={styles.mobileKeyValueList}>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Pagamento</strong>
+                    <span>{`${row.paymentMethod} · ${row.installments}x`}</span>
+                  </div>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Bruto</strong>
+                    <span>{formatMoney(row.total)}</span>
+                  </div>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Taxa estimada</strong>
+                    <span>{formatMoney(row.feeCost)}</span>
+                  </div>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Regra usada</strong>
+                    <span>{row.feeLabel}</span>
+                  </div>
+                </div>
+              </details>
+            ))
+          ) : (
+            <div className={styles.warningPanel}>
+              <div className={styles.warningTitle}>Sem pedidos no mes</div>
+              <p className={styles.warningText}>
+                Nao encontramos pedidos da Nuvemshop na competencia filtrada.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className={`${styles.section} ${styles.desktopOnly}`}>
         <div className={styles.sectionHeader}>
           <div>
             <div className={styles.sectionTitle}>Pedidos da Nuvemshop no mes</div>

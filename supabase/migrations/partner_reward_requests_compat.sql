@@ -1,7 +1,8 @@
 ALTER TABLE repeticao_maxima.parceiros_solicitacoes_resgate
   ADD COLUMN IF NOT EXISTS admin_coupon_code TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS admin_message TEXT NOT NULL DEFAULT '',
-  ADD COLUMN IF NOT EXISTS partner_seen_at TIMESTAMPTZ;
+  ADD COLUMN IF NOT EXISTS partner_seen_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS consumed_amount NUMERIC(12, 2) NOT NULL DEFAULT 0;
 
 ALTER TABLE repeticao_maxima.parceiros_solicitacoes_resgate
   DROP CONSTRAINT IF EXISTS parceiros_solicitacoes_resgate_status_check;

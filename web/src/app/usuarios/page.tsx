@@ -4,7 +4,10 @@ import { loadUserAccessModuleData } from "@/lib/usuarios/repository";
 import { loadPartnerRewardRequests } from "@/lib/parceiros/repository";
 
 export default async function UsuariosPage() {
-  const [{ employees, partners, partnerOptions, persistence }, pendingRequests] =
+  const [
+    { employees, partners, partnerOptions, storeCustomerOptions, persistence },
+    pendingRequests,
+  ] =
     await Promise.all([
       loadUserAccessModuleData(),
       loadPartnerRewardRequests({ statuses: ["pendente"] }),
@@ -20,6 +23,7 @@ export default async function UsuariosPage() {
         initialEmployees={employees}
         initialPartners={partners}
         initialPartnerOptions={partnerOptions}
+        initialStoreCustomerOptions={storeCustomerOptions}
         initialPersistence={persistence}
         initialPendingRequests={pendingRequests}
       />

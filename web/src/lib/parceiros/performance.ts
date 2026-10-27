@@ -235,22 +235,35 @@ export function getPartnerAvailableBalances(
   rollingWindow: { startDate: string; endDate: string },
   requests: PartnerRewardRequest[],
 ): PartnerAvailableBalances {
+  const openClothesRequests = requests.filter(
+    (request) =>
+      request.requestType === "roupa" &&
+      (request.status === "pendente" || request.status === "aprovado"),
+  );
+  const openClothesCarryover = openClothesRequests.reduce(
+    (sum, request) => sum + getPartnerRewardRequestRemainingAmount(request),
+    0,
+  );
+  const currentWindowAlreadyRepresented = openClothesRequests.some(
+    (request) =>
+      request.windowStartDate === rollingWindow.startDate &&
+      request.windowEndDate === rollingWindow.endDate,
+  );
+  const currentWindowUnlocked = currentWindowAlreadyRepresented ? 0 : row.monthlyUnlockedCredit;
   const clothesCommitted = requests
     .filter(
       (request) =>
         request.requestType === "roupa" &&
-        request.status !== "recusado" &&
-        request.windowStartDate === rollingWindow.startDate &&
-        request.windowEndDate === rollingWindow.endDate,
+        request.status !== "recusado",
     )
-    .reduce((sum, request) => sum + request.requestedAmount, 0);
+    .reduce((sum, request) => sum + request.consumedAmount, 0);
   const supportCommitted = requests
     .filter(
       (request) =>
         request.requestType === "apoio" && request.status !== "recusado",
     )
     .reduce((sum, request) => sum + request.requestedAmount, 0);
-  const clothesAvailable = Math.max(row.monthlyUnlockedCredit - clothesCommitted, 0);
+  const clothesAvailable = Math.max(currentWindowUnlocked + openClothesCarryover, 0);
   const supportAvailable = Math.max(row.cumulativeSupport - supportCommitted, 0);
 
   return {
@@ -258,10 +271,14 @@ export function getPartnerAvailableBalances(
     clothesAvailable,
     supportCommitted,
     supportAvailable,
-    canRequestClothes: row.monthlyGoalReached && clothesAvailable > 0,
+    canRequestClothes: clothesAvailable > 0,
     canRequestSupport:
       row.role === "atleta" && supportAvailable >= ATHLETE_SUPPORT_MINIMUM_REDEMPTION,
   };
+}
+
+export function getPartnerRewardRequestRemainingAmount(request: PartnerRewardRequest) {
+  return Math.max(request.requestedAmount - request.consumedAmount, 0);
 }
 
 function normalizeText(value: string) {

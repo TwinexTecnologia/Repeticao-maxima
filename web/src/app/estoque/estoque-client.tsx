@@ -6,10 +6,10 @@ import { useRouter } from "next/navigation";
 import styles from "@/components/panel.module.css";
 import {
   type BaseStockItem,
-  type DtfArtType,
   type DtfCatalogProduct,
   type DtfStockItem,
   type NuvemshopStockProduct,
+  type OperationalDtfArtType,
   type OperationalPersistenceState,
   type StockMovement,
 } from "@/lib/operacoes/repository";
@@ -52,7 +52,7 @@ type StockAdjustmentState = {
   reasonText: string;
 };
 
-const TRACKED_BASE_COLORS = ["Preta", "Branca", "Roxa"] as const;
+const TRACKED_BASE_COLORS = ["Preta", "Branca", "Roxa", "Rosa"] as const;
 
 export function EstoqueClient({
   initialItems,
@@ -115,7 +115,7 @@ export function EstoqueClient({
   const [dtfForm, setDtfForm] = useState({
     nuvemshopProductId: dtfCatalog[0]?.productId ?? "",
     productName: dtfCatalog[0]?.productName ?? "",
-    artType: "outro" as DtfArtType,
+    artType: "outro" as OperationalDtfArtType,
     availableQty: "0",
     reorderPoint: "0",
     leadTimeDays: "5",
@@ -183,6 +183,11 @@ export function EstoqueClient({
         label: "Roxa",
         value: String(sumPlainStockByColor(visibleBaseItems, "Roxa")),
         detail: "Saldo liso total da cor roxa.",
+      },
+      {
+        label: "Rosa",
+        value: String(sumPlainStockByColor(visibleBaseItems, "Rosa")),
+        detail: "Saldo liso total da cor rosa.",
       },
       {
         label: "Alocado no site",
@@ -923,6 +928,7 @@ export function EstoqueClient({
                   <option>Preta</option>
                   <option>Branca</option>
                   <option>Roxa</option>
+                  <option>Rosa</option>
                 </select>
               </label>
               <label className={styles.filterField}>
@@ -1661,7 +1667,7 @@ export function EstoqueClient({
                   onChange={(event) =>
                     setDtfForm((current) => ({
                       ...current,
-                      artType: event.target.value as DtfArtType,
+                      artType: event.target.value as OperationalDtfArtType,
                     }))
                   }
                 >
@@ -1840,7 +1846,7 @@ export function EstoqueClient({
                             updateDtfDraft(
                               draft.id,
                               "artType",
-                              event.target.value as DtfArtType,
+                              event.target.value as OperationalDtfArtType,
                             )
                           }
                         >
@@ -1943,7 +1949,7 @@ function formatDateTime(value: string) {
   }).format(date);
 }
 
-function labelForDtfType(value: DtfArtType) {
+function labelForDtfType(value: OperationalDtfArtType) {
   switch (value) {
     case "minimalista":
       return "Minimalista";

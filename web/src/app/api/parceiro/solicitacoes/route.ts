@@ -6,6 +6,7 @@ import {
   formatDateOnly,
   getCurrentMonthInput,
   getPartnerAvailableBalances,
+  getPartnerRewardRequestRemainingAmount,
   loadPartnerPerformanceSnapshot,
 } from "@/lib/parceiros/performance";
 import { loadPartnerCampaigns } from "@/lib/parceiros/campaigns-repository";
@@ -107,12 +108,31 @@ export async function POST(request: Request) {
     );
 
     if (requestType === "roupa") {
-      if (!balances.canRequestClothes) {
+      const openClothesRequest = requests.find(
+        (request) =>
+          request.requestType === "roupa" &&
+          (request.status === "pendente" || request.status === "aprovado") &&
+          getPartnerRewardRequestRemainingAmount(request) > 0,
+      );
+
+      if (openClothesRequest) {
         return NextResponse.json(
           {
             ok: false,
             message:
-              "Essa janela ainda nao liberou saldo em roupa ou esse valor ja foi solicitado anteriormente.",
+              openClothesRequest.status === "pendente"
+                ? "Voce ja tem uma solicitacao de roupa em analise. Assim que o admin liberar, o saldo continua disponivel para usar."
+                : "Voce ja tem um saldo de roupa aprovado para usar na plataforma.",
+          },
+          { status: 400 },
+        );
+      }
+
+      if (!balances.canRequestClothes) {
+        return NextResponse.json(
+          {
+            ok: false,
+            message: "Ainda nao existe saldo de roupa disponivel para solicitar.",
           },
           { status: 400 },
         );

@@ -65,6 +65,7 @@ export type CompanyCartDiscountRule = {
   minimumQuantity: number;
   discountAmount: number;
   active: boolean;
+  allowCombiningWithOtherPromotions: boolean;
   notes: string;
   nuvemshopPromotionId: string | null;
   nuvemshopStatus: CompanyNuvemshopStatus;
@@ -165,6 +166,8 @@ export async function createCompanyCartDiscountRule(
         minimum_quantity: row.minimumQuantity,
         discount_amount: row.discountAmount,
         active: row.active,
+        allow_combining_with_other_promotions:
+          row.allowCombiningWithOtherPromotions,
         notes: row.notes,
       })
       .select("*")
@@ -312,6 +315,8 @@ export async function updateCompanyCartDiscountRule(
         minimum_quantity: row.minimumQuantity,
         discount_amount: row.discountAmount,
         active: row.active,
+        allow_combining_with_other_promotions:
+          row.allowCombiningWithOtherPromotions,
         notes: row.notes,
         updated_at: new Date().toISOString(),
       })
@@ -568,6 +573,9 @@ function rowToCompanyCartDiscountRule(
     minimumQuantity: Math.max(getIntegerValue(row.minimum_quantity), 1),
     discountAmount: Math.max(getNumberValue(row.discount_amount), 0),
     active: Boolean(row.active),
+    allowCombiningWithOtherPromotions: Boolean(
+      row.allow_combining_with_other_promotions,
+    ),
     notes: String(row.notes ?? ""),
     nuvemshopPromotionId: getNullableTextValue(row.nuvemshop_promotion_id),
     nuvemshopStatus: normalizeNuvemshopStatus(row.nuvemshop_status),
@@ -658,6 +666,9 @@ function normalizeCompanyCartDiscountInput(input: unknown) {
     minimumQuantity: resolvedMinimumQuantity,
     discountAmount: Math.max(getNumberValue(source.discountAmount), 0),
     active: source.active === undefined ? true : Boolean(source.active),
+    allowCombiningWithOtherPromotions: Boolean(
+      source.allowCombiningWithOtherPromotions,
+    ),
     notes: String(source.notes ?? "").trim(),
   };
 }

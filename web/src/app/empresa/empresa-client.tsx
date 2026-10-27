@@ -52,6 +52,7 @@ export function EmpresaClient({
     categoryIds: defaultCategoryId ? [defaultCategoryId] : [],
     minimumQuantity: "3",
     discountAmount: "57",
+    allowCombiningWithOtherPromotions: false,
     notes: "",
   });
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
@@ -220,6 +221,8 @@ export function EmpresaClient({
             productNames: selectedProducts.map((product) => product.productName),
             minimumQuantity: String(computedMinimumQuantity),
             discountAmount: form.discountAmount,
+            allowCombiningWithOtherPromotions:
+              form.allowCombiningWithOtherPromotions,
             notes: form.notes,
           }),
         },
@@ -392,6 +395,8 @@ export function EmpresaClient({
             : [],
       minimumQuantity: String(rule.minimumQuantity),
       discountAmount: String(rule.discountAmount),
+      allowCombiningWithOtherPromotions:
+        rule.allowCombiningWithOtherPromotions,
       notes: rule.notes,
     });
     setSelectedProductIds(rule.productIds);
@@ -429,6 +434,7 @@ export function EmpresaClient({
       categoryIds: defaultCategoryId ? [defaultCategoryId] : [],
       minimumQuantity: "3",
       discountAmount: "57",
+      allowCombiningWithOtherPromotions: false,
       notes: "",
     });
   }
@@ -467,7 +473,108 @@ export function EmpresaClient({
         </div>
       </section>
 
-      <section className={styles.section}>
+      <section className={`${styles.section} ${styles.mobileOnly}`}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Promocoes salvas</div>
+            <p className={styles.sectionSubtitle}>
+              Leitura compacta para revisar, editar e ativar regras pelo celular.
+            </p>
+          </div>
+        </div>
+
+        {rules.length === 0 ? (
+          <div className={styles.emptyState}>
+            Nenhuma promocao salva ainda. Monte a primeira regra abaixo.
+          </div>
+        ) : (
+          <div className={styles.mobileList}>
+            {rules.map((rule) => (
+              <details key={rule.id} className={styles.mobileListItem}>
+                <summary className={styles.mobileListSummary}>
+                  <div className={styles.mobileListTitleRow}>
+                    <div className={styles.mobileListTitle}>{rule.title}</div>
+                    <span
+                      className={`${styles.pill} ${
+                        rule.active ? styles.pillLow : styles.pillMedium
+                      }`}
+                    >
+                      {rule.active ? "Ativa" : "Pausada"}
+                    </span>
+                  </div>
+                  <div className={styles.mobileListMeta}>
+                    <span>{rule.ruleMode === "misto" ? "Misto" : "Categoria"}</span>
+                    <span>{rule.minimumQuantity} itens</span>
+                    <span>{formatMoney(rule.discountAmount)}</span>
+                  </div>
+                </summary>
+                <div className={styles.mobileKeyValueList}>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Categorias</strong>
+                    <span>
+                      {rule.comboGroups.length > 0
+                        ? rule.comboGroups
+                            .map(
+                              (group) =>
+                                `${group.minimumQuantity}x ${group.categoryName}`,
+                            )
+                            .join(", ")
+                        : (rule.categoryNames.length > 0
+                            ? rule.categoryNames
+                            : [rule.categoryName]
+                          ).join(", ")}
+                    </span>
+                  </div>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Produtos</strong>
+                    <span>{`${rule.productNames.length} produto(s)`}</span>
+                  </div>
+                  <div className={styles.mobileKeyValueRow}>
+                    <strong>Combinacao</strong>
+                    <span>
+                      {rule.allowCombiningWithOtherPromotions
+                        ? "Combina com outras promocoes"
+                        : "Nao combina com outras promocoes"}
+                    </span>
+                  </div>
+                </div>
+                <div className={styles.callout} style={{ marginTop: 12 }}>
+                  <h3>{getNuvemshopStatusLabel(rule.nuvemshopStatus)}</h3>
+                  <p>{rule.nuvemshopMessage}</p>
+                  {rule.nuvemshopLastSyncedAt ? (
+                    <p style={{ marginTop: 6 }}>
+                      Ultima sync: {formatDateTime(rule.nuvemshopLastSyncedAt)}
+                    </p>
+                  ) : null}
+                </div>
+                <div className={styles.mobileListActions}>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    onClick={() => startEditingRule(rule)}
+                  >
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.secondaryButton}
+                    onClick={() => handleToggleRule(rule)}
+                    disabled={togglingRuleId === rule.id}
+                  >
+                    {togglingRuleId === rule.id
+                      ? "Salvando..."
+                      : rule.active
+                        ? "Inativar"
+                        : "Ativar"}
+                  </button>
+                </div>
+              </details>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className={`${styles.section} ${styles.desktopOnly}`}>
         <div className={styles.sectionHeader}>
           <div>
             <div className={styles.sectionTitle}>Promocoes salvas</div>
@@ -548,6 +655,11 @@ export function EmpresaClient({
                     <td>{formatMoney(rule.discountAmount)}</td>
                     <td>{rule.active ? "Ativa" : "Pausada"}</td>
                     <td>
+                      <div style={{ color: "#6f5b82", marginBottom: 6 }}>
+                        {rule.allowCombiningWithOtherPromotions
+                          ? "Combina com outras promocoes"
+                          : "Nao combina com outras promocoes"}
+                      </div>
                       <div
                         style={{
                           display: "inline-flex",
@@ -723,9 +835,26 @@ export function EmpresaClient({
                   />
                 </label>
 
+                <label className={styles.filterField}>
+                  <span>Combinar com outras promocoes</span>
+                  <select
+                    value={form.allowCombiningWithOtherPromotions ? "sim" : "nao"}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        allowCombiningWithOtherPromotions:
+                          event.target.value === "sim",
+                      }))
+                    }
+                  >
+                    <option value="nao">Nao permitir</option>
+                    <option value="sim">Permitir combinar</option>
+                  </select>
+                </label>
+
                 <label
                   className={styles.filterField}
-                  style={{ gridColumn: "span 2" }}
+                  style={{ gridColumn: "span 3" }}
                 >
                   <span>Observacao interna</span>
                   <input

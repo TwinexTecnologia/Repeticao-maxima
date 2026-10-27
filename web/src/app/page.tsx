@@ -1,770 +1,39 @@
 import { AppShell } from "@/components/app-shell";
 import styles from "@/components/panel.module.css";
-import {
-  buildFinanceDashboard,
-  buildMonthlyCashFlow,
-  formatMoney,
-  formatPercent,
-} from "@/lib/financeiro/calculations";
-import { loadFinanceConfig } from "@/lib/financeiro/repository";
+import { formatMoney, formatPercent } from "@/lib/financeiro/calculations";
 import { loadMonthlyFinanceFlow, type FinanceFlowOrder } from "@/lib/financeiro/flow";
+import { loadFinanceConfig } from "@/lib/financeiro/repository";
 import {
   loadCompanyDiscountModuleData,
   type CompanyCartDiscountRule,
 } from "@/lib/empresa/repository";
-import {
-  loadDebtModuleData,
-  loadStockModuleData,
-  type BaseStockItem,
-  type InternalDebt,
-} from "@/lib/operacoes/repository";
+import { loadManualFinanceModuleData } from "@/lib/operacoes/repository";
 
 const FULL_UNIT_COST = 52;
 const MINIMAL_UNIT_COST = 32;
-const INFLUENCER_CREDIT_PERCENT = 14;
-const ATHLETE_PRODUCT_PERCENT = 10;
-const ATHLETE_SUPPORT_PERCENT = 4;
+const DEFAULT_BANK_BALANCE = 331.34;
 
-export default async function Home() {
-  const [{ config }, flow, stockModule, debtModule, companyModule] = await Promise.all([
-    loadFinanceConfig(),
-    loadMonthlyFinanceFlow(),
-    loadStockModuleData(),
-    loadDebtModuleData(),
-    loadCompanyDiscountModuleData(),
-  ]);
+type PageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
 
-  const financeDashboard = buildFinanceDashboard(config);
-  const cashFlow = buildMonthlyCashFlow(config, flow);
-  const snapshot = buildHomeSnapshot({
-    stockItems: stockModule.items,
-    debts: debtModule.debts,
-    orders: flow.orders,
-    cashFlow,
-    financeDashboard,
-    comboRules: companyModule.rules,
-    unitPrice: config.unitPrice,
-    config,
-  });
+type DashboardMetric = {
+  label: string;
+  value: string;
+  detail: string;
+};
 
-  return (
-    <AppShell
-      title="Centro da operacao"
-      subtitle="Uma leitura estrategica do mes para entender saude da loja, cobertura das dividas e onde o estoque pede recompra ou remanejamento."
-      currentPath="/"
-    >
-      <section className={styles.section}>
-        <div className={styles.metricGrid}>
-          {snapshot.topMetrics.map((metric) => (
-            <article key={metric.label} className={styles.metricCard}>
-              <div className={styles.metricLabel}>{metric.label}</div>
-              <div className={styles.metricValue}>{metric.value}</div>
-              <div className={styles.metricHint}>{metric.detail}</div>
-            </article>
-          ))}
-        </div>
+type DashboardListRow = {
+  title: string;
+  value: string;
+  detail: string;
+};
 
-        <div className={styles.heroCompact}>
-          <div className={styles.heroCard}>
-            <h2>O que esta acontecendo na loja neste mes.</h2>
-            <p>
-              A Dash cruza pedidos do mes, dividas abertas, estoque e cenarios
-              comerciais para te responder se o caixa aguenta os vencimentos, se
-              o estoque paga o que esta aberto e onde sua margem aperta.
-            </p>
-            <div className={styles.heroBulletList}>
-              {snapshot.heroBullets.map((bullet, index) => (
-                <div key={bullet} className={styles.heroBullet}>
-                  <span>{String(index + 1).padStart(2, "0")}</span>
-                  <span>{bullet}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className={styles.stack}>
-            <div className={styles.callout}>
-              <h3>Projecao do estoque</h3>
-              <p>{snapshot.stockProjectionSummary}</p>
-            </div>
-
-            <div className={styles.metricGridCompact}>
-              {snapshot.stockProjectionMetrics.map((metric) => (
-                <article key={metric.label} className={styles.metricCard}>
-                  <div className={styles.metricLabel}>{metric.label}</div>
-                  <div className={styles.metricValue}>{metric.value}</div>
-                  <div className={styles.metricHint}>{metric.detail}</div>
-                </article>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <div className={styles.sectionTitle}>Radar do mes</div>
-            <p className={styles.sectionSubtitle}>
-              O painel abaixo resume faturamento, liquido, vencimentos e pressao
-              do estoque em uma leitura rapida.
-            </p>
-          </div>
-        </div>
-
-        <div className={styles.metricGrid}>
-          {snapshot.financeMetrics.map((metric) => (
-            <article key={metric.label} className={styles.metricCard}>
-              <div className={styles.metricLabel}>{metric.label}</div>
-              <div className={styles.metricValue}>{metric.value}</div>
-              <div className={styles.metricHint}>{metric.detail}</div>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className={styles.section}>
-        <div className={styles.twoColumn}>
-          <div>
-            <div className={styles.sectionHeader}>
-              <div>
-                <div className={styles.sectionTitle}>Dividas por janela</div>
-                <p className={styles.sectionSubtitle}>
-                  Aqui o foco e simples: quanto vence em cada janela e se o
-                  ritmo liquido atual da operacao cobre esse bloco.
-                </p>
-              </div>
-            </div>
-
-            <div className={styles.list}>
-              {snapshot.debtWindowRows.map((row) => (
-                <article key={row.label} className={styles.listItem}>
-                  <div className={styles.listTitleRow}>
-                    <div className={styles.listTitle}>{row.label}</div>
-                    <span className={`${styles.pill} ${getAlertPillClass(row.level)}`}>
-                      {row.badge}
-                    </span>
-                  </div>
-                  <p className={styles.listDetail}>{row.detail}</p>
-                </article>
-              ))}
-            </div>
-          </div>
-
-          <div className={styles.stack}>
-            <div className={styles.callout}>
-              <h3>Leitura financeira direta</h3>
-              <p>{snapshot.financialDiagnosis}</p>
-            </div>
-
-            <article className={styles.metricCard}>
-              <div className={styles.metricLabel}>Liquido por dia no ritmo atual</div>
-              <div className={styles.metricValue}>{snapshot.dailyNetPace}</div>
-              <div className={styles.metricHint}>
-                Considera Nuvemshop do mes atual e a parcela diaria do TikTok.
-              </div>
-            </article>
-
-            <article className={styles.metricCard}>
-              <div className={styles.metricLabel}>Projecao liquida ate o fim do mes</div>
-              <div className={styles.metricValue}>{snapshot.projectedMonthNet}</div>
-              <div className={styles.metricHint}>
-                Folga estimada da operacao antes de olhar o valor do lote.
-              </div>
-            </article>
-
-            <article className={styles.metricCard}>
-              <div className={styles.metricLabel}>Ticket medio do mes</div>
-              <div className={styles.metricValue}>{snapshot.averageTicket}</div>
-              <div className={styles.metricHint}>
-                {snapshot.totalOrdersLabel} no mes atual da Nuvemshop.
-              </div>
-            </article>
-          </div>
-        </div>
-      </section>
-
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <div className={styles.sectionTitle}>Cenarios que mais mexem na margem</div>
-            <p className={styles.sectionSubtitle}>
-              A leitura comercial fica em cima e, logo abaixo, os cenarios voltam
-              para a tabela por colunas para facilitar a comparacao linha a linha.
-            </p>
-          </div>
-        </div>
-
-        <div className={styles.callout}>
-          <h3>Leitura comercial direta</h3>
-          <p>{snapshot.marginDiagnosis}</p>
-        </div>
-
-        <div className={styles.metricGrid}>
-          {snapshot.pricingFocusMetrics.map((metric) => (
-            <article key={metric.label} className={styles.metricCard}>
-              <div className={styles.metricLabel}>{metric.label}</div>
-              <div className={styles.metricValue}>{metric.value}</div>
-              <div className={styles.metricHint}>{metric.detail}</div>
-            </article>
-          ))}
-        </div>
-
-        <div className={`${styles.tableWrap} ${styles.scenarioTableWrap}`}>
-          <table className={`${styles.table} ${styles.scenarioTable}`}>
-            <thead>
-              <tr>
-                <th>Cenario</th>
-                <th>Composicao</th>
-                <th>Qtd</th>
-                <th>Valor</th>
-                <th>Taxa</th>
-                <th>% taxa</th>
-                <th>Liquido</th>
-                <th>Custo</th>
-                <th>Lucro</th>
-                <th>Margem</th>
-                <th>Influ.</th>
-                <th>Atleta</th>
-                <th>Lucro infl.</th>
-                <th>Margem infl.</th>
-                <th>Lucro atleta</th>
-                <th>Margem atleta</th>
-              </tr>
-            </thead>
-            <tbody>
-              {snapshot.strategicScenarioRows.map((row) => (
-                <tr key={row.title}>
-                  <td>{row.title}</td>
-                  <td>{row.mixLabel}</td>
-                  <td>{row.quantity}</td>
-                  <td>{formatMoney(row.discountedRevenue)}</td>
-                  <td>{formatMoney(row.feeCost)}</td>
-                  <td>{formatPercent(row.feePercentOnRevenue)}</td>
-                  <td>{formatMoney(row.netReceived)}</td>
-                  <td>{formatMoney(row.costTotal)}</td>
-                  <td className={getProfitToneClass(row.marginPercent)}>
-                    {formatMoney(row.netProfit)}
-                  </td>
-                  <td className={getProfitToneClass(row.marginPercent)}>
-                    {formatPercent(row.marginPercent)}
-                  </td>
-                  <td className={styles.tableCellTight}>
-                    <strong>{formatPercent(row.influencerPercent)}</strong>
-                    <div>{formatMoney(row.influencerBenefitValue)}</div>
-                    <div>custo {formatMoney(row.influencerBenefitCost)}</div>
-                  </td>
-                  <td className={styles.tableCellTight}>
-                    <strong>{formatPercent(row.athleteTotalPercent)}</strong>
-                    <div>{formatMoney(row.athleteTotalBenefitValue)}</div>
-                    <div>
-                      {formatMoney(row.athleteProductBenefitValue)} roupa +{" "}
-                      {formatMoney(row.athleteSupportBenefitValue)} apoio
-                    </div>
-                    <div>custo {formatMoney(row.athleteTotalBenefitCost)}</div>
-                  </td>
-                  <td className={getProfitToneClass(row.influencerAdjustedMarginPercent)}>
-                    {formatMoney(row.influencerAdjustedProfit)}
-                  </td>
-                  <td className={getProfitToneClass(row.influencerAdjustedMarginPercent)}>
-                    {formatPercent(row.influencerAdjustedMarginPercent)}
-                  </td>
-                  <td className={getProfitToneClass(row.athleteAdjustedMarginPercent)}>
-                    {formatMoney(row.athleteAdjustedProfit)}
-                  </td>
-                  <td className={getProfitToneClass(row.athleteAdjustedMarginPercent)}>
-                    {formatPercent(row.athleteAdjustedMarginPercent)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <div className={styles.sectionTitle}>Saude da base compradora</div>
-            <p className={styles.sectionSubtitle}>
-              O objetivo aqui e entender se a base esta ajudando seu caixa ou se
-              esta puxando demais para cenarios com cupom e parcelamento.
-            </p>
-          </div>
-        </div>
-
-        <div className={styles.metricGrid}>
-          {snapshot.customerMetrics.map((metric) => (
-            <article key={metric.label} className={styles.metricCard}>
-              <div className={styles.metricLabel}>{metric.label}</div>
-              <div className={styles.metricValue}>{metric.value}</div>
-              <div className={styles.metricHint}>{metric.detail}</div>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className={styles.section}>
-        <div className={styles.twoColumn}>
-          <div>
-            <div className={styles.sectionHeader}>
-              <div>
-                <div className={styles.sectionTitle}>Estoque que pede decisao</div>
-                <p className={styles.sectionSubtitle}>
-                  Aqui a Dash explica o por que de pedir, remanejar ou observar
-                  cada base agora.
-                </p>
-              </div>
-            </div>
-
-            <div className={styles.list}>
-              {snapshot.stockActionRows.map((row) => (
-                <article key={row.title} className={styles.listItem}>
-                  <div className={styles.listTitleRow}>
-                    <div className={styles.listTitle}>{row.title}</div>
-                    <span className={`${styles.pill} ${getAlertPillClass(row.level)}`}>
-                      {row.badge}
-                    </span>
-                  </div>
-                  <p className={styles.listDetail}>{row.detail}</p>
-                </article>
-              ))}
-            </div>
-          </div>
-
-          <div className={styles.stack}>
-            <div className={styles.sectionHeader}>
-              <div>
-                <div className={styles.sectionTitle}>Alertas de agora</div>
-                <p className={styles.sectionSubtitle}>
-                  O que mais merece sua atencao neste momento.
-                </p>
-              </div>
-            </div>
-
-            <div className={styles.list}>
-              {snapshot.alerts.map((alert) => (
-                <article key={alert.title} className={styles.listItem}>
-                  <div className={styles.listTitleRow}>
-                    <div className={styles.listTitle}>{alert.title}</div>
-                    <span className={`${styles.pill} ${getAlertPillClass(alert.level)}`}>
-                      {alert.level}
-                    </span>
-                  </div>
-                  <p className={styles.listDetail}>{alert.detail}</p>
-                </article>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-    </AppShell>
-  );
-}
-
-function buildHomeSnapshot(params: {
-  stockItems: BaseStockItem[];
-  debts: InternalDebt[];
-  orders: FinanceFlowOrder[];
-  cashFlow: ReturnType<typeof buildMonthlyCashFlow>;
-  financeDashboard: ReturnType<typeof buildFinanceDashboard>;
-  comboRules: CompanyCartDiscountRule[];
-  unitPrice: number;
-  config: Awaited<ReturnType<typeof loadFinanceConfig>>["config"];
-}) {
-  const { stockItems, debts, orders, cashFlow, financeDashboard, comboRules, unitPrice, config } = params;
-
-  const totalUnits = stockItems.reduce((sum, item) => sum + item.plain, 0);
-  const publishedUnits = stockItems.reduce((sum, item) => sum + item.published, 0);
-  const reorderCount = stockItems.filter(isPlainStockItemInAlert).length;
-  const stockValueMinimal = totalUnits * MINIMAL_UNIT_COST;
-  const stockValueFull = totalUnits * FULL_UNIT_COST;
-  const monthlySalesCount = orders.length;
-  const monthlyGrossSales = orders.reduce((sum, order) => sum + order.total, 0);
-  const nuvemNet = cashFlow.nuvemRows.reduce((sum, row) => sum + row.netReceived, 0);
-  const tiktokNet =
-    cashFlow.channelRows.find((row) => row.channel === "TikTok Shop")?.net ?? 0;
-  const today = new Date();
-  const currentDay = Math.max(today.getDate(), 1);
-  const daysInMonth = new Date(
-    today.getFullYear(),
-    today.getMonth() + 1,
-    0,
-  ).getDate();
-  const dailyNuvemNetPace = nuvemNet / currentDay;
-  const dailyTiktokNetPace = daysInMonth > 0 ? tiktokNet / daysInMonth : 0;
-  const dailyNetPaceValue = dailyNuvemNetPace + dailyTiktokNetPace;
-  const projectedMonthNetValue = dailyNetPaceValue * daysInMonth;
-
-  const openDebts = debts.filter(
-    (debt) => debt.status !== "paga" && debt.status !== "cancelada",
-  );
-  const openDebtTotal = openDebts.reduce((sum, debt) => sum + debt.amount, 0);
-  const dueSoonTotal = sumDebtsWithinNextDays(openDebts, 15);
-  const dueFortyFiveTotal = sumDebtsWithinNextDays(openDebts, 45);
-
-  const customerSummary = buildCustomerMetrics(orders);
-  const comboDefinitions = buildRealComboDefinitions(comboRules, unitPrice);
-  const unitaryFullPixScenario = buildUnitMixScenarioRow({
-    config,
-    title: "Unitaria Full / Pix / Sem cupom",
-    basePrice: config.unitPrice,
-    fullCount: 1,
-    minimalCount: 0,
-    feePercent: config.nuvemPixPercent,
-    fixedFee: config.nuvemPixFixed,
-    discountPercent: 0,
-  });
-  const unitaryFullCardScenario = buildUnitMixScenarioRow({
-    config,
-    title: "Unitaria Full / Cartao 2x / Cupom 10%",
-    basePrice: config.unitPrice,
-    fullCount: 1,
-    minimalCount: 0,
-    feePercent: config.nuvemCard2Percent,
-    fixedFee: config.nuvemCard2Fixed,
-    discountPercent: config.couponPercent,
-  });
-  const unitaryMinimalPixScenario = buildUnitMixScenarioRow({
-    config,
-    title: "Unitaria Minimalista / Pix / Sem cupom",
-    basePrice: config.unitPrice,
-    fullCount: 0,
-    minimalCount: 1,
-    feePercent: config.nuvemPixPercent,
-    fixedFee: config.nuvemPixFixed,
-    discountPercent: 0,
-  });
-  const unitaryMinimalCardScenario = buildUnitMixScenarioRow({
-    config,
-    title: "Unitaria Minimalista / Cartao 2x / Cupom 10%",
-    basePrice: config.unitPrice,
-    fullCount: 0,
-    minimalCount: 1,
-    feePercent: config.nuvemCard2Percent,
-    fixedFee: config.nuvemCard2Fixed,
-    discountPercent: config.couponPercent,
-  });
-  const comboScenarioRows = comboDefinitions.flatMap((definition) => [
-    buildComboMixScenarioRow({
-      config,
-      title: `${definition.label} / Pix / Sem cupom`,
-      quantity: definition.quantity,
-      basePrice: definition.basePrice,
-      fullCount: definition.fullCount,
-      minimalCount: definition.minimalCount,
-      feePercent: config.nuvemPixPercent,
-      fixedFee: config.nuvemPixFixed,
-      discountPercent: 0,
-      mixLabel: definition.mixLabel,
-    }),
-    buildComboMixScenarioRow({
-      config,
-      title: `${definition.label} / Cartao 2x / Cupom 10%`,
-      quantity: definition.quantity,
-      basePrice: definition.basePrice,
-      fullCount: definition.fullCount,
-      minimalCount: definition.minimalCount,
-      feePercent: config.nuvemCard2Percent,
-      fixedFee: config.nuvemCard2Fixed,
-      discountPercent: config.couponPercent,
-      mixLabel: definition.mixLabel,
-    }),
-  ]);
-  const bestCombo =
-    comboScenarioRows.find((row) => row.title.includes("/ Pix / Sem cupom")) ??
-    buildComboMixScenarioRow({
-      config,
-      title: "Combo / Pix / Sem cupom",
-      quantity: config.comboQuantity,
-      basePrice: config.comboPrice,
-      fullCount: config.comboQuantity,
-      minimalCount: 0,
-      feePercent: config.nuvemPixPercent,
-      fixedFee: config.nuvemPixFixed,
-      discountPercent: 0,
-      mixLabel: `${config.comboQuantity} full`,
-    });
-  const worstRealisticCombo =
-    comboScenarioRows
-      .filter((row) => row.title.includes("/ Cartao 2x / Cupom 10%"))
-      .sort((left, right) => left.marginPercent - right.marginPercent)[0] ??
-    buildComboMixScenarioRow({
-      config,
-      title: "Combo / Cartao 2x / Cupom 10%",
-      quantity: config.comboQuantity,
-      basePrice: config.comboPrice,
-      fullCount: config.comboQuantity,
-      minimalCount: 0,
-      feePercent: config.nuvemCard2Percent,
-      fixedFee: config.nuvemCard2Fixed,
-      discountPercent: config.couponPercent,
-      mixLabel: `${config.comboQuantity} full`,
-    });
-  const strategicScenarioRows = [
-    unitaryFullPixScenario,
-    unitaryFullCardScenario,
-    unitaryMinimalPixScenario,
-    unitaryMinimalCardScenario,
-    ...comboScenarioRows,
-  ].sort((left, right) => {
-    if (right.marginPercent !== left.marginPercent) {
-      return right.marginPercent - left.marginPercent;
-    }
-
-    return right.netProfit - left.netProfit;
-  });
-  const debtWindowRows = buildDebtWindowRows(openDebts, dailyNetPaceValue);
-  const stockActionRows = buildStockActionRows(stockItems);
-  const highPriorityStock = stockActionRows.filter((row) => row.level === "alto").length;
-  const worstComboNetPerUnit =
-    worstRealisticCombo.quantity > 0
-      ? worstRealisticCombo.netReceived / worstRealisticCombo.quantity
-      : 0;
-  const worstComboProfitPerUnit =
-    worstRealisticCombo.quantity > 0
-      ? worstRealisticCombo.netProfit / worstRealisticCombo.quantity
-      : 0;
-  const stockUnitRevenuePotential = totalUnits * config.unitPrice;
-  const stockUnitProfitPotentialFull = totalUnits * unitaryFullPixScenario.netProfit;
-  const stockComboNetPotentialConservative = totalUnits * worstComboNetPerUnit;
-  const stockComboProfitPotentialConservative = totalUnits * worstComboProfitPerUnit;
-  const stockCoverageAgainstDebt = stockComboNetPotentialConservative - openDebtTotal;
-
-  const financeMetrics = [
-    {
-      label: "Faturamento bruto do mes",
-      value: formatMoney(monthlyGrossSales),
-      detail:
-        monthlySalesCount > 0
-          ? `${monthlySalesCount} pedidos puxados da Nuvemshop.`
-          : "Sem pedidos carregados no mes atual.",
-    },
-    {
-      label: "Liquido capturado no mes",
-      value: formatMoney(cashFlow.entradasTotais),
-      detail: `${formatMoney(nuvemNet)} na Nuvemshop e ${formatMoney(tiktokNet)} no TikTok.`,
-    },
-    {
-      label: "Dividas em aberto",
-      value: formatMoney(openDebtTotal),
-      detail:
-        dueSoonTotal > 0
-          ? `${formatMoney(dueSoonTotal)} vencem nos proximos 15 dias.`
-          : "Sem pressao de vencimento nos proximos 15 dias.",
-    },
-    {
-      label: "Dividas em ate 45 dias",
-      value: formatMoney(dueFortyFiveTotal),
-      detail: "Leitura de curto prazo para nao ser pego na curva do fornecedor.",
-    },
-    {
-      label: "Saldo projetado do mes",
-      value: formatMoney(cashFlow.saldoProjetado),
-      detail:
-        cashFlow.saldoProjetado >= 0
-          ? "Entradas do mes atual ainda fecham com folga."
-          : "O fluxo do mes atual ainda fecha no aperto.",
-    },
-    {
-      label: "Estoque em custo minimalista",
-      value: formatMoney(stockValueMinimal),
-      detail: `Leitura usando ${formatMoney(MINIMAL_UNIT_COST)} por peca.`,
-    },
-    {
-      label: "Estoque em custo full",
-      value: formatMoney(stockValueFull),
-      detail: `Leitura usando ${formatMoney(FULL_UNIT_COST)} por peca.`,
-    },
-  ];
-
-  const topMetrics = [
-    {
-      label: "Vendas no mes",
-      value: String(monthlySalesCount),
-      detail:
-        monthlySalesCount > 0
-          ? "Pedidos capturados na Nuvemshop no mes atual."
-          : "Nenhuma venda carregada para o mes atual.",
-    },
-    {
-      label: "Valor vendido no mes",
-      value: formatMoney(monthlyGrossSales),
-      detail: "Faturamento bruto do mes antes das taxas.",
-    },
-    {
-      label: "Liquido do mes",
-      value: formatMoney(cashFlow.entradasTotais),
-      detail:
-        cashFlow.entradasTotais > 0
-          ? "Recebimento estimado depois das taxas e descontos."
-          : "Sem entradas liquidas carregadas no periodo.",
-    },
-    {
-      label: "Dividas nos proximos 15 dias",
-      value: formatMoney(dueSoonTotal),
-      detail: "Primeira trava para saber se o caixa precisa acelerar.",
-    },
-    {
-      label: "Reposicoes em alerta",
-      value: String(reorderCount),
-      detail:
-        highPriorityStock > 0
-          ? `${highPriorityStock} linhas de lisa ja pedem acao imediata.`
-          : "Nenhuma base critica neste momento.",
-    },
-    {
-      label: "Lisas em casa",
-      value: String(totalUnits),
-      detail: `${publishedUnits} estao alocadas no site so como referencia comercial.`,
-    },
-  ];
-
-  const alerts = [
-    {
-      title: "Vencimentos dos proximos 15 dias",
-      level: debtWindowRows[0]?.level ?? ("baixo" as const),
-      detail:
-        debtWindowRows[0]?.detail ??
-        "Sem vencimentos muito proximos na leitura atual.",
-    },
-    {
-      title: "Perfil de pagamento da base",
-      level:
-        customerSummary.worstPatternShareValue >= 20 ||
-        customerSummary.couponShareValue >= 40
-          ? ("alto" as const)
-          : customerSummary.pixShareValue >= 40
-            ? ("baixo" as const)
-            : ("medio" as const),
-      detail: customerSummary.summary,
-    },
-    {
-      title: "Pressao de estoque",
-      level: reorderCount >= 3 ? ("alto" as const) : reorderCount > 0 ? ("medio" as const) : ("baixo" as const),
-      detail:
-        stockActionRows.length > 0
-          ? stockActionRows[0]!.detail
-          : "As linhas de lisa ainda nao encostaram no ponto de reposicao.",
-    },
-    {
-      title: "Combo mais sensivel",
-      level: getMarginAlertLevel(worstRealisticCombo.marginPercent),
-      detail: `No combo em 2x com cupom de ${worstRealisticCombo.mixLabel.toLowerCase()}, a margem cai para ${formatPercent(
-        worstRealisticCombo.marginPercent,
-      )} e o lucro fica em ${formatMoney(worstRealisticCombo.netProfit)}.`,
-    },
-    {
-      title: "Fluxo do mes",
-      level: cashFlow.saldoProjetado >= 0 ? ("baixo" as const) : ("alto" as const),
-      detail:
-        cashFlow.saldoProjetado >= 0
-          ? `Entradas liquidas do mes cobrem as saidas com folga de ${formatMoney(
-              cashFlow.saldoProjetado,
-            )}.`
-          : `Com a leitura atual, o mes fecha com falta de ${formatMoney(
-              Math.abs(cashFlow.saldoProjetado),
-            )}.`,
-    },
-  ];
-
-  return {
-    totalUnits,
-    stockValueMinimal,
-    stockValueFull,
-    openDebtTotal,
-    heroBullets: [
-      `${formatMoney(cashFlow.entradasTotais)} liquidos entraram no mes ate agora e ${formatMoney(
-        dueSoonTotal,
-      )} vencem nos proximos 15 dias.`,
-      `${customerSummary.summary} O combo mais sensivel hoje e ${worstRealisticCombo.title.toLowerCase()}.`,
-      stockActionRows.length > 0
-        ? `${stockActionRows[0]!.title}: ${stockActionRows[0]!.shortReason}`
-        : "Nenhuma base de lisa pede pedido imediato agora; a pressao maior segue no financeiro.",
-    ],
-    topMetrics,
-    financeMetrics,
-    debtWindowRows,
-    strategicScenarioRows,
-    pricingFocusMetrics: [
-      {
-        label: "Melhor combo hoje",
-        value: formatMoney(bestCombo.netReceived),
-        detail: `${bestCombo.mixLabel} deixam ${formatMoney(bestCombo.netProfit)} de lucro no melhor cenario.`,
-      },
-      {
-        label: "Combo mais apertado",
-        value: formatMoney(worstRealisticCombo.netReceived),
-        detail: `${worstRealisticCombo.mixLabel} ainda deixam ${formatMoney(worstRealisticCombo.netProfit)} em 2x com cupom.`,
-      },
-      {
-        label: "Meta para pagar o aberto com combo",
-        value:
-          worstRealisticCombo.netReceived > 0
-            ? `${Math.ceil(openDebtTotal / worstRealisticCombo.netReceived)} combos`
-            : "-",
-        detail: `Leitura usando ${worstRealisticCombo.mixLabel.toLowerCase()} em 2x com cupom para cobrir ${formatMoney(openDebtTotal)} em aberto.`,
-      },
-    ],
-    stockProjectionMetrics: [
-      {
-        label: "Venda total na unit.",
-        value: formatMoney(stockUnitRevenuePotential),
-        detail: `${totalUnits} lisas em casa a ${formatMoney(config.unitPrice)} se tudo sair na unit. hoje.`,
-      },
-      {
-        label: "Lucro no pior combo",
-        value: formatMoney(stockComboProfitPotentialConservative),
-        detail: `Lucro estimado se o estoque inteiro girar no combo mais apertado de hoje.`,
-      },
-      {
-        label: "Liquido no pior combo",
-        value: formatMoney(stockComboNetPotentialConservative),
-        detail: `Se o estoque girar no combo mais apertado atual, esse e o liquido potencial.`,
-      },
-      {
-        label: "Estoque x dividas",
-        value: formatMoney(stockCoverageAgainstDebt),
-        detail:
-          stockCoverageAgainstDebt >= 0
-            ? `Nesse cenario ainda sobrariam ${formatMoney(stockCoverageAgainstDebt)} depois de pagar o aberto.`
-            : `Nesse cenario ainda faltariam ${formatMoney(Math.abs(stockCoverageAgainstDebt))} para cobrir o aberto.`,
-      },
-    ],
-    stockActionRows,
-    alerts,
-    customerMetrics: customerSummary.metrics,
-    customerProfileSummary: customerSummary.summary,
-    financialDiagnosis:
-      openDebtTotal <= 0
-        ? `Hoje a operacao nao tem dividas abertas. O foco principal passa a ser defender margem e usar o estoque de forma inteligente, porque o lote representa entre ${formatMoney(
-            stockValueMinimal,
-          )} e ${formatMoney(stockValueFull)} em custo.`
-        : `Hoje existem ${formatMoney(openDebtTotal)} em aberto. No ritmo liquido atual, a operacao projeta ${formatMoney(
-            projectedMonthNetValue,
-          )} para o mes e precisa vigiar principalmente a janela de 15 dias, onde vencem ${formatMoney(
-            dueSoonTotal,
-          )}.`,
-    stockProjectionSummary:
-      openDebtTotal <= 0
-        ? `Hoje as lisas em casa poderiam gerar ate ${formatMoney(stockUnitRevenuePotential)} na unit. e, no cenario mais apertado de combo, ainda projetariam ${formatMoney(stockComboNetPotentialConservative)} liquidos.`
-        : stockCoverageAgainstDebt >= 0
-          ? `As lisas em casa teriam potencial de cobrir as dividas abertas mesmo no combo mais apertado, com folga estimada de ${formatMoney(stockCoverageAgainstDebt)}.`
-          : `No pior combo atual, as lisas em casa ainda nao pagam tudo sozinhas: faltariam ${formatMoney(Math.abs(stockCoverageAgainstDebt))} para cobrir as dividas abertas.`,
-    marginDiagnosis: `O combo continua sendo a leitura mais sensivel do caixa. No melhor caso ele gera ${formatMoney(
-      bestCombo.netReceived,
-    )} liquidos com ${bestCombo.mixLabel.toLowerCase()}; no cenario mais apertado de 2x com cupom cai para ${formatMoney(
-      worstRealisticCombo.netReceived,
-    )} com ${worstRealisticCombo.mixLabel.toLowerCase()}. Isso e o que mais importa para saber se a operacao aguenta desconto e parcelamento sem engolir sua margem.`,
-    averageTicket: customerSummary.averageTicket,
-    totalOrdersLabel:
-      orders.length > 0
-        ? `${orders.length} pedidos e ${customerSummary.uniqueCustomers} clientes unicos`
-        : "Nenhum pedido carregado",
-    projectedMonthNet: formatMoney(projectedMonthNetValue),
-    dailyNetPace: formatMoney(dailyNetPaceValue),
-  };
-}
+type ComboDisplayRow = {
+  title: string;
+  priceLabel: string;
+  detail: string;
+};
 
 type DashboardScenarioRow = {
   title: string;
@@ -777,20 +46,6 @@ type DashboardScenarioRow = {
   netReceived: number;
   netProfit: number;
   marginPercent: number;
-  influencerPercent: number;
-  influencerBenefitValue: number;
-  influencerBenefitCost: number;
-  influencerAdjustedProfit: number;
-  influencerAdjustedMarginPercent: number;
-  athleteProductPercent: number;
-  athleteSupportPercent: number;
-  athleteTotalPercent: number;
-  athleteProductBenefitValue: number;
-  athleteSupportBenefitValue: number;
-  athleteTotalBenefitValue: number;
-  athleteTotalBenefitCost: number;
-  athleteAdjustedProfit: number;
-  athleteAdjustedMarginPercent: number;
 };
 
 type DashboardComboDefinition = {
@@ -802,26 +57,785 @@ type DashboardComboDefinition = {
   mixLabel: string;
 };
 
-function buildUnitMixScenarioRow(params: {
-  config: Awaited<ReturnType<typeof loadFinanceConfig>>["config"];
-  title: string;
-  basePrice: number;
-  fullCount: number;
-  minimalCount: number;
-  feePercent: number;
-  fixedFee: number;
-  discountPercent: number;
-}): DashboardScenarioRow {
-  return buildMixScenarioRow({
-    ...params,
-    quantity: params.fullCount + params.minimalCount,
-    mixLabel:
-      params.fullCount > 0
-        ? params.minimalCount > 0
-          ? `${params.fullCount} full + ${params.minimalCount} minimalista`
-          : `${params.fullCount} full`
-        : `${params.minimalCount} minimalista`,
+type DashboardStateRow = {
+  stateCode: string;
+  stateName: string;
+  customerCount: number;
+  orderCount: number;
+  piecesSold: number;
+  sharePercent: number;
+  intensity: number;
+};
+
+type BrazilMapPoint = {
+  stateCode: string;
+  stateName: string;
+  x: number;
+  y: number;
+  customerCount: number;
+  intensity: number;
+};
+
+const BRAZIL_STATE_POSITIONS: Record<
+  string,
+  {
+    name: string;
+    x: number;
+    y: number;
+  }
+> = {
+  AC: { name: "Acre", x: 112, y: 356 },
+  AL: { name: "Alagoas", x: 718, y: 296 },
+  AP: { name: "Amapa", x: 452, y: 100 },
+  AM: { name: "Amazonas", x: 232, y: 210 },
+  BA: { name: "Bahia", x: 674, y: 370 },
+  CE: { name: "Ceara", x: 692, y: 214 },
+  DF: { name: "Distrito Federal", x: 532, y: 430 },
+  ES: { name: "Espirito Santo", x: 698, y: 484 },
+  GO: { name: "Goias", x: 504, y: 426 },
+  MA: { name: "Maranhao", x: 572, y: 246 },
+  MT: { name: "Mato Grosso", x: 380, y: 372 },
+  MS: { name: "Mato Grosso do Sul", x: 390, y: 510 },
+  MG: { name: "Minas Gerais", x: 616, y: 452 },
+  PA: { name: "Para", x: 424, y: 202 },
+  PB: { name: "Paraiba", x: 762, y: 224 },
+  PR: { name: "Parana", x: 544, y: 640 },
+  PE: { name: "Pernambuco", x: 738, y: 252 },
+  PI: { name: "Piaui", x: 622, y: 244 },
+  RJ: { name: "Rio de Janeiro", x: 692, y: 532 },
+  RN: { name: "Rio Grande do Norte", x: 784, y: 192 },
+  RS: { name: "Rio Grande do Sul", x: 522, y: 792 },
+  RO: { name: "Rondonia", x: 182, y: 352 },
+  RR: { name: "Roraima", x: 256, y: 82 },
+  SC: { name: "Santa Catarina", x: 556, y: 716 },
+  SP: { name: "Sao Paulo", x: 604, y: 566 },
+  SE: { name: "Sergipe", x: 744, y: 326 },
+  TO: { name: "Tocantins", x: 486, y: 304 },
+};
+
+const BRAZIL_SILHOUETTE_PATH = `
+  M126 367
+  L111 334
+  L120 292
+  L146 252
+  L179 223
+  L206 179
+  L246 132
+  L293 102
+  L338 110
+  L389 95
+  L434 110
+  L484 99
+  L540 130
+  L595 161
+  L653 179
+  L704 171
+  L760 202
+  L790 238
+  L804 282
+  L793 317
+  L764 347
+  L757 393
+  L724 456
+  L709 528
+  L681 563
+  L650 594
+  L623 650
+  L610 719
+  L585 792
+  L543 810
+  L511 793
+  L498 726
+  L486 674
+  L455 633
+  L423 589
+  L399 555
+  L367 535
+  L334 492
+  L280 468
+  L248 437
+  L201 414
+  L166 392
+  Z
+`;
+
+function getSearchValue(
+  searchParams: Record<string, string | string[] | undefined>,
+  key: string,
+) {
+  const value = searchParams[key];
+  return Array.isArray(value) ? value[0] || "" : value || "";
+}
+
+export default async function Home({ searchParams }: PageProps) {
+  const resolvedSearchParams = (await searchParams) || {};
+  const startDate = getSearchValue(resolvedSearchParams, "startDate");
+  const endDate = getSearchValue(resolvedSearchParams, "endDate");
+  const currentMonth = getCurrentMonthReference();
+  const [{ config }, flow, companyModule, manualFinance] = await Promise.all([
+    loadFinanceConfig(),
+    loadMonthlyFinanceFlow({
+      startDate,
+      endDate,
+    }),
+    loadCompanyDiscountModuleData(),
+    loadManualFinanceModuleData(currentMonth),
+  ]);
+
+  const snapshot = buildHomeSnapshot({
+    orders: flow.orders,
+    comboRules: companyModule.rules,
+    unitPrice: config.unitPrice,
+    config,
+    openingBalance: manualFinance.effectiveOpeningBalance ?? DEFAULT_BANK_BALANCE,
+    manualEntries: manualFinance.movements
+      .filter((movement) => movement.type === "entrada")
+      .reduce((sum, movement) => sum + movement.amount, 0),
+    manualExpenses: manualFinance.movements
+      .filter((movement) => movement.type === "saida")
+      .reduce((sum, movement) => sum + movement.amount, 0),
+    persistenceMessage: manualFinance.persistence.message,
+    persistenceEnabled: manualFinance.persistence.enabled,
   });
+
+  return (
+    <AppShell
+      title="Dashboard"
+      subtitle="Uma leitura limpa do mes com caixa manual, vendas da Nuvem Shop e combos ativos."
+      currentPath="/"
+    >
+      <section className={styles.section}>
+        <div className={styles.configCard}>
+          <div className={styles.sectionHeader}>
+            <div>
+              <div className={styles.sectionTitle}>Filtro de periodo</div>
+              <p className={styles.sectionSubtitle}>
+                Filtra os dados da Nuvem Shop e do mapa de clientes pelo intervalo escolhido.
+              </p>
+            </div>
+            <div className={styles.chipRow}>
+              <span className={styles.chip}>Periodo: {flow.period.label}</span>
+            </div>
+          </div>
+
+          <form method="get" className={styles.filterGrid}>
+            <label className={styles.filterField}>
+              <span>Data inicial</span>
+              <input type="date" name="startDate" defaultValue={flow.period.startDate ?? ""} />
+            </label>
+
+            <label className={styles.filterField}>
+              <span>Data final</span>
+              <input type="date" name="endDate" defaultValue={flow.period.endDate ?? ""} />
+            </label>
+
+            <div className={styles.filterActions}>
+              <button type="submit" className={styles.primaryButton}>
+                Filtrar
+              </button>
+              <a href="/" className={styles.secondaryButton}>
+                Limpar periodo
+              </a>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.metricGrid}>
+          {snapshot.topMetrics.map((metric) => (
+            <article key={metric.label} className={styles.metricCard}>
+              <div className={styles.metricLabel}>{metric.label}</div>
+              <div className={styles.metricValue}>{metric.value}</div>
+              <div className={styles.metricHint}>{metric.detail}</div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.twoColumn}>
+          <div className={styles.stack}>
+            <div className={snapshot.persistenceEnabled ? styles.callout : styles.warningPanel}>
+              <h3>Caixa do mes</h3>
+              <p>{snapshot.cashSummary}</p>
+            </div>
+
+            <div className={styles.callout}>
+              <h3>Nuvem Shop</h3>
+              <p>{snapshot.salesSummary}</p>
+            </div>
+
+            <div className={styles.callout}>
+              <h3>Base da leitura</h3>
+              <p>{snapshot.persistenceMessage}</p>
+            </div>
+          </div>
+
+          <div>
+            <div className={styles.sectionHeader}>
+              <div>
+                <div className={styles.sectionTitle}>Resumo da Nuvem Shop</div>
+                <p className={styles.sectionSubtitle}>
+                  So o essencial para entender o periodo filtrado sem poluicao visual.
+                </p>
+              </div>
+            </div>
+
+            <div className={styles.list}>
+              {snapshot.salesRows.map((row) => (
+                <article key={row.title} className={styles.listItem}>
+                  <div className={styles.listTitleRow}>
+                    <div className={styles.listTitle}>{row.title}</div>
+                    <strong>{row.value}</strong>
+                  </div>
+                  <p className={styles.listDetail}>{row.detail}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Clientes por estado</div>
+            <p className={styles.sectionSubtitle}>
+              Leitura dos clientes unicos do periodo filtrado, com mapa por UF e resumo dos
+              estados mais fortes.
+            </p>
+          </div>
+          <div className={styles.chipRow}>
+            <span className={styles.chip}>Clientes: {String(snapshot.uniqueCustomers)}</span>
+            <span className={styles.chip}>Estados: {String(snapshot.statesServed)}</span>
+            <span className={styles.chip}>Sem UF: {String(snapshot.customersWithoutState)}</span>
+          </div>
+        </div>
+
+        <div className={styles.geoGrid}>
+          <article className={styles.geoCard}>
+            <div className={styles.geoCardTop}>
+              <div>
+                <div className={styles.listTitle}>Mapa de clientes</div>
+                <p className={styles.listDetail}>{snapshot.stateSummary}</p>
+              </div>
+              <div className={styles.geoLegend}>
+                <span className={styles.geoLegendDotLow} />
+                <span>Menor volume</span>
+                <span className={styles.geoLegendDotHigh} />
+                <span>Maior volume</span>
+              </div>
+            </div>
+
+            <BrazilCustomerMap rows={snapshot.customerStateRows} />
+          </article>
+
+          <div className={styles.list}>
+            {snapshot.customerStateRows.length > 0 ? (
+              snapshot.customerStateRows.slice(0, 8).map((row) => (
+                <article key={row.stateCode} className={styles.listItem}>
+                  <div className={styles.listTitleRow}>
+                    <div className={styles.listTitle}>
+                      {row.stateCode} · {row.stateName}
+                    </div>
+                    <strong>{String(row.customerCount)} clientes</strong>
+                  </div>
+                  <p className={styles.listDetail}>
+                    {String(row.orderCount)} pedidos, {String(row.piecesSold)} pecas e{" "}
+                    {formatPercent(row.sharePercent)} da base de clientes do periodo.
+                  </p>
+                </article>
+              ))
+            ) : (
+              <article className={styles.listItem}>
+                <div className={styles.listTitle}>Sem UF identificada</div>
+                <p className={styles.listDetail}>
+                  Os pedidos do mes ainda nao trouxeram estado suficiente para montar o mapa.
+                </p>
+              </article>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <div className={styles.sectionTitle}>Combos</div>
+            <p className={styles.sectionSubtitle}>
+              Mantive uma leitura enxuta dos combos ativos e do que eles deixam no melhor e no pior cenario.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.metricGrid}>
+          {snapshot.comboMetrics.map((metric) => (
+            <article key={metric.label} className={styles.metricCard}>
+              <div className={styles.metricLabel}>{metric.label}</div>
+              <div className={styles.metricValue}>{metric.value}</div>
+              <div className={styles.metricHint}>{metric.detail}</div>
+            </article>
+          ))}
+        </div>
+
+        <div className={styles.list}>
+          {snapshot.comboRows.map((row) => (
+            <article key={row.title} className={styles.listItem}>
+              <div className={styles.listTitleRow}>
+                <div className={styles.listTitle}>{row.title}</div>
+                <strong>{row.priceLabel}</strong>
+              </div>
+              <p className={styles.listDetail}>{row.detail}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+    </AppShell>
+  );
+}
+
+function buildHomeSnapshot(params: {
+  orders: FinanceFlowOrder[];
+  comboRules: CompanyCartDiscountRule[];
+  unitPrice: number;
+  config: Awaited<ReturnType<typeof loadFinanceConfig>>["config"];
+  openingBalance: number;
+  manualEntries: number;
+  manualExpenses: number;
+  persistenceMessage: string;
+  persistenceEnabled: boolean;
+}) {
+  const {
+    orders,
+    comboRules,
+    unitPrice,
+    config,
+    openingBalance,
+    manualEntries,
+    manualExpenses,
+    persistenceMessage,
+    persistenceEnabled,
+  } = params;
+
+  const monthlyOrders = orders.length;
+  const monthlyGrossSales = orders.reduce((sum, order) => sum + order.total, 0);
+  const averageTicketValue = monthlyOrders > 0 ? monthlyGrossSales / monthlyOrders : 0;
+  const uniqueCustomers = new Set(orders.map((order) => order.customerKey).filter(Boolean)).size;
+  const piecesSold = orders.reduce((sum, order) => sum + order.itemQuantity, 0);
+  const couponOrders = orders.filter((order) => order.hasCoupon).length;
+  const pixOrders = orders.filter((order) => isPixOrder(order)).length;
+  const currentBalance = openingBalance + manualEntries - manualExpenses;
+  const stateData = buildCustomerStateData(orders, uniqueCustomers);
+  const statesServed = stateData.rows.length;
+  const leadState = stateData.rows[0] ?? null;
+
+  const comboDefinitions = buildRealComboDefinitions(comboRules, unitPrice);
+  const comboScenarios = comboDefinitions.map((definition) => {
+    const bestScenario = buildComboMixScenarioRow({
+      config,
+      title: definition.label,
+      quantity: definition.quantity,
+      basePrice: definition.basePrice,
+      fullCount: definition.fullCount,
+      minimalCount: definition.minimalCount,
+      feePercent: config.nuvemPixPercent,
+      fixedFee: config.nuvemPixFixed,
+      discountPercent: 0,
+      mixLabel: definition.mixLabel,
+    });
+    const tightScenario = buildComboMixScenarioRow({
+      config,
+      title: definition.label,
+      quantity: definition.quantity,
+      basePrice: definition.basePrice,
+      fullCount: definition.fullCount,
+      minimalCount: definition.minimalCount,
+      feePercent: config.nuvemCard2Percent,
+      fixedFee: config.nuvemCard2Fixed,
+      discountPercent: config.couponPercent,
+      mixLabel: definition.mixLabel,
+    });
+
+    return {
+      definition,
+      bestScenario,
+      tightScenario,
+    };
+  });
+
+  const sortedByBestProfit = comboScenarios
+    .slice()
+    .sort((left, right) => right.bestScenario.netProfit - left.bestScenario.netProfit);
+  const sortedByTightMargin = comboScenarios
+    .slice()
+    .sort((left, right) => left.tightScenario.marginPercent - right.tightScenario.marginPercent);
+  const bestCombo = sortedByBestProfit[0] ?? null;
+  const tightestCombo = sortedByTightMargin[0] ?? null;
+
+  return {
+    topMetrics: buildTopMetrics({
+      manualEntries,
+      manualExpenses,
+      openingBalance,
+      currentBalance,
+      monthlyOrders,
+      monthlyGrossSales,
+      uniqueCustomers,
+      piecesSold,
+      statesServed,
+    }),
+    cashSummary:
+      manualEntries > 0 || manualExpenses > 0
+        ? `O caixa parte de ${formatMoney(openingBalance)}, recebeu ${formatMoney(manualEntries)}, saiu ${formatMoney(manualExpenses)} e hoje esta em ${formatMoney(currentBalance)}.`
+        : `Ainda nao ha movimentacoes manuais neste mes. O saldo base considerado agora e ${formatMoney(openingBalance)}.`,
+    salesSummary:
+      monthlyOrders > 0
+        ? `${monthlyOrders} pedidos puxaram ${formatMoney(monthlyGrossSales)} no periodo filtrado, com ${String(uniqueCustomers)} clientes unicos, mesmo quando parte deles esta sem UF.`
+        : "Ainda nao ha vendas carregadas da Nuvem Shop para o periodo filtrado.",
+    persistenceMessage,
+    persistenceEnabled,
+    salesRows: buildSalesRows({
+      monthlyOrders,
+      monthlyGrossSales,
+      uniqueCustomers,
+      piecesSold,
+      averageTicketValue,
+      couponOrders,
+      pixOrders,
+    }),
+    uniqueCustomers,
+    piecesSold,
+    statesServed,
+    customersWithoutState: stateData.customersWithoutState,
+    customerStateRows: stateData.rows,
+    stateSummary: leadState
+      ? `${leadState.stateCode} lidera o periodo com ${String(leadState.customerCount)} clientes unicos identificados por UF.`
+      : "O total de clientes ja considera quem esta sem UF; o mapa mostra apenas os que foi possivel localizar no periodo.",
+    comboMetrics: buildComboMetrics(bestCombo, tightestCombo),
+    comboRows: buildComboRows(comboScenarios),
+  };
+}
+
+function buildTopMetrics(params: {
+  manualEntries: number;
+  manualExpenses: number;
+  openingBalance: number;
+  currentBalance: number;
+  monthlyOrders: number;
+  monthlyGrossSales: number;
+  uniqueCustomers: number;
+  piecesSold: number;
+  statesServed: number;
+}) {
+  return [
+    {
+      label: "Entrada",
+      value: formatMoney(params.manualEntries),
+      detail: "Entradas manuais registradas no banco neste mes.",
+    },
+    {
+      label: "Saida",
+      value: formatMoney(params.manualExpenses),
+      detail: "Saidas manuais registradas no banco neste mes.",
+    },
+    {
+      label: "Balanco",
+      value: formatMoney(params.currentBalance),
+      detail: `Saldo inicial ${formatMoney(params.openingBalance)} mais entradas menos saidas.`,
+    },
+    {
+      label: "Vendas Nuvem Shop",
+      value: String(params.monthlyOrders),
+      detail:
+        params.monthlyOrders > 0 ? "Pedidos capturados no mes atual." : "Sem pedidos no mes atual.",
+    },
+    {
+      label: "Clientes",
+      value: String(params.uniqueCustomers),
+      detail: "Clientes unicos da base carregada da Nuvem Shop, com ou sem UF.",
+    },
+    {
+      label: "Pecas vendidas",
+      value: String(params.piecesSold),
+      detail: "Soma das quantidades vendidas nos pedidos do mes.",
+    },
+    {
+      label: "Faturamento Nuvem Shop",
+      value: formatMoney(params.monthlyGrossSales),
+      detail: "Total bruto vendido na Nuvem Shop neste mes.",
+    },
+    {
+      label: "Estados atendidos",
+      value: String(params.statesServed),
+      detail:
+        params.statesServed > 0
+          ? "UFs com clientes identificados no mes."
+          : "Ainda sem UF identificada nos pedidos do mes.",
+    },
+  ] satisfies DashboardMetric[];
+}
+
+function buildSalesRows(params: {
+  monthlyOrders: number;
+  monthlyGrossSales: number;
+  uniqueCustomers: number;
+  piecesSold: number;
+  averageTicketValue: number;
+  couponOrders: number;
+  pixOrders: number;
+}) {
+  return [
+    {
+      title: "Pedidos no mes",
+      value: String(params.monthlyOrders),
+      detail: "Quantidade total de pedidos da Nuvem Shop.",
+    },
+    {
+      title: "Faturamento bruto",
+      value: formatMoney(params.monthlyGrossSales),
+      detail: "Antes de taxas e ajustes financeiros.",
+    },
+    {
+      title: "Clientes unicos",
+      value: String(params.uniqueCustomers),
+      detail: "Base unica carregada da Nuvem Shop, incluindo clientes sem UF.",
+    },
+    {
+      title: "Pecas vendidas",
+      value: String(params.piecesSold),
+      detail: "Quantidade total de pecas somadas nos pedidos.",
+    },
+    {
+      title: "Ticket medio",
+      value: params.monthlyOrders > 0 ? formatMoney(params.averageTicketValue) : "-",
+      detail: "Media por pedido neste mes.",
+    },
+    {
+      title: "Pedidos com cupom",
+      value:
+        params.monthlyOrders > 0
+          ? formatPercent((params.couponOrders / params.monthlyOrders) * 100)
+          : "-",
+      detail: `${params.couponOrders} pedidos usaram cupom.`,
+    },
+    {
+      title: "Pedidos no Pix",
+      value:
+        params.monthlyOrders > 0
+          ? formatPercent((params.pixOrders / params.monthlyOrders) * 100)
+          : "-",
+      detail: `${params.pixOrders} pedidos vieram no Pix.`,
+    },
+  ] satisfies DashboardListRow[];
+}
+
+function buildCustomerStateData(orders: FinanceFlowOrder[], totalCustomers: number) {
+  const distribution = new Map<
+    string,
+    {
+      customerKeys: Set<string>;
+      orderCount: number;
+      piecesSold: number;
+    }
+  >();
+  const customersWithState = new Set<string>();
+  const customersWithoutState = new Set<string>();
+
+  for (const order of orders) {
+    if (order.destinationState) {
+      const current = distribution.get(order.destinationState) ?? {
+        customerKeys: new Set<string>(),
+        orderCount: 0,
+        piecesSold: 0,
+      };
+
+      current.customerKeys.add(order.customerKey);
+      current.orderCount += 1;
+      current.piecesSold += order.itemQuantity;
+      distribution.set(order.destinationState, current);
+      customersWithState.add(order.customerKey);
+      continue;
+    }
+
+    customersWithoutState.add(order.customerKey);
+  }
+
+  const rows = Array.from(distribution.entries())
+    .map(([stateCode, data]) => ({
+      stateCode,
+      stateName: BRAZIL_STATE_POSITIONS[stateCode]?.name || stateCode,
+      customerCount: data.customerKeys.size,
+      orderCount: data.orderCount,
+      piecesSold: data.piecesSold,
+      sharePercent: totalCustomers > 0 ? (data.customerKeys.size / totalCustomers) * 100 : 0,
+      intensity: 0,
+    }))
+    .sort(
+      (left, right) =>
+        right.customerCount - left.customerCount ||
+        right.orderCount - left.orderCount ||
+        left.stateCode.localeCompare(right.stateCode),
+    );
+
+  const maxCustomers = rows[0]?.customerCount ?? 0;
+
+  return {
+    rows: rows.map((row) => ({
+      ...row,
+      intensity: maxCustomers > 0 ? row.customerCount / maxCustomers : 0,
+    })),
+    customersWithoutState: Array.from(customersWithoutState).filter(
+      (customerKey) => !customersWithState.has(customerKey),
+    ).length,
+  };
+}
+
+function buildBrazilMapPoints(rows: DashboardStateRow[]) {
+  const rowMap = new Map(rows.map((row) => [row.stateCode, row]));
+
+  return Object.entries(BRAZIL_STATE_POSITIONS).map(([stateCode, metadata]) => {
+    const row = rowMap.get(stateCode);
+
+    return {
+      stateCode,
+      stateName: metadata.name,
+      x: metadata.x,
+      y: metadata.y,
+      customerCount: row?.customerCount ?? 0,
+      intensity: row?.intensity ?? 0,
+    } satisfies BrazilMapPoint;
+  });
+}
+
+function getMapPointRadius(point: BrazilMapPoint) {
+  return point.customerCount > 0 ? 17 + point.intensity * 17 : 12;
+}
+
+function getMapPointFill(point: BrazilMapPoint) {
+  if (point.customerCount <= 0) {
+    return "rgba(123, 44, 191, 0.10)";
+  }
+
+  if (point.intensity >= 0.75) {
+    return "#7b2cbf";
+  }
+
+  if (point.intensity >= 0.45) {
+    return "#a855f7";
+  }
+
+  return "#d8b4fe";
+}
+
+function BrazilCustomerMap({ rows }: { rows: DashboardStateRow[] }) {
+  const points = buildBrazilMapPoints(rows);
+
+  return (
+    <div className={styles.geoMapWrap}>
+      <svg viewBox="0 0 900 850" className={styles.geoMap} role="img" aria-label="Mapa do Brasil">
+        <rect x="0" y="0" width="900" height="850" className={styles.geoMapOcean} />
+        <path
+          d={BRAZIL_SILHOUETTE_PATH}
+          className={styles.geoMapSilhouette}
+          transform="translate(0 0)"
+        />
+        <text x="420" y="300" className={styles.geoMapCountryLabel}>
+          BRASIL
+        </text>
+        <text x="96" y="360" className={styles.geoMapNeighborLabel}>
+          BOLIVIA
+        </text>
+        <text x="268" y="762" className={styles.geoMapNeighborLabel}>
+          PARAGUAI
+        </text>
+        <text x="246" y="118" className={styles.geoMapNeighborLabel}>
+          VENEZUELA
+        </text>
+        {points.map((point) => (
+          <g key={point.stateCode} transform={`translate(${point.x} ${point.y})`}>
+            <title>{`${point.stateName}: ${String(point.customerCount)} clientes`}</title>
+            <circle
+              r={getMapPointRadius(point)}
+              fill={getMapPointFill(point)}
+              stroke={point.customerCount > 0 ? "#5b1795" : "rgba(123, 44, 191, 0.16)"}
+              strokeWidth={point.customerCount > 0 ? 2.5 : 1.5}
+            />
+            <text className={styles.geoMapStateCode} textAnchor="middle" y="-7">
+              {point.customerCount > 0 ? point.stateCode : ""}
+            </text>
+            <text className={styles.geoMapStateCount} textAnchor="middle" y="11">
+              {String(point.customerCount)}
+            </text>
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+function buildComboMetrics(
+  bestCombo: {
+    definition: DashboardComboDefinition;
+    bestScenario: DashboardScenarioRow;
+    tightScenario: DashboardScenarioRow;
+  } | null,
+  tightestCombo: {
+    definition: DashboardComboDefinition;
+    bestScenario: DashboardScenarioRow;
+    tightScenario: DashboardScenarioRow;
+  } | null,
+) {
+  return [
+    {
+      label: "Melhor combo",
+      value: bestCombo ? bestCombo.definition.label : "-",
+      detail: bestCombo
+        ? `${bestCombo.definition.mixLabel} deixam ${formatMoney(bestCombo.bestScenario.netProfit)} de lucro no Pix.`
+        : "Nenhum combo ativo agora.",
+    },
+    {
+      label: "Lucro do melhor combo",
+      value: bestCombo ? formatMoney(bestCombo.bestScenario.netProfit) : "-",
+      detail: "Leitura do melhor cenario: Pix sem cupom.",
+    },
+    {
+      label: "Combo mais apertado",
+      value: tightestCombo ? tightestCombo.definition.label : "-",
+      detail: tightestCombo
+        ? `${formatPercent(tightestCombo.tightScenario.marginPercent)} de margem em 2x com cupom.`
+        : "Sem leitura de combo apertado.",
+    },
+    {
+      label: "Lucro no pior cenario",
+      value: tightestCombo ? formatMoney(tightestCombo.tightScenario.netProfit) : "-",
+      detail: "Leitura do pior cenario: cartao 2x com cupom.",
+    },
+  ] satisfies DashboardMetric[];
+}
+
+function buildComboRows(
+  rows: Array<{
+    definition: DashboardComboDefinition;
+    bestScenario: DashboardScenarioRow;
+    tightScenario: DashboardScenarioRow;
+  }>,
+) {
+  if (rows.length === 0) {
+    return [
+      {
+        title: "Sem combos ativos",
+        priceLabel: "-",
+        detail: "Ative uma regra de combo para a dashboard mostrar essa leitura simplificada.",
+      },
+    ] satisfies ComboDisplayRow[];
+  }
+
+  return rows.map((item) => ({
+    title: item.definition.label,
+    priceLabel: formatMoney(item.definition.basePrice),
+    detail: `${item.definition.mixLabel}. No Pix sem cupom deixa ${formatMoney(item.bestScenario.netProfit)} de lucro. Em 2x com cupom cai para ${formatMoney(item.tightScenario.netProfit)} com margem de ${formatPercent(item.tightScenario.marginPercent)}.`,
+  })) satisfies ComboDisplayRow[];
 }
 
 function buildComboMixScenarioRow(params: {
@@ -835,25 +849,9 @@ function buildComboMixScenarioRow(params: {
   fixedFee: number;
   discountPercent: number;
   mixLabel: string;
-}): DashboardScenarioRow {
-  return buildMixScenarioRow(params);
-}
-
-function buildMixScenarioRow(params: {
-  config: Awaited<ReturnType<typeof loadFinanceConfig>>["config"];
-  title: string;
-  quantity: number;
-  basePrice: number;
-  fullCount: number;
-  minimalCount: number;
-  feePercent: number;
-  fixedFee: number;
-  discountPercent: number;
-  mixLabel: string;
-}): DashboardScenarioRow {
+}) {
   const discountedRevenue = params.basePrice * (1 - params.discountPercent / 100);
-  const feeCost =
-    discountedRevenue * (params.feePercent / 100) + params.fixedFee;
+  const feeCost = discountedRevenue * (params.feePercent / 100) + params.fixedFee;
   const feePercentOnRevenue =
     discountedRevenue > 0 ? (feeCost / discountedRevenue) * 100 : 0;
   const netReceived = Math.max(discountedRevenue - feeCost, 0);
@@ -864,20 +862,6 @@ function buildMixScenarioRow(params: {
   const netProfit = netReceived - costTotal;
   const marginPercent =
     discountedRevenue > 0 ? (netProfit / discountedRevenue) * 100 : 0;
-  const costRatioOnRevenue = discountedRevenue > 0 ? costTotal / discountedRevenue : 0;
-  const influencerBenefitValue = netReceived * (INFLUENCER_CREDIT_PERCENT / 100);
-  const influencerBenefitCost = influencerBenefitValue * costRatioOnRevenue;
-  const influencerAdjustedProfit = netProfit - influencerBenefitCost;
-  const influencerAdjustedMarginPercent =
-    discountedRevenue > 0 ? (influencerAdjustedProfit / discountedRevenue) * 100 : 0;
-  const athleteProductBenefitValue = netReceived * (ATHLETE_PRODUCT_PERCENT / 100);
-  const athleteSupportBenefitValue = netReceived * (ATHLETE_SUPPORT_PERCENT / 100);
-  const athleteTotalBenefitValue =
-    athleteProductBenefitValue + athleteSupportBenefitValue;
-  const athleteTotalBenefitCost = athleteTotalBenefitValue * costRatioOnRevenue;
-  const athleteAdjustedProfit = netProfit - athleteTotalBenefitCost;
-  const athleteAdjustedMarginPercent =
-    discountedRevenue > 0 ? (athleteAdjustedProfit / discountedRevenue) * 100 : 0;
 
   return {
     title: params.title,
@@ -890,21 +874,7 @@ function buildMixScenarioRow(params: {
     netReceived,
     netProfit,
     marginPercent,
-    influencerPercent: INFLUENCER_CREDIT_PERCENT,
-    influencerBenefitValue,
-    influencerBenefitCost,
-    influencerAdjustedProfit,
-    influencerAdjustedMarginPercent,
-    athleteProductPercent: ATHLETE_PRODUCT_PERCENT,
-    athleteSupportPercent: ATHLETE_SUPPORT_PERCENT,
-    athleteTotalPercent: ATHLETE_PRODUCT_PERCENT + ATHLETE_SUPPORT_PERCENT,
-    athleteProductBenefitValue,
-    athleteSupportBenefitValue,
-    athleteTotalBenefitValue,
-    athleteTotalBenefitCost,
-    athleteAdjustedProfit,
-    athleteAdjustedMarginPercent,
-  };
+  } satisfies DashboardScenarioRow;
 }
 
 function buildRealComboDefinitions(
@@ -950,6 +920,7 @@ function inferRuleMix(rule: CompanyCartDiscountRule) {
   const text = normalizeText(
     `${rule.title} ${rule.categoryName} ${rule.categoryNames.join(" ")} ${rule.notes}`,
   );
+
   if (text.includes("smart")) {
     return {
       fullCount: 2,
@@ -1017,234 +988,8 @@ function buildMixLabel(fullCount: number, minimalCount: number) {
   return parts.join(" + ");
 }
 
-function buildCustomerMetrics(orders: FinanceFlowOrder[]) {
-  const totalOrders = orders.length;
-
-  if (totalOrders === 0) {
-    return {
-      metrics: [
-        {
-          label: "Pedidos no Pix",
-          value: "-",
-          detail: "Sem pedidos no mes para leitura.",
-        },
-        {
-          label: "Pedidos a vista ou 1x",
-          value: "-",
-          detail: "Sem pedidos no mes para leitura.",
-        },
-        {
-          label: "Pedidos com cupom",
-          value: "-",
-          detail: "Sem pedidos no mes para leitura.",
-        },
-        {
-          label: "Ticket medio",
-          value: "-",
-          detail: "Sem pedidos no mes para leitura.",
-        },
-      ],
-      summary: "Ainda nao ha pedidos no mes atual para ler o perfil da base.",
-      averageTicket: "-",
-      uniqueCustomers: 0,
-      pixShare: "-",
-      pixShareValue: 0,
-      couponShareValue: 0,
-      worstPatternShare: "-",
-      worstPatternShareValue: 0,
-    };
-  }
-
-  const pixCount = orders.filter((order) => isPixOrder(order)).length;
-  const oneShotCount = orders.filter(
-    (order) => isPixOrder(order) || order.installments <= 1,
-  ).length;
-  const couponCount = orders.filter((order) => order.hasCoupon).length;
-  const worstPatternCount = orders.filter(
-    (order) => order.installments >= 3 && order.hasCoupon,
-  ).length;
-  const totalRevenue = orders.reduce((sum, order) => sum + order.total, 0);
-  const averageTicket = totalRevenue / totalOrders;
-  const uniqueCustomers = new Set(orders.map((order) => order.customerKey)).size;
-  const pixShareValue = (pixCount / totalOrders) * 100;
-  const worstPatternShareValue = (worstPatternCount / totalOrders) * 100;
-  const pixShare = formatPercent(pixShareValue);
-  const oneShotShare = formatPercent((oneShotCount / totalOrders) * 100);
-  const couponShare = formatPercent((couponCount / totalOrders) * 100);
-  const worstPatternShare = formatPercent(worstPatternShareValue);
-
-  return {
-    metrics: [
-      {
-        label: "Pedidos no Pix",
-        value: pixShare,
-        detail: `${pixCount} de ${totalOrders} pedidos vieram no Pix.`,
-      },
-      {
-        label: "Pedidos a vista ou 1x",
-        value: oneShotShare,
-        detail: "Mostra quanto da base evita alongar recebimento.",
-      },
-      {
-        label: "Pedidos com cupom",
-        value: couponShare,
-        detail: `${couponCount} pedidos chegaram com desconto aplicado.`,
-      },
-      {
-        label: "Ticket medio",
-        value: formatMoney(averageTicket),
-        detail: `${uniqueCustomers} clientes unicos no mes atual.`,
-      },
-    ],
-    summary: `${pixShare} da base veio no Pix, ${oneShotShare} pagou a vista ou em 1x e ${worstPatternShare} caiu no pior padrao de 3x ou mais com cupom.`,
-    averageTicket: formatMoney(averageTicket),
-    uniqueCustomers,
-    pixShare,
-    pixShareValue,
-    couponShareValue: (couponCount / totalOrders) * 100,
-    worstPatternShare,
-    worstPatternShareValue,
-  };
-}
-
-function buildDebtWindowRows(debts: InternalDebt[], dailyNetPace: number) {
-  return [15, 30, 45].map((days) => {
-    const dueTotal = sumDebtsWithinNextDays(debts, days);
-    const projectedCoverage = dailyNetPace * days;
-    const gap = projectedCoverage - dueTotal;
-    const level =
-      dueTotal <= 0
-        ? ("baixo" as const)
-        : gap >= 0
-          ? ("baixo" as const)
-          : Math.abs(gap) <= dueTotal * 0.25
-            ? ("medio" as const)
-            : ("alto" as const);
-
-    return {
-      label: `Vence em ate ${days} dias`,
-      badge: dueTotal > 0 ? formatMoney(dueTotal) : "sem vencimento",
-      level,
-      detail:
-        dueTotal <= 0
-          ? `Nao existem dividas abertas com vencimento em ate ${days} dias.`
-          : gap >= 0
-            ? `No ritmo liquido atual, a operacao projeta ${formatMoney(
-                projectedCoverage,
-              )} ate essa janela e cobre os ${formatMoney(
-                dueTotal,
-              )} com folga de ${formatMoney(gap)}.`
-            : `No ritmo liquido atual, a operacao projeta ${formatMoney(
-                projectedCoverage,
-              )} ate essa janela e ainda faltam ${formatMoney(
-                Math.abs(gap),
-              )} para cobrir ${formatMoney(dueTotal)}.`,
-    };
-  });
-}
-
-function buildStockActionRows(stockItems: BaseStockItem[]) {
-  return [...stockItems]
-    .filter(isPlainStockItemInAlert)
-    .sort((left, right) => getStockRiskScore(right) - getStockRiskScore(left))
-    .slice(0, 6)
-    .map((item) => {
-      const label = `${item.sku} · ${item.color} ${item.size}`;
-      const coverageText =
-        item.coverageDays === null ? "sem historico de giro" : `${item.coverageDays} dias`;
-      const parts: string[] = [];
-      let title = `Acompanhar lisa ${label}`;
-      let shortReason = `lisa em atencao`;
-      let level: "alto" | "medio" | "baixo" = "medio";
-
-      if (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays) {
-        title = `Pedir lisa ${label}`;
-        shortReason = `cobertura menor que o prazo`;
-        level = item.coverageDays <= Math.max(item.leadTimeDays * 0.5, 3) ? "alto" : "medio";
-        parts.push(
-          `No ritmo atual, a cobertura da lisa e ${coverageText} e a reposicao leva ${item.leadTimeDays} dias.`,
-        );
-      }
-
-      if (item.plain <= item.reorderPoint) {
-        title = parts.length > 0 ? title : `Pedir lisa ${label}`;
-        shortReason = shortReason === "lisa em atencao" ? `lisas abaixo do ponto` : shortReason;
-        level = item.plain === 0 ? "alto" : level === "alto" ? "alto" : "medio";
-        parts.push(
-          `Sobram ${item.plain} lisas em casa e o ponto de reposicao esta em ${item.reorderPoint}.`,
-        );
-      }
-
-      if (parts.length === 0) {
-        parts.push(
-          `A base ainda tem ${item.plain} lisas em casa. O site mostra ${item.published} alocadas apenas como referencia comercial.`,
-        );
-      }
-
-      return {
-        title,
-        shortReason,
-        level,
-        badge:
-          level === "alto"
-            ? "agir agora"
-            : level === "medio"
-              ? "acompanhar"
-              : "ok",
-        detail: `${parts.join(" ")} Hoje existem ${item.plain} lisas em maos e ${item.published} alocadas na Nuvemshop como referencia.`,
-      };
-    });
-}
-
-function isPlainStockItemInAlert(item: BaseStockItem) {
-  return (
-    item.plain <= item.reorderPoint ||
-    (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays)
-  );
-}
-
-function getStockRiskScore(item: BaseStockItem) {
-  let score = 0;
-
-  if (item.coverageDays !== null && item.coverageDays <= item.leadTimeDays) {
-    score += 60 + (item.leadTimeDays - item.coverageDays);
-  }
-
-  if (item.plain <= item.reorderPoint) {
-    score += 30 + (item.reorderPoint - item.plain);
-  }
-
-  return score;
-}
-
-function sumDebtsWithinNextDays(debts: InternalDebt[], days: number) {
-  return debts
-    .filter((debt) => isWithinNextDays(debt.dueDate, days))
-    .reduce((sum, debt) => sum + debt.amount, 0);
-}
-
-function getMarginAlertLevel(marginPercent: number): "alto" | "medio" | "baixo" {
-  if (marginPercent < 10) {
-    return "alto";
-  }
-
-  if (marginPercent < 20) {
-    return "medio";
-  }
-
-  return "baixo";
-}
-
-function getAlertPillClass(level: "alto" | "medio" | "baixo") {
-  if (level === "alto") {
-    return styles.pillHigh;
-  }
-
-  if (level === "medio") {
-    return styles.pillMedium;
-  }
-
-  return styles.pillLow;
+function isPixOrder(order: FinanceFlowOrder) {
+  return normalizeText(order.paymentMethod).includes("pix");
 }
 
 function normalizeText(value: string) {
@@ -1255,42 +1000,7 @@ function normalizeText(value: string) {
     .toLowerCase();
 }
 
-function isPixOrder(order: FinanceFlowOrder) {
-  const haystack = `${order.paymentMethod} ${order.gateway} ${order.paymentStatus}`.toLowerCase();
-  return haystack.includes("pix");
-}
-
-function isWithinNextDays(dateText: string, days: number) {
-  const date = new Date(`${dateText}T00:00:00`);
-
-  if (Number.isNaN(date.getTime())) {
-    return false;
-  }
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const limit = new Date(today);
-  limit.setDate(limit.getDate() + days);
-
-  return date >= today && date <= limit;
-}
-
-function getProfitToneClass(marginPercent: number) {
-  if (marginPercent >= 30) {
-    return styles.profitStrong;
-  }
-
-  if (marginPercent >= 20) {
-    return styles.profitHealthy;
-  }
-
-  if (marginPercent >= 10) {
-    return styles.profitWarning;
-  }
-
-  if (marginPercent >= 0) {
-    return styles.profitCritical;
-  }
-
-  return styles.profitNegative;
+function getCurrentMonthReference() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }

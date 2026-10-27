@@ -311,9 +311,19 @@ export function PartnerCampaignManager({
             controle se o ranking deles vai ficar travado ou liberado.
           </p>
         </div>
-        <div className={styles.chipRow}>
-          <span className={styles.chip}>Bonus extra separado do contrato</span>
-          <span className={styles.chip}>Ranking parcial pode ficar mascarado</span>
+        <div className={styles.stack} style={{ alignItems: "flex-end", gap: 12 }}>
+          <div className={styles.chipRow}>
+            <span className={styles.chip}>Bonus extra separado do contrato</span>
+            <span className={styles.chip}>Ranking parcial pode ficar mascarado</span>
+          </div>
+          <div className={styles.filterActions}>
+            <a
+              href="/influenciadores/poupanca-atleta"
+              className={styles.secondaryButton}
+            >
+              Resgates de influenciadores
+            </a>
+          </div>
         </div>
       </div>
 

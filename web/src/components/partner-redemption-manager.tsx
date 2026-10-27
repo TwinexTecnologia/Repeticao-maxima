@@ -152,7 +152,7 @@ export function PartnerRedemptionManager({
 
   useEffect(() => {
     if (storeProductOptions.length === 0) {
-      if (form.productSelectionId) {
+      if (form.productSelectionId || form.customProductLabel) {
         setForm((current) => ({
           ...current,
           productSelectionId: "",
@@ -162,9 +162,9 @@ export function PartnerRedemptionManager({
       return;
     }
 
-    const hasSelectedProduct = storeProductOptions.some(
-      (item) => item.id === form.productSelectionId,
-    );
+    const hasSelectedProduct =
+      form.productSelectionId === OTHER_PRODUCT_OPTION_ID ||
+      storeProductOptions.some((item) => item.id === form.productSelectionId);
 
     if (!hasSelectedProduct) {
       setForm((current) => ({
@@ -172,7 +172,7 @@ export function PartnerRedemptionManager({
         productSelectionId: storeProductOptions[0]?.id || "",
       }));
     }
-  }, [form.productSelectionId, storeProductOptions]);
+  }, [form.customProductLabel, form.productSelectionId, storeProductOptions]);
 
   function applyCostPreset(value: "full" | "minimalista") {
     setForm((current) => ({
@@ -464,7 +464,7 @@ export function PartnerRedemptionManager({
                 <span>Qual produto foi entregue</span>
                 <input
                   type="text"
-                  placeholder="Ex.: Calca, coqueteleira, boné"
+                  placeholder="Ex.: Calca, coqueteleira, bone"
                   value={form.customProductLabel}
                   onChange={(event) =>
                     setForm((current) => ({
