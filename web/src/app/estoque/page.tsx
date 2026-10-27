@@ -783,8 +783,6 @@ export default async function EstoquePage({ searchParams }: PageProps) {
     endDate: getSearchValue(resolvedSearchParams, "endDate").trim() || getMonthEndDate(selectedMonth),
     movementType: getSearchValue(resolvedSearchParams, "movementType").trim() || "saida",
     status: getSearchValue(resolvedSearchParams, "status").trim() || "aplicada",
-    movementType: getSearchValue(resolvedSearchParams, "movementType").trim() || "todos",
-    status: getSearchValue(resolvedSearchParams, "status").trim() || "todos",
     color: getSearchValue(resolvedSearchParams, "color").trim() || "todas",
     size: getSearchValue(resolvedSearchParams, "size").trim() || "todos",
     base: getSearchValue(resolvedSearchParams, "ledgerBase").trim() || "todas",
@@ -1138,10 +1136,6 @@ export default async function EstoquePage({ searchParams }: PageProps) {
                 <p className={styles.sectionText}>
                   Aqui entra o que já foi baixado ou corrigido. As vendas do site ficam separadas para
                   revisão antes de aparecerem neste extrato.
-                <h3 className={styles.sectionTitle}>Extrato de movimentações</h3>
-                <p className={styles.sectionText}>
-                  Entradas, saídas, correções e estornos ficam reunidos em um único lugar, com filtros
-                  compactos e ações auditáveis.
                 </p>
               </div>
               {stockData.approvalQueue.length > 0 ? (

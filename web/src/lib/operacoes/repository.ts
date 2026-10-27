@@ -1616,7 +1616,6 @@ export async function reviewPendingStockMovement(movementId: string, input: unkn
     const shouldApplyStock = row.decision === "aprovar" && row.deductFromStock && !row.alreadyPrinted;
     let nextStockRow = targetStockRow;
     let stockEffectApplied = false;
-    const reviewStatus: StockMovementReviewStatus =
     let reviewStatus: StockMovementReviewStatus =
       row.decision === "ignorar" ? "ignorado" : "aprovado";
     let reasonCategory = "saida_site_aprovada_sem_baixa";
