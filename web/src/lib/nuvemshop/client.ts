@@ -103,7 +103,6 @@ export class NuvemshopClient {
       searchParams,
     });
   }
-
   async getOrder(id: string | number) {
     return this.requestJson<NuvemshopOrder>(`/orders/${id}`);
   }

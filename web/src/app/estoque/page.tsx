@@ -554,6 +554,28 @@ function canCorrectMovement(movement: StockMovement) {
   );
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function matchesReferenceQuery(movement: StockMovement, rawQuery: string) {
+  const query = rawQuery.trim().toLowerCase();
+
+  if (!query) {
+    return true;
+  }
+
+  const values = [movement.originReference, movement.artName, movement.reasonText]
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (/^\d+$/.test(query)) {
+    const pattern = new RegExp(`(^|\\D)${escapeRegExp(query)}(?=\\D|$)`);
+    return values.some((value) => pattern.test(value));
+  }
+
+  return values.some((value) => value.includes(query));
+}
 function buildPageHref(
   current: Record<string, string | string[] | undefined>,
   updates: Record<string, string | undefined>,
@@ -658,6 +680,7 @@ function filterMovements(
     }
 
     if (referenceNeedle) {
+      return matchesReferenceQuery(movement, referenceNeedle);
       const haystack = `${movement.originReference} ${movement.artName} ${movement.reasonText}`.toLowerCase();
       return haystack.includes(referenceNeedle);
     }
@@ -758,8 +781,8 @@ export default async function EstoquePage({ searchParams }: PageProps) {
     startDate:
       getSearchValue(resolvedSearchParams, "startDate").trim() || getMonthStartDate(selectedMonth),
     endDate: getSearchValue(resolvedSearchParams, "endDate").trim() || getMonthEndDate(selectedMonth),
-    movementType: getSearchValue(resolvedSearchParams, "movementType").trim() || "todos",
-    status: getSearchValue(resolvedSearchParams, "status").trim() || "todos",
+    movementType: getSearchValue(resolvedSearchParams, "movementType").trim() || "saida",
+    status: getSearchValue(resolvedSearchParams, "status").trim() || "aplicada",
     color: getSearchValue(resolvedSearchParams, "color").trim() || "todas",
     size: getSearchValue(resolvedSearchParams, "size").trim() || "todos",
     base: getSearchValue(resolvedSearchParams, "ledgerBase").trim() || "todas",
@@ -1109,10 +1132,10 @@ export default async function EstoquePage({ searchParams }: PageProps) {
           <section className={styles.surfaceCard} id="extrato">
             <div className={styles.sectionTopbar}>
               <div>
-                <h3 className={styles.sectionTitle}>Extrato de movimentações</h3>
+                <h3 className={styles.sectionTitle}>Extrato de baixas</h3>
                 <p className={styles.sectionText}>
-                  Entradas, saídas, correções e estornos ficam reunidos em um único lugar, com filtros
-                  compactos e ações auditáveis.
+                  Aqui entra o que já foi baixado ou corrigido. As vendas do site ficam separadas para
+                  revisão antes de aparecerem neste extrato.
                 </p>
               </div>
               {stockData.approvalQueue.length > 0 ? (
