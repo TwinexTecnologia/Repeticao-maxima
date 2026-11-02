@@ -1,0 +1,427 @@
+.page {
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
+  color: #f8efff;
+  background:
+    radial-gradient(circle at top center, rgba(118, 43, 255, 0.26), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(255, 109, 28, 0.22), transparent 24%),
+    linear-gradient(180deg, #09030f 0%, #15081f 45%, #08020d 100%);
+}
+
+.backgroundGlowTop,
+.backgroundGlowBottom {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(34px);
+  pointer-events: none;
+}
+
+.backgroundGlowTop {
+  width: 360px;
+  height: 360px;
+  top: -100px;
+  right: -120px;
+  background: rgba(135, 92, 255, 0.24);
+}
+
+.backgroundGlowBottom {
+  width: 320px;
+  height: 320px;
+  left: -100px;
+  bottom: -20px;
+  background: rgba(255, 122, 0, 0.16);
+}
+
+.shell {
+  width: min(960px, calc(100% - 22px));
+  margin: 0 auto;
+  padding: 14px 0 44px;
+  position: relative;
+  z-index: 1;
+  text-align: center;
+}
+
+.badgeRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(22, 10, 28, 0.86);
+  box-shadow: 0 0 0 1px rgba(180, 92, 255, 0.22);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(255, 108, 26, 0.18) 0%, rgba(123, 55, 255, 0.18) 100%);
+  color: #fff3e9;
+  border: 1px solid rgba(255, 162, 95, 0.2);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.heroTitle {
+  margin-top: 18px;
+  font-size: clamp(2.2rem, 9vw, 4.35rem);
+  line-height: 0.94;
+  letter-spacing: -0.05em;
+  text-transform: uppercase;
+  font-weight: 950;
+  font-style: italic;
+}
+
+.heroTitleHighlight {
+  color: #ff7d21;
+  text-shadow: 0 0 26px rgba(255, 125, 33, 0.3);
+}
+
+.heroDescription {
+  margin: 14px auto 0;
+  max-width: 560px;
+  color: rgba(242, 225, 255, 0.82);
+  font-size: clamp(0.96rem, 3.3vw, 1.08rem);
+  line-height: 1.55;
+}
+
+.heroBlock {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(108px, 0.72fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.mediaCard {
+  margin-top: 0;
+  position: relative;
+  padding: 6px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(255, 125, 33, 0.22) 0%, rgba(127, 46, 214, 0.22) 100%);
+  border: 1px solid rgba(255, 144, 57, 0.38);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 0 1px rgba(255, 127, 39, 0.12),
+    0 18px 42px rgba(0, 0, 0, 0.38),
+    0 0 34px rgba(255, 115, 0, 0.16);
+}
+
+.videoWrap {
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #160b1f 0%, #120716 100%);
+}
+
+.heroVideoFrame {
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  display: block;
+  background: #180d22;
+  border: 0;
+}
+
+.videoStage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  overflow: hidden;
+  background: radial-gradient(circle at top center, rgba(137, 93, 255, 0.18), transparent 42%), #150819;
+}
+
+.heroVideo {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  background: #150819;
+}
+
+.videoFallback {
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: rgba(248, 239, 255, 0.78);
+  background: #180d22;
+}
+
+.videoOverlay {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 28%;
+  background: linear-gradient(180deg, rgba(5, 4, 8, 0) 0%, rgba(6, 4, 8, 0.44) 100%);
+  pointer-events: none;
+}
+
+.primaryButton,
+.secondaryButton,
+.mobileStickyButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-weight: 900;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.primaryButton {
+  width: min(100%, 640px);
+  margin: 22px auto 0;
+  gap: 14px;
+  min-height: 72px;
+  padding: 0 22px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #ff6b15 0%, #ff9a1f 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 0 0 1px rgba(255, 161, 81, 0.22),
+    0 18px 38px rgba(255, 102, 20, 0.32),
+    0 0 30px rgba(255, 113, 24, 0.24);
+  text-transform: uppercase;
+}
+
+.primaryButton:hover,
+.secondaryButton:hover,
+.mobileStickyButton:hover {
+  transform: translateY(-1px);
+}
+
+.primaryButtonIcon {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.primaryButtonIcon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.primaryButtonArrow {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.primaryButtonArrow svg {
+  width: 24px;
+  height: 24px;
+}
+
+.primaryButtonDisabled,
+.secondaryButtonDisabled,
+.mobileStickyButtonDisabled {
+  opacity: 0.58;
+  pointer-events: none;
+}
+
+.actionHint {
+  margin-top: 10px;
+  color: rgba(255, 233, 214, 0.74);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.benefitRail {
+  display: grid;
+  gap: 10px;
+  align-self: center;
+}
+
+.benefitGrid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.benefitCard {
+  padding: 14px 12px;
+  border-radius: 18px;
+  background: rgba(15, 7, 21, 0.86);
+  border: 1px solid rgba(255, 123, 27, 0.24);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 18px rgba(255, 125, 32, 0.12);
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+.benefitIcon {
+  width: 22px;
+  height: 22px;
+  color: #ff8a26;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.benefitIcon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.benefitText {
+  display: grid;
+  gap: 3px;
+}
+
+.benefitCard h3 {
+  font-size: 0.92rem;
+  font-weight: 900;
+}
+
+.benefitCard p {
+  color: rgba(238, 223, 255, 0.8);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.bottomSection {
+  margin-top: 22px;
+  display: grid;
+  gap: 10px;
+}
+
+.bottomSection h2 {
+  font-size: clamp(1.6rem, 6vw, 2.25rem);
+  line-height: 1.04;
+  text-transform: uppercase;
+}
+
+.bottomSection p {
+  color: rgba(242, 226, 255, 0.76);
+  font-size: 0.98rem;
+}
+
+.secondaryButton {
+  width: 100%;
+  min-height: 54px;
+  margin-top: 4px;
+  color: #f6ebff;
+  background: linear-gradient(135deg, #7f36c1 0%, #6e2aa9 100%);
+  box-shadow: 0 18px 38px rgba(108, 39, 166, 0.28);
+}
+
+.mobileStickyBar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 12px 12px 16px;
+  background: linear-gradient(180deg, rgba(18, 7, 19, 0) 0%, rgba(18, 7, 19, 0.92) 45%);
+  z-index: 20;
+}
+
+.mobileStickyButton {
+  width: min(100%, 520px);
+  min-height: 54px;
+  margin: 0 auto;
+  color: #ffffff;
+  background: linear-gradient(135deg, #ff6d1c 0%, #ff7f27 100%);
+  box-shadow: 0 18px 36px rgba(255, 104, 22, 0.28);
+}
+
+@media (min-width: 768px) {
+  .shell {
+    width: min(1040px, calc(100% - 32px));
+    padding-top: 24px;
+  }
+
+  .mediaCard {
+    max-width: 360px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .heroBlock {
+    grid-template-columns: minmax(0, 360px) minmax(220px, 260px);
+    justify-content: center;
+    gap: 18px;
+  }
+
+  .benefitCard {
+    min-height: 86px;
+    padding: 16px 16px;
+  }
+
+  .benefitCard h3 {
+    font-size: 1rem;
+  }
+
+  .benefitCard p {
+    font-size: 0.82rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .shell {
+    width: min(410px, calc(100% - 28px));
+    padding-bottom: 34px;
+  }
+
+  .heroTitle {
+    margin-top: 14px;
+  }
+
+  .heroBlock {
+    grid-template-columns: minmax(0, 1.22fr) minmax(112px, 0.78fr);
+    gap: 8px;
+  }
+
+  .primaryButton {
+    min-height: 68px;
+    font-size: 1.02rem;
+    line-height: 1.05;
+  }
+
+  .benefitCard {
+    min-height: 74px;
+    padding: 12px 10px;
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .benefitIcon,
+  .benefitIcon svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .benefitCard h3 {
+    font-size: 0.8rem;
+  }
+
+  .benefitCard p {
+    font-size: 0.64rem;
+    line-height: 1.25;
+  }
+}
+
+@media (min-width: 900px) {
+  .heroDescription {
+    max-width: 620px;
+  }
+}
