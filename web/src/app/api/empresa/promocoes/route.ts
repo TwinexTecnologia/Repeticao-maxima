@@ -1,11 +1,21 @@
 import { NextResponse } from "next/server";
 
+import { authorizeApiAccess } from "@/lib/auth/access";
 import { createCompanyCartDiscountRule } from "@/lib/empresa/repository";
 
 export async function POST(request: Request) {
+  const authorization = await authorizeApiAccess("empresa");
+
+  if (!authorization.ok) {
+    return authorization.response;
+  }
+
   try {
     const body = await request.json();
-    const result = await createCompanyCartDiscountRule(body);
+    const result = await createCompanyCartDiscountRule(
+      body,
+      new URL(request.url).origin,
+    );
 
     if (!result.ok) {
       return NextResponse.json(

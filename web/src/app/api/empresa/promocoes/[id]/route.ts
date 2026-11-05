@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { authorizeApiAccess } from "@/lib/auth/access";
 import {
   updateCompanyCartDiscountRule,
   updateCompanyCartDiscountRuleStatus,
@@ -10,10 +11,20 @@ type RouteProps = {
 };
 
 export async function PATCH(request: Request, context: RouteProps) {
+  const authorization = await authorizeApiAccess("empresa");
+
+  if (!authorization.ok) {
+    return authorization.response;
+  }
+
   try {
     const body = await request.json();
     const { id } = await context.params;
-    const result = await updateCompanyCartDiscountRuleStatus(id, body);
+    const result = await updateCompanyCartDiscountRuleStatus(
+      id,
+      body,
+      new URL(request.url).origin,
+    );
 
     if (!result.ok) {
       return NextResponse.json(
@@ -49,10 +60,20 @@ export async function PATCH(request: Request, context: RouteProps) {
 }
 
 export async function PUT(request: Request, context: RouteProps) {
+  const authorization = await authorizeApiAccess("empresa");
+
+  if (!authorization.ok) {
+    return authorization.response;
+  }
+
   try {
     const body = await request.json();
     const { id } = await context.params;
-    const result = await updateCompanyCartDiscountRule(id, body);
+    const result = await updateCompanyCartDiscountRule(
+      id,
+      body,
+      new URL(request.url).origin,
+    );
 
     if (!result.ok) {
       return NextResponse.json(

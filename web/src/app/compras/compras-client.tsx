@@ -255,6 +255,29 @@ export function ComprasClient({
       <section className={styles.section}>
         <div className={styles.sectionHeader}>
           <div>
+            <div className={styles.sectionTitle}>Resumo das dividas</div>
+            <p className={styles.sectionSubtitle}>
+              Esses cards agora ficam no topo para voce bater o olho no mes
+              atual, no proximo e no saldo total antes de cadastrar uma nova
+              saida.
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.metricGrid}>
+          {metrics.map((metric) => (
+            <article key={metric.label} className={styles.metricCard}>
+              <div className={styles.metricLabel}>{metric.label}</div>
+              <div className={styles.metricValue}>{metric.value}</div>
+              <div className={styles.metricHint}>{metric.detail}</div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <div>
             <div className={styles.sectionTitle}>Nova divida</div>
             <p className={styles.sectionSubtitle}>
               Cadastre fabrica, cartao, brinde de influenciador ou qualquer
@@ -264,7 +287,7 @@ export function ComprasClient({
           </div>
         </div>
 
-        <div className={styles.configGrid}>
+        <div className={styles.stack}>
           <article className={styles.configCard}>
             <div className={styles.formStack}>
               <label className={styles.filterField}>
@@ -418,18 +441,6 @@ export function ComprasClient({
               >
                 {isSaving ? "Salvando..." : "Adicionar divida"}
               </button>
-            </div>
-          </article>
-
-          <article className={styles.configCard}>
-            <div className={styles.metricGrid}>
-              {metrics.map((metric) => (
-                <article key={metric.label} className={styles.metricCard}>
-                  <div className={styles.metricLabel}>{metric.label}</div>
-                  <div className={styles.metricValue}>{metric.value}</div>
-                  <div className={styles.metricHint}>{metric.detail}</div>
-                </article>
-              ))}
             </div>
           </article>
         </div>

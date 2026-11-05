@@ -1,7 +1,4 @@
-import { AppShell } from "@/components/app-shell";
-import { FinanceiroClient } from "./financeiro-client";
-import { loadFinanceConfig } from "@/lib/financeiro/repository";
-import { loadMonthlyFinanceFlow } from "@/lib/financeiro/flow";
+import { redirect } from "next/navigation";
 
 type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -17,23 +14,6 @@ function getSearchValue(
 
 export default async function FinanceiroPage({ searchParams }: PageProps) {
   const resolvedSearchParams = (await searchParams) || {};
-  const selectedMonth = getSearchValue(resolvedSearchParams, "month");
-  const [{ config, persistence }, flow] = await Promise.all([
-    loadFinanceConfig(),
-    loadMonthlyFinanceFlow(selectedMonth),
-  ]);
-
-  return (
-    <AppShell
-      title="Financeiro"
-      subtitle="Acompanhe so o fluxo do mes, com entradas liquidas por canal e saidas vindas das dividas da operacao."
-      currentPath="/financeiro"
-    >
-      <FinanceiroClient
-        initialConfig={config}
-        initialPersistence={persistence}
-        initialFlow={flow}
-      />
-    </AppShell>
-  );
+  const selectedMonth = getSearchValue(resolvedSearchParams, "month").trim();
+  redirect(selectedMonth ? `/pedidos?month=${selectedMonth}` : "/pedidos");
 }

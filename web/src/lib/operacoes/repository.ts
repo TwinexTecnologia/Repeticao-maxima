@@ -7,16 +7,30 @@ import {
 import type {
   NuvemshopLocalizedText,
   NuvemshopOrder,
+  NuvemshopOrderProduct,
   NuvemshopProduct,
   NuvemshopVariant,
 } from "@/lib/nuvemshop/types";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const OPERATIONS_SCHEMA = "repeticao_maxima";
 const DEBTS_TABLE = "dividas_internas";
+const FINANCE_BALANCES_TABLE = "financeiro_saldos_mensais";
+const FINANCE_MOVEMENTS_TABLE = "financeiro_movimentacoes";
+const FINANCE_GROUPS_TABLE = "financeiro_grupos";
+const FINANCE_SUBGROUPS_TABLE = "financeiro_subgrupos";
 const STOCK_TABLE = "estoque_base";
+const STOCK_MOVEMENTS_TABLE = "estoque_movimentacoes";
 const DTF_TABLE = "estoque_dtf";
 const NUVEMSHOP_PAGE_SIZE = 100;
 const NUVEMSHOP_MAX_PAGES = 6;
+type OperationsSupabaseClient = SupabaseClient;
+
+type ServerSupabaseClient = ReturnType<typeof createSupabaseServerClient> extends infer T
+  ? T extends { ok: true; client: infer C }
+    ? C
+    : never
+  : never;
 
 export type OperationalPersistenceState = {
   enabled: boolean;
@@ -53,6 +67,55 @@ export type InternalDebt = {
   updatedAt: string | null;
 };
 
+export type FinancialMovementType = "entrada" | "saida";
+
+export type FinanceCategorySubgroup = {
+  id: string;
+  groupId: string;
+  name: string;
+  active: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type FinanceCategoryGroup = {
+  id: string;
+  movementType: FinancialMovementType;
+  name: string;
+  active: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+  subgroups: FinanceCategorySubgroup[];
+};
+
+export type MonthlyOpeningBalance = {
+  id: string;
+  monthRef: string;
+  openingBalance: number;
+  notes: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type ManualFinanceMovement = {
+  id: string;
+  movementDate: string;
+  type: FinancialMovementType;
+  title: string;
+  category: string;
+  groupId: string | null;
+  groupName: string;
+  subgroupId: string | null;
+  subgroupName: string;
+  amount: number;
+  paymentMethod: DebtPaymentMethod;
+  notes: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type ManualFinanceOpeningBalanceSource = "manual" | "previous_month" | "none";
+
 export type BaseStockItem = {
   id: string;
   sku: string;
@@ -61,11 +124,95 @@ export type BaseStockItem = {
   total: number;
   printed: number;
   free: number;
+  plain: number;
+  printedReal: number;
+  published: number;
+  overcommitted: number;
   reorderPoint: number;
+  leadTimeDays: number;
+  recentSales30d: number;
+  averageDailySales: number;
+  coverageDays: number | null;
   notes: string;
   createdAt: string | null;
   updatedAt: string | null;
 };
+
+export type StockSelectionOption = {
+  id: string;
+  sku: string;
+  color: string;
+  size: string;
+  total: number;
+  printedReal: number;
+  plain: number;
+  reorderPoint: number;
+  notes: string;
+};
+
+export type StockMovementType = "entrada" | "saida" | "ajuste";
+export type StockMovementReviewStatus = "aprovado" | "pendente" | "ignorado";
+export type StockMovementCorrectionRole = "original" | "estorno" | "correcao";
+
+export type StockMovement = {
+  id: string;
+  stockItemId: string | null;
+  sku: string;
+  color: string;
+  size: string;
+  movementDate: string;
+  movementType: StockMovementType;
+  quantity: number;
+  plainBefore: number;
+  plainAfter: number;
+  artName: string;
+  artProductId: string;
+  originType: string;
+  originReference: string;
+  reasonCategory: string;
+  reasonText: string;
+  sourceModule: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+  reviewStatus: StockMovementReviewStatus;
+  stockEffectApplied: boolean;
+  correctionRootId: string | null;
+  correctionParentId: string | null;
+  correctionRole: StockMovementCorrectionRole;
+  correctionNote: string;
+  correctionRequestToken: string;
+  reversedAt: string | null;
+};
+
+export type SiteArtSelectionOption = {
+  id: string;
+  artName: string;
+  productId: string;
+  variantId: string;
+  sku: string;
+  color: string;
+  size: string;
+  publishedStock: number;
+};
+
+export type StoreProductSelectionOption = {
+  id: string;
+  productName: string;
+  productId: string;
+  variantId: string;
+  sku: string;
+  color: string;
+  size: string;
+  publishedStock: number;
+  unitPrice: number;
+  imageUrl: string | null;
+  optionLabel: string;
+};
+
+export type OperationalDtfArtType =
+  | "minimalista"
+  | "full"
+  | "outro";
 
 export type DtfArtType = "minimalista" | "full" | "outro";
 
@@ -78,7 +225,7 @@ export type DtfStockItem = {
   id: string;
   nuvemshopProductId: string;
   productName: string;
-  artType: DtfArtType;
+  artType: OperationalDtfArtType;
   availableQty: number;
   reorderPoint: number;
   leadTimeDays: number;
@@ -104,6 +251,52 @@ export type NuvemshopStockProduct = {
   categories: string[];
   totalStock: number;
   variants: NuvemshopStockVariant[];
+};
+
+export type NuvemshopPaidOrderStockLineResult = {
+  originReference: string;
+  orderLabel: string;
+  itemLabel: string;
+  sku: string;
+  color: string;
+  size: string;
+  quantity: number;
+  status: "aplicado" | "pendente" | "duplicado" | "ignorado";
+  message: string;
+  movementId: string;
+};
+
+export type NuvemshopPaidOrderStockSyncResult = {
+  ok: boolean;
+  orderId: string;
+  orderLabel: string;
+  appliedCount: number;
+  pendingCount: number;
+  duplicateCount: number;
+  ignoredCount: number;
+  results: NuvemshopPaidOrderStockLineResult[];
+  persistence: OperationalPersistenceState;
+};
+
+export type NuvemshopOrderApprovalQueueLine = {
+  originReference: string;
+  itemLabel: string;
+  sku: string;
+  color: string;
+  size: string;
+  quantity: number;
+  resolutionStatus: "pronto" | "pendente";
+  resolutionMessage: string;
+};
+
+export type NuvemshopOrderApprovalQueueItem = {
+  orderId: string;
+  orderLabel: string;
+  customerName: string;
+  paidAt: string | null;
+  lineCount: number;
+  quantityTotal: number;
+  lines: NuvemshopOrderApprovalQueueLine[];
 };
 
 export async function loadDebtModuleData() {
@@ -149,6 +342,1860 @@ export async function loadDebtModuleData() {
       debts: getFallbackDebts(),
       persistence: buildDisabledState(getErrorMessage(error)),
     };
+  }
+}
+
+export async function loadManualFinanceModuleData(selectedMonth: string) {
+  const supabase = createSupabaseServerClient();
+  const monthRef = normalizeMonthReference(selectedMonth) || getCurrentMonthReference();
+  const monthStart = `${monthRef}-01`;
+  const monthEnd = getMonthEndDate(monthRef);
+
+  if (!supabase.ok) {
+    return {
+      balance: null as MonthlyOpeningBalance | null,
+      effectiveOpeningBalance: null as number | null,
+      openingBalanceSource: "none" as ManualFinanceOpeningBalanceSource,
+      inheritedFromMonthRef: null as string | null,
+      groups: [] as FinanceCategoryGroup[],
+      movements: [] as ManualFinanceMovement[],
+      persistence: buildDisabledState(
+        `Persistencia desativada. Configure ${supabase.missing.join(" e ")} para salvar o financeiro manual no Supabase.`,
+      ),
+    };
+  }
+
+  try {
+    const [
+      { data: balanceData, error: balanceError },
+      { data: currentMonthMovementData, error: currentMonthMovementError },
+      { data: groupData, error: groupError },
+      { data: subgroupData, error: subgroupError },
+    ] =
+      await Promise.all([
+        supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(FINANCE_BALANCES_TABLE)
+          .select("*")
+          .lte("month_ref", monthStart)
+          .order("month_ref", { ascending: true }),
+        supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(FINANCE_MOVEMENTS_TABLE)
+          .select("*")
+          .gte("movement_date", monthStart)
+          .lte("movement_date", monthEnd)
+          .order("movement_date", { ascending: true })
+          .order("created_at", { ascending: true }),
+        supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(FINANCE_GROUPS_TABLE)
+          .select("*")
+          .order("movement_type", { ascending: true })
+          .order("name", { ascending: true }),
+        supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(FINANCE_SUBGROUPS_TABLE)
+          .select("*")
+          .order("name", { ascending: true }),
+      ]);
+
+    if (balanceError) {
+      throw balanceError;
+    }
+
+    if (currentMonthMovementError) {
+      throw currentMonthMovementError;
+    }
+
+    if (groupError) {
+      throw groupError;
+    }
+
+    if (subgroupError) {
+      throw subgroupError;
+    }
+
+    const allBalances: MonthlyOpeningBalance[] = (balanceData ?? []).map(
+      (row: Record<string, unknown>) =>
+        rowToMonthlyOpeningBalance(row as Record<string, unknown>),
+    );
+    const movements: ManualFinanceMovement[] = (currentMonthMovementData ?? []).map(
+      (row: Record<string, unknown>) =>
+        rowToManualFinanceMovement(row as Record<string, unknown>),
+    );
+    const allGroups = (groupData ?? []).map((row) =>
+      rowToFinanceCategoryGroupBase(row as Record<string, unknown>),
+    );
+    const allSubgroups = (subgroupData ?? []).map((row) =>
+      rowToFinanceCategorySubgroup(row as Record<string, unknown>),
+    );
+    const subgroupsByGroup = new Map<string, FinanceCategorySubgroup[]>();
+
+    for (const subgroup of allSubgroups) {
+      const current = subgroupsByGroup.get(subgroup.groupId) ?? [];
+      current.push(subgroup);
+      subgroupsByGroup.set(subgroup.groupId, current);
+    }
+
+    const groups = allGroups.map((group) => ({
+      ...group,
+      subgroups: (subgroupsByGroup.get(group.id) ?? []).sort((left, right) =>
+        left.name.localeCompare(right.name, "pt-BR"),
+      ),
+    }));
+    const balanceByMonth = new Map<string, MonthlyOpeningBalance>(
+      allBalances.map((balance: MonthlyOpeningBalance) => [balance.monthRef, balance]),
+    );
+    const currentBalance = balanceByMonth.get(monthRef) ?? null;
+    const previousMonthRef = getPreviousMonthReference(monthRef);
+    const movementNetByMonth = new Map<string, number>();
+    const historyMonths = new Set<string>();
+
+    let effectiveOpeningBalance: number | null = currentBalance?.openingBalance ?? null;
+    let openingBalanceSource: ManualFinanceOpeningBalanceSource =
+      currentBalance ? "manual" : "none";
+    let inheritedFromMonthRef: string | null = null;
+
+    if (!currentBalance && previousMonthRef) {
+      for (const balance of allBalances) {
+        if (balance.monthRef < monthRef) {
+          historyMonths.add(balance.monthRef);
+        }
+      }
+
+      const { data: historyMovementData, error: historyMovementError } = await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(FINANCE_MOVEMENTS_TABLE)
+        .select("movement_date, movement_type, amount, updated_at")
+        .lt("movement_date", monthStart);
+
+      if (historyMovementError) {
+        throw historyMovementError;
+      }
+
+      for (const movement of (historyMovementData ?? []) as Array<Record<string, unknown>>) {
+        const movementMonthRef = String(movement.movement_date ?? "").slice(0, 7);
+
+        if (!movementMonthRef) {
+          continue;
+        }
+
+        historyMonths.add(movementMonthRef);
+        const currentNet = movementNetByMonth.get(movementMonthRef) ?? 0;
+        const signedAmount =
+          normalizeFinancialMovementType(movement.movement_type) === "entrada"
+            ? getNumberValue(movement.amount)
+            : getNumberValue(movement.amount) * -1;
+        movementNetByMonth.set(movementMonthRef, currentNet + signedAmount);
+      }
+
+      const monthsWithHistory = Array.from(historyMonths).sort();
+
+      if (monthsWithHistory.length > 0) {
+      const monthsToProcess = buildMonthSequence(monthsWithHistory[0]!, previousMonthRef);
+      let carriedBalance = 0;
+
+      for (const processedMonthRef of monthsToProcess) {
+        const manualOpeningBalance = balanceByMonth.get(processedMonthRef)?.openingBalance;
+        const monthOpeningBalance = manualOpeningBalance ?? carriedBalance;
+        const monthNet = movementNetByMonth.get(processedMonthRef) ?? 0;
+        carriedBalance = monthOpeningBalance + monthNet;
+      }
+
+      effectiveOpeningBalance = carriedBalance;
+      openingBalanceSource = "previous_month";
+      inheritedFromMonthRef = previousMonthRef;
+      }
+    }
+
+    const latestUpdatedAt = getLatestUpdatedAt([
+      ...((balanceData ?? []) as Array<Record<string, unknown>>),
+      ...((currentMonthMovementData ?? []) as Array<Record<string, unknown>>),
+      ...((groupData ?? []) as Array<Record<string, unknown>>),
+      ...((subgroupData ?? []) as Array<Record<string, unknown>>),
+    ]);
+
+    return {
+      balance: currentBalance,
+      effectiveOpeningBalance,
+      openingBalanceSource,
+      inheritedFromMonthRef,
+      groups,
+      movements,
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          currentBalance || movements.length > 0
+            ? "Financeiro manual carregado do Supabase."
+            : "Supabase conectado. Ainda nao existem saldo inicial nem movimentacoes para este mes.",
+        updatedAt: latestUpdatedAt,
+      },
+    };
+  } catch (error) {
+    return {
+      balance: null as MonthlyOpeningBalance | null,
+      effectiveOpeningBalance: null as number | null,
+      openingBalanceSource: "none" as ManualFinanceOpeningBalanceSource,
+      inheritedFromMonthRef: null as string | null,
+      groups: [] as FinanceCategoryGroup[],
+      movements: [] as ManualFinanceMovement[],
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function saveMonthlyOpeningBalance(input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeMonthlyOpeningBalanceInput(input);
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_BALANCES_TABLE)
+      .upsert(
+        {
+          month_ref: `${row.monthRef}-01`,
+          opening_balance: row.openingBalance,
+          notes: row.notes,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: "month_ref",
+        },
+      )
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel salvar o saldo inicial do mes.");
+    }
+
+    return {
+      ok: true as const,
+      balance: rowToMonthlyOpeningBalance(data),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message: "Saldo inicial do mes salvo com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function createManualFinanceMovement(input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeManualFinanceMovementInput(input);
+
+  try {
+    if (!row.groupId) {
+      throw new Error("Selecione um grupo para salvar essa movimentacao.");
+    }
+
+    const { data: groupData, error: groupError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_GROUPS_TABLE)
+      .select("*")
+      .eq("id", row.groupId)
+      .single();
+
+    if (groupError || !groupData) {
+      throw groupError || new Error("Selecione um grupo valido para a movimentacao.");
+    }
+
+    const group = rowToFinanceCategoryGroupBase(groupData as Record<string, unknown>);
+
+    if (group.movementType !== row.type) {
+      throw new Error(
+        `Selecione um grupo de ${row.type === "entrada" ? "entrada" : "saida"} valido.`,
+      );
+    }
+
+    let subgroup: FinanceCategorySubgroup | null = null;
+
+    if (row.subgroupId) {
+      const { data: subgroupData, error: subgroupError } = await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(FINANCE_SUBGROUPS_TABLE)
+        .select("*")
+        .eq("id", row.subgroupId)
+        .eq("group_id", group.id)
+        .single();
+
+      if (subgroupError || !subgroupData) {
+        throw subgroupError || new Error("Selecione um subgrupo valido para esse grupo.");
+      }
+
+      subgroup = rowToFinanceCategorySubgroup(subgroupData as Record<string, unknown>);
+    }
+
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_MOVEMENTS_TABLE)
+      .insert({
+        movement_date: row.movementDate,
+        movement_type: row.type,
+        title: row.title,
+        category: subgroup?.name || group.name,
+        group_id: group.id,
+        subgroup_id: subgroup?.id || null,
+        group_name: group.name,
+        subgroup_name: subgroup?.name || "",
+        amount: row.amount,
+        payment_method: row.paymentMethod,
+        notes: row.notes,
+        updated_at: new Date().toISOString(),
+      })
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel salvar a movimentacao financeira.");
+    }
+
+    return {
+      ok: true as const,
+      movement: rowToManualFinanceMovement(data),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          row.type === "entrada"
+            ? "Entrada manual registrada com sucesso."
+            : "Saida manual registrada com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function updateManualFinanceMovement(id: string, input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeManualFinanceMovementInput(input);
+
+  try {
+    if (!id.trim()) {
+      throw new Error("Selecione uma movimentacao valida para editar.");
+    }
+
+    if (!row.groupId) {
+      throw new Error("Selecione um grupo para salvar essa movimentacao.");
+    }
+
+    const { data: existingMovement, error: existingMovementError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_MOVEMENTS_TABLE)
+      .select("id")
+      .eq("id", id)
+      .single();
+
+    if (existingMovementError || !existingMovement) {
+      throw existingMovementError || new Error("A movimentacao informada nao foi encontrada.");
+    }
+
+    const { data: groupData, error: groupError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_GROUPS_TABLE)
+      .select("*")
+      .eq("id", row.groupId)
+      .single();
+
+    if (groupError || !groupData) {
+      throw groupError || new Error("Selecione um grupo valido para a movimentacao.");
+    }
+
+    const group = rowToFinanceCategoryGroupBase(groupData as Record<string, unknown>);
+
+    if (group.movementType !== row.type) {
+      throw new Error(
+        `Selecione um grupo de ${row.type === "entrada" ? "entrada" : "saida"} valido.`,
+      );
+    }
+
+    let subgroup: FinanceCategorySubgroup | null = null;
+
+    if (row.subgroupId) {
+      const { data: subgroupData, error: subgroupError } = await supabase.client
+        .schema(OPERATIONS_SCHEMA)
+        .from(FINANCE_SUBGROUPS_TABLE)
+        .select("*")
+        .eq("id", row.subgroupId)
+        .eq("group_id", group.id)
+        .single();
+
+      if (subgroupError || !subgroupData) {
+        throw subgroupError || new Error("Selecione um subgrupo valido para esse grupo.");
+      }
+
+      subgroup = rowToFinanceCategorySubgroup(subgroupData as Record<string, unknown>);
+    }
+
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_MOVEMENTS_TABLE)
+      .update({
+        movement_date: row.movementDate,
+        movement_type: row.type,
+        title: row.title,
+        category: subgroup?.name || group.name,
+        group_id: group.id,
+        subgroup_id: subgroup?.id || null,
+        group_name: group.name,
+        subgroup_name: subgroup?.name || "",
+        amount: row.amount,
+        payment_method: row.paymentMethod,
+        notes: row.notes,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel atualizar a movimentacao financeira.");
+    }
+
+    return {
+      ok: true as const,
+      movement: rowToManualFinanceMovement(data),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          row.type === "entrada"
+            ? "Entrada manual atualizada com sucesso."
+            : "Saida manual atualizada com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function deleteManualFinanceMovement(id: string) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const movementId = String(id).trim();
+
+  if (!movementId) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Nao foi possivel identificar a movimentacao para excluir."),
+    };
+  }
+
+  try {
+    const { data: existingMovement, error: existingMovementError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_MOVEMENTS_TABLE)
+      .select("id, movement_type")
+      .eq("id", movementId)
+      .single();
+
+    if (existingMovementError || !existingMovement) {
+      throw existingMovementError || new Error("A movimentacao informada nao foi encontrada.");
+    }
+
+    const { error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_MOVEMENTS_TABLE)
+      .delete()
+      .eq("id", movementId);
+
+    if (error) {
+      throw error;
+    }
+
+    const movementType = normalizeFinancialMovementType(existingMovement.movement_type);
+
+    return {
+      ok: true as const,
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          movementType === "entrada"
+            ? "Entrada manual excluida com sucesso."
+            : "Saida manual excluida com sucesso.",
+        updatedAt: new Date().toISOString(),
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function loadStockSelectionOptions() {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return [] as StockSelectionOption[];
+  }
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_TABLE)
+      .select("id, sku, color, size, total_qty, printed_qty, reorder_point, notes")
+      .order("sku", { ascending: true })
+      .order("color", { ascending: true })
+      .order("size", { ascending: true });
+
+    if (error) {
+      throw error;
+    }
+
+    return (data ?? []).map((row) => {
+      const total = getIntegerValue(row.total_qty);
+      const printedReal = Math.min(getIntegerValue(row.printed_qty), total);
+
+      return {
+        id: String(row.id ?? ""),
+        sku: String(row.sku ?? ""),
+        color: getPreferredColorLabel(String(row.color ?? "")),
+        size: String(row.size ?? ""),
+        total,
+        printedReal,
+        plain: Math.max(total - printedReal, 0),
+        reorderPoint: Math.max(getIntegerValue(row.reorder_point), 0),
+        notes: String(row.notes ?? ""),
+      };
+    });
+  } catch {
+    return [] as StockSelectionOption[];
+  }
+}
+
+export async function loadSiteArtSelectionOptions() {
+  const credentials = getNuvemshopCredentials();
+
+  if (!credentials.ok) {
+    return [] as SiteArtSelectionOption[];
+  }
+
+  try {
+    const client = new NuvemshopClient(credentials.credentials);
+    const products = await fetchAllNuvemshopPages((params) =>
+      client.listProducts(params),
+    );
+
+    return buildSiteArtSelectionOptions(products);
+  } catch {
+    return [] as SiteArtSelectionOption[];
+  }
+}
+
+export async function loadStockLedgerModuleData(selectedMonth: string) {
+  const supabase = createSupabaseServerClient();
+  const monthRef = normalizeMonthReference(selectedMonth) || getCurrentMonthReference();
+  const monthStart = `${monthRef}-01`;
+  const monthEnd = getMonthEndDate(monthRef);
+
+  const [stockOptions, artOptions] = await Promise.all([
+    loadStockSelectionOptions(),
+    loadSiteArtSelectionOptions(),
+  ]);
+
+  if (!supabase.ok) {
+    return {
+      stockOptions,
+      artOptions,
+      movements: [] as StockMovement[],
+      approvalQueue: [] as NuvemshopOrderApprovalQueueItem[],
+      persistence: buildDisabledState(
+        `Persistencia desativada. Configure ${supabase.missing.join(" e ")} para salvar as movimentacoes de estoque.`,
+      ),
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_MOVEMENTS_TABLE)
+      .select("*")
+      .gte("movement_date", monthStart)
+      .lte("movement_date", monthEnd)
+      .order("movement_date", { ascending: false })
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    const movements = (data ?? []).map(rowToStockMovement);
+    const approvalQueue = await loadNuvemshopPaidOrdersForApprovalQueue(
+      monthStart,
+      monthEnd,
+      movements,
+    );
+
+    return {
+      stockOptions,
+      artOptions,
+      movements,
+      approvalQueue,
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          movements.length > 0
+            ? "Movimentacoes de estoque carregadas do Supabase."
+            : "Supabase conectado. Ainda nao existem movimentacoes de estoque neste mes.",
+        updatedAt: getLatestUpdatedAt((data ?? []) as Array<Record<string, unknown>>),
+      },
+    };
+  } catch (error) {
+    return {
+      stockOptions,
+      artOptions,
+      movements: [] as StockMovement[],
+      approvalQueue: [] as NuvemshopOrderApprovalQueueItem[],
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function updateManualStockMovement(id: string, input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const movementId = String(id).trim();
+
+  if (!movementId) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Nao foi possivel identificar a movimentacao para editar."),
+    };
+  }
+
+  try {
+    const existingMovement = await loadStockMovementById(supabase.client, movementId);
+    const movementType = normalizeEditableStockMovementType(
+      isRecord(input) ? input.movementType : existingMovement.movementType,
+      existingMovement.movementType,
+    );
+    const row = normalizeManualStockMovementInput(movementType, input);
+
+    if (!row.sku || !row.color || !row.size) {
+      throw new Error("Selecione a base, a cor e o tamanho da camiseta.");
+    }
+
+    if (row.quantity <= 0) {
+      throw new Error("Informe uma quantidade valida para movimentar no estoque.");
+    }
+
+    const artDetails = await resolveStockArtSelection(row);
+    const movementPayload = buildManualStockMovementPayload(row, movementType, artDetails);
+    const currentMovement = {
+      ...existingMovement,
+      movementType,
+      sku: movementPayload.sku,
+      color: movementPayload.color,
+      size: movementPayload.size,
+      movementDate: movementPayload.movementDate,
+      quantity: movementPayload.quantity,
+      artName: movementPayload.artName,
+      artProductId: movementPayload.artProductId,
+      originType: movementPayload.originType,
+      originReference: movementPayload.originReference,
+      reasonCategory: movementPayload.reasonCategory,
+      reasonText: movementPayload.reasonText,
+      sourceModule: movementPayload.sourceModule,
+    } satisfies StockMovement;
+
+    const currentKey = buildStockKey(existingMovement.sku, existingMovement.color, existingMovement.size);
+    const nextKey = buildStockKey(currentMovement.sku, currentMovement.color, currentMovement.size);
+    const affectedBases = [
+      {
+        sku: existingMovement.sku,
+        color: existingMovement.color,
+        size: existingMovement.size,
+      },
+    ];
+
+    if (nextKey !== currentKey) {
+      affectedBases.push({
+        sku: currentMovement.sku,
+        color: currentMovement.color,
+        size: currentMovement.size,
+      });
+    }
+
+    const contexts = await loadStockMovementContexts(supabase.client, affectedBases);
+    const recalculatedPlans = buildStockRecalculationPlans(contexts, {
+      movementId,
+      mode: "update",
+      updatedMovement: currentMovement,
+    });
+
+    const nowIso = new Date().toISOString();
+    const { error: updateError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_MOVEMENTS_TABLE)
+      .update({
+        stock_item_id: null,
+        sku: currentMovement.sku,
+        color: currentMovement.color,
+        size: currentMovement.size,
+        movement_date: currentMovement.movementDate,
+        movement_type: currentMovement.movementType,
+        quantity: currentMovement.quantity,
+        art_name: currentMovement.artName,
+        art_product_id: currentMovement.artProductId,
+        origin_type: currentMovement.originType,
+        origin_reference: currentMovement.originReference,
+        reason_category: currentMovement.reasonCategory,
+        reason_text: currentMovement.reasonText,
+        source_module: currentMovement.sourceModule,
+      })
+      .eq("id", movementId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    await persistStockRecalculationPlans(supabase.client, recalculatedPlans, nowIso);
+
+    return {
+      ok: true as const,
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message: "Movimentacao de estoque atualizada com sucesso.",
+        updatedAt: nowIso,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+function buildManualStockMovementPayload(
+  row: ReturnType<typeof normalizeManualStockMovementInput>,
+  movementType: "entrada" | "saida",
+  artDetails: {
+    artName: string;
+    artProductId: string;
+  },
+) {
+  if (movementType === "saida" && row.originType === "venda" && !artDetails.artName) {
+    throw new Error("Selecione a arte vendida para registrar a saida da camiseta.");
+  }
+
+  const pendingSiteReview = movementType === "saida" && row.originType === "venda";
+  const keepPlainStock = movementType === "saida" && (row.alreadyPrinted || pendingSiteReview);
+
+  return {
+    sku: row.sku,
+    color: row.color,
+    size: row.size,
+    movementDate: row.movementDate,
+    movementType,
+    quantity: row.quantity,
+    artName: artDetails.artName,
+    artProductId: artDetails.artProductId,
+    originType: row.originType,
+    originReference: row.originReference,
+    reasonCategory:
+      movementType === "entrada"
+        ? "entrada_manual_camiseta"
+        : pendingSiteReview
+          ? "saida_site_pendente_revisao"
+        : keepPlainStock
+          ? "saida_ja_estampada_sem_baixa"
+          : "saida_manual_camiseta",
+    reasonText: pendingSiteReview
+      ? [row.notes, "Venda do site aguardando conferencia manual antes da baixa."]
+          .filter(Boolean)
+          .join(" ")
+      : keepPlainStock
+      ? [row.notes, "Ja estava estampada em outro lote; sem baixa da lisa."]
+          .filter(Boolean)
+          .join(" ")
+      : row.notes,
+    sourceModule: "estoque_manual",
+    reviewStatus: pendingSiteReview ? ("pendente" as const) : ("aprovado" as const),
+  };
+}
+
+async function loadStockMovementById(client: ServerSupabaseClient, movementId: string) {
+  const { data, error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(STOCK_MOVEMENTS_TABLE)
+    .select("*")
+    .eq("id", movementId)
+    .single();
+
+  if (error || !data) {
+    throw error || new Error("Nao foi possivel localizar a movimentacao de estoque.");
+  }
+
+  return rowToStockMovement(data);
+}
+
+async function loadStockMovementContexts(
+  client: ServerSupabaseClient,
+  bases: Array<{
+    sku: string;
+    color: string;
+    size: string;
+  }>,
+) {
+  const uniqueBases = Array.from(
+    new Map(
+      bases
+        .filter((base) => base.sku && base.color && base.size)
+        .map((base) => [buildStockKey(base.sku, base.color, base.size), base]),
+    ).values(),
+  );
+
+  return Promise.all(
+    uniqueBases.map((base) =>
+      loadStockMovementContextByBase(client, base.sku, base.color, base.size),
+    ),
+  );
+}
+
+async function loadStockMovementContextByBase(
+  client: ServerSupabaseClient,
+  sku: string,
+  color: string,
+  size: string,
+) {
+  const { data: movementRows, error: movementError } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(STOCK_MOVEMENTS_TABLE)
+    .select("*")
+    .eq("sku", sku)
+    .eq("color", color)
+    .eq("size", size)
+    .order("movement_date", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (movementError) {
+    throw movementError;
+  }
+
+  const firstMovement = movementRows?.[0] ?? null;
+  const resolvedSku = String(firstMovement?.sku ?? sku);
+  const resolvedColor = String(firstMovement?.color ?? color);
+  const resolvedSize = String(firstMovement?.size ?? size);
+  const { data: stockRow, error: stockError } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(STOCK_TABLE)
+    .select("id, sku, color, size, total_qty, printed_qty, notes, reorder_point, lead_time_days")
+    .eq("sku", resolvedSku)
+    .eq("color", resolvedColor)
+    .eq("size", resolvedSize)
+    .maybeSingle();
+
+  if (stockError) {
+    throw stockError;
+  }
+
+  return {
+    key: buildStockKey(resolvedSku, resolvedColor, resolvedSize),
+    sku: resolvedSku,
+    color: resolvedColor,
+    size: resolvedSize,
+    persistedMovements: (movementRows ?? []).map(rowToStockMovement),
+    stockRow: stockRow ? (stockRow as Record<string, unknown>) : null,
+  };
+}
+
+function buildStockRecalculationPlans(
+  contexts: Array<Awaited<ReturnType<typeof loadStockMovementContextByBase>>>,
+  params:
+    | {
+        movementId: string;
+        mode: "delete";
+      }
+    | {
+        movementId: string;
+        mode: "update";
+        updatedMovement: StockMovement;
+      },
+) {
+  return contexts.map((context) => {
+    const currentPlain = getCurrentPlainFromStockRow(context.stockRow);
+    const currentDelta = context.persistedMovements.reduce(
+      (sum, movement) => sum + getStockMovementDelta(movement),
+      0,
+    );
+    const startingPlain = currentPlain - currentDelta;
+
+    if (startingPlain < 0) {
+      throw new Error(
+        `O historico de ${context.sku} ${context.color} ${context.size} ficou inconsistente para recalcular o estoque.`,
+      );
+    }
+
+    const modifiedMovements =
+      params.mode === "update"
+        ? buildUpdatedMovementSet(context.persistedMovements, params.movementId, params.updatedMovement)
+        : context.persistedMovements.filter((movement) => movement.id !== params.movementId);
+
+    const recalculatedMovements = recalculateStockMovementSequence(modifiedMovements, startingPlain);
+    const printedQty = getPrintedQtyFromStockRow(context.stockRow);
+    const totalQty = recalculatedMovements.length
+      ? recalculatedMovements[recalculatedMovements.length - 1]?.plainAfter ?? startingPlain
+      : startingPlain;
+
+    return {
+      key: context.key,
+      sku: context.sku,
+      color: context.color,
+      size: context.size,
+      stockRow: context.stockRow,
+      printedQty,
+      totalQty: Math.max(totalQty + printedQty, 0),
+      movementUpdates: recalculatedMovements.map((movement) => ({
+        id: movement.id,
+        plainBefore: movement.plainBefore,
+        plainAfter: movement.plainAfter,
+      })),
+    };
+  });
+}
+
+function buildUpdatedMovementSet(
+  persistedMovements: StockMovement[],
+  movementId: string,
+  updatedMovement: StockMovement,
+) {
+  return persistedMovements.map((movement) => (movement.id === movementId ? updatedMovement : movement));
+}
+
+function recalculateStockMovementSequence(movements: StockMovement[], startingPlain: number) {
+  const orderedMovements = movements
+    .slice()
+    .sort(
+      (left, right) =>
+        left.movementDate.localeCompare(right.movementDate) ||
+        (left.createdAt || "").localeCompare(right.createdAt || "") ||
+        left.id.localeCompare(right.id),
+    );
+
+  let runningPlain = startingPlain;
+
+  return orderedMovements.map((movement) => {
+    const nextPlain = runningPlain + getStockMovementDelta(movement);
+
+    if (nextPlain < 0) {
+      throw new Error(
+        `A movimentacao ${movement.sku} ${movement.color} ${movement.size} deixaria o estoque negativo.`,
+      );
+    }
+
+    const recalculatedMovement = {
+      ...movement,
+      plainBefore: runningPlain,
+      plainAfter: nextPlain,
+    };
+
+    runningPlain = nextPlain;
+    return recalculatedMovement;
+  });
+}
+
+async function persistStockRecalculationPlans(
+  client: ServerSupabaseClient,
+  plans: ReturnType<typeof buildStockRecalculationPlans>,
+  nowIso: string,
+) {
+  for (const plan of plans) {
+    const stockItemId = await upsertStockRowForRecalculation(client, plan, nowIso);
+
+    for (const movement of plan.movementUpdates) {
+      const { error } = await client
+        .schema(OPERATIONS_SCHEMA)
+        .from(STOCK_MOVEMENTS_TABLE)
+        .update({
+          stock_item_id: stockItemId || null,
+          plain_before: movement.plainBefore,
+          plain_after: movement.plainAfter,
+        })
+        .eq("id", movement.id);
+
+      if (error) {
+        throw error;
+      }
+    }
+  }
+}
+
+async function upsertStockRowForRecalculation(
+  client: ServerSupabaseClient,
+  plan: ReturnType<typeof buildStockRecalculationPlans>[number],
+  nowIso: string,
+) {
+  if (plan.stockRow?.id) {
+    const { data, error } = await client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_TABLE)
+      .update({
+        total_qty: plan.totalQty,
+        updated_at: nowIso,
+      })
+      .eq("id", String(plan.stockRow.id))
+      .select("id")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel recalcular o saldo da base no estoque.");
+    }
+
+    return String(data.id ?? "");
+  }
+
+  if (plan.totalQty <= 0) {
+    return "";
+  }
+
+  const { data, error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(STOCK_TABLE)
+    .insert({
+      sku: plan.sku,
+      color: plan.color,
+      size: plan.size,
+      total_qty: plan.totalQty,
+      printed_qty: 0,
+      reorder_point: 0,
+      lead_time_days: 10,
+      notes: "",
+      updated_at: nowIso,
+    })
+    .select("id")
+    .single();
+  if (error || !data) {
+    throw error || new Error("Nao foi possivel recriar a base do estoque apos recalcular.");
+  }
+
+  return String(data.id ?? "");
+}
+
+function getCurrentPlainFromStockRow(row: Record<string, unknown> | null) {
+  const total = getIntegerValue(row?.total_qty);
+  const printed = Math.min(getIntegerValue(row?.printed_qty), total);
+  return Math.max(total - printed, 0);
+}
+
+function getPrintedQtyFromStockRow(row: Record<string, unknown> | null) {
+  const total = getIntegerValue(row?.total_qty);
+  return Math.min(getIntegerValue(row?.printed_qty), total);
+}
+
+function getStockMovementDelta(
+  movement: {
+    movementType: StockMovement["movementType"];
+    quantity: number;
+    reasonCategory?: string;
+    reviewStatus?: StockMovementReviewStatus;
+    plainBefore?: number;
+    plainAfter?: number;
+  },
+) {
+  if (movement.movementType === "entrada") {
+    return movement.quantity;
+  }
+
+  if (movement.movementType === "saida") {
+    return movement.reasonCategory === "saida_ja_estampada_sem_baixa" ||
+      movement.reasonCategory === "saida_site_pendente_revisao" ||
+      movement.reasonCategory === "saida_site_pendente_alerta" ||
+      movement.reviewStatus === "pendente"
+      ? 0
+      : movement.quantity * -1;
+  }
+
+  return (movement.plainAfter ?? 0) - (movement.plainBefore ?? 0);
+}
+
+export async function deleteManualStockMovement(id: string) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const movementId = String(id).trim();
+
+  if (!movementId) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Nao foi possivel identificar a movimentacao para excluir."),
+    };
+  }
+
+  try {
+    const existingMovement = await loadStockMovementById(supabase.client, movementId);
+    const contexts = await loadStockMovementContexts(supabase.client, [
+      {
+        sku: existingMovement.sku,
+        color: existingMovement.color,
+        size: existingMovement.size,
+      },
+    ]);
+    const recalculatedPlans = buildStockRecalculationPlans(contexts, {
+      movementId,
+      mode: "delete",
+    });
+    const nowIso = new Date().toISOString();
+
+    const { error: deleteError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_MOVEMENTS_TABLE)
+      .delete()
+      .eq("id", movementId);
+
+    if (deleteError) {
+      throw deleteError;
+    }
+
+    await persistStockRecalculationPlans(supabase.client, recalculatedPlans, nowIso);
+
+    return {
+      ok: true as const,
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message: "Movimentacao de estoque excluida com sucesso.",
+        updatedAt: nowIso,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function createManualStockEntry(input: unknown) {
+  return saveManualStockMovement("entrada", input);
+}
+
+export async function createManualStockExit(input: unknown) {
+  return saveManualStockMovement("saida", input);
+}
+
+export async function reviewPendingStockMovement(movementId: string, input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const movementRecordId = String(movementId ?? "").trim();
+  const row = normalizeStockMovementReviewInput(input);
+
+  if (!movementRecordId) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Nao foi possivel identificar a saida para revisar."),
+    };
+  }
+
+  try {
+    const { data: movementData, error: movementError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_MOVEMENTS_TABLE)
+      .select("*")
+      .eq("id", movementRecordId)
+      .single();
+
+    if (movementError || !movementData) {
+      throw movementError || new Error("Nao foi possivel localizar essa saida no extrato.");
+    }
+
+    const currentMovement = rowToStockMovement(movementData as Record<string, unknown>);
+
+    if (currentMovement.movementType !== "saida") {
+      throw new Error("Apenas saidas podem ser revisadas por aqui.");
+    }
+
+    if (currentMovement.reviewStatus !== "pendente") {
+      throw new Error("Essa saida ja foi revisada. Se precisar, crie uma nova correcao manual.");
+    }
+
+    if (!row.sku || !row.color || !row.size) {
+      throw new Error("Selecione a base correta antes de aprovar ou ignorar a saida.");
+    }
+
+    if (row.quantity <= 0) {
+      throw new Error("Informe uma quantidade valida para concluir a revisao.");
+    }
+
+    const targetStockRow = await loadStockRowByBase(
+      supabase.client,
+      row.sku,
+      row.color,
+      row.size,
+    );
+    const targetPlainBefore = getPlainStockFromRow(targetStockRow);
+    const shouldApplyStock = row.decision === "aprovar" && row.deductFromStock && !row.alreadyPrinted;
+    let nextStockRow = targetStockRow;
+    let stockEffectApplied = false;
+    let reviewStatus: StockMovementReviewStatus =
+      row.decision === "ignorar" ? "ignorado" : "aprovado";
+    let reasonCategory = "saida_site_aprovada_sem_baixa";
+    let reasonText = row.notes;
+
+    if (shouldApplyStock) {
+      if (!targetStockRow?.id) {
+        throw new Error("Nao existe essa combinacao no estoque para aprovar a baixa.");
+      }
+
+      if (targetPlainBefore < row.quantity) {
+        throw new Error(
+          `Nao ha lisa suficiente para aprovar a baixa. Restam ${targetPlainBefore} unidades para ${row.sku} ${row.color} ${row.size}.`,
+        );
+      }
+
+      nextStockRow = await updateStockTotalQty(
+        supabase.client,
+        String(targetStockRow.id),
+        Math.max(getIntegerValue(targetStockRow.total_qty) - row.quantity, 0),
+      );
+      stockEffectApplied = true;
+      reasonCategory = "saida_manual_camiseta";
+      reasonText = row.notes;
+    } else if (row.alreadyPrinted) {
+      reasonCategory = "saida_ja_estampada_sem_baixa";
+      reasonText = [row.notes, "Ja estava estampada em outro lote; sem baixa da lisa."]
+        .filter(Boolean)
+        .join(" ");
+    } else if (row.decision === "ignorar") {
+      reasonCategory = "saida_site_ignorada";
+      reasonText = [row.notes, "Movimentacao ignorada apos conferencia manual."]
+        .filter(Boolean)
+        .join(" ");
+    } else {
+      reasonCategory = "saida_site_aprovada_sem_baixa";
+      reasonText = [row.notes, "Saida aprovada sem baixa no estoque."]
+        .filter(Boolean)
+        .join(" ");
+    }
+
+    const plainBefore = shouldApplyStock ? targetPlainBefore : targetPlainBefore;
+    const plainAfter = shouldApplyStock ? getPlainStockFromRow(nextStockRow) : targetPlainBefore;
+    const updatedAt = new Date().toISOString();
+    const { data: updatedMovementData, error: updatedMovementError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_MOVEMENTS_TABLE)
+      .update({
+        stock_item_id: nextStockRow?.id ? String(nextStockRow.id) : null,
+        sku: row.sku,
+        color: row.color,
+        size: row.size,
+        quantity: row.quantity,
+        plain_before: plainBefore,
+        plain_after: plainAfter,
+        origin_reference: row.originReference,
+        reason_category: reasonCategory,
+        reason_text: reasonText,
+        review_status: reviewStatus,
+        stock_effect_applied: stockEffectApplied,
+        updated_at: updatedAt,
+      })
+      .eq("id", movementRecordId)
+      .select("*")
+      .single();
+
+    if (updatedMovementError || !updatedMovementData) {
+      throw updatedMovementError || new Error("Nao foi possivel concluir a revisao da saida.");
+    }
+
+    return {
+      ok: true as const,
+      movement: rowToStockMovement(updatedMovementData as Record<string, unknown>),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          row.decision === "ignorar"
+            ? "Saida ignorada no extrato, sem baixar o estoque."
+            : stockEffectApplied
+              ? "Saida aprovada e baixada no estoque."
+              : "Saida aprovada sem baixa no estoque.",
+        updatedAt,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function applyStockMovementCorrection(input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeStockMovementCorrectionInput(input);
+
+  if (!row.movementId) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Nao foi possivel identificar a baixa que sera corrigida."),
+    };
+  }
+
+  if (!row.sku || !row.color || !row.size) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Selecione a base correta antes de salvar a correcao."),
+    };
+  }
+
+  if (row.quantity <= 0) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Informe uma quantidade valida para corrigir a baixa."),
+    };
+  }
+
+  if (!row.requestToken) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Nao foi possivel gerar a chave segura dessa correcao."),
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .rpc("apply_stock_movement_correction", {
+      p_target_movement_id: row.movementId,
+      p_sku: row.sku,
+      p_color: row.color,
+      p_size: row.size,
+      p_quantity: row.quantity,
+      p_origin_reference: row.originReference,
+      p_notes: row.notes,
+      p_request_token: row.requestToken,
+      });
+
+    if (error) {
+      throw error;
+    }
+
+    const resultRow = Array.isArray(data) ? data[0] : data;
+    const updatedAt = new Date().toISOString();
+
+    return {
+      ok: true as const,
+      result: {
+        rootMovementId: resultRow?.root_movement_id ? String(resultRow.root_movement_id) : "",
+        reversalMovementId: resultRow?.reversal_movement_id
+          ? String(resultRow.reversal_movement_id)
+          : "",
+        correctionMovementId: resultRow?.correction_movement_id
+          ? String(resultRow.correction_movement_id)
+          : "",
+      },
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          typeof resultRow?.message === "string" && resultRow.message.trim()
+            ? resultRow.message
+            : "Correcao de baixa aplicada com sucesso.",
+        updatedAt,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function syncPaidNuvemshopOrderToStock(input: {
+  order: NuvemshopOrder;
+  products?: NuvemshopProduct[];
+  mode?: "automatic" | "pending_review";
+}): Promise<NuvemshopPaidOrderStockSyncResult> {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false,
+      orderId: "",
+      orderLabel: "",
+      appliedCount: 0,
+      pendingCount: 0,
+      duplicateCount: 0,
+      ignoredCount: 0,
+      results: [],
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const order = input.order;
+  const orderId = String(order.id ?? "").trim();
+  const orderLabel = formatOrderLabel(order);
+
+  if (!orderId) {
+    return {
+      ok: false,
+      orderId: "",
+      orderLabel,
+      appliedCount: 0,
+      pendingCount: 0,
+      duplicateCount: 0,
+      ignoredCount: 0,
+      results: [],
+      persistence: buildDisabledState("Nao foi possivel identificar o pedido pago da Nuvemshop."),
+    };
+  }
+
+  try {
+    const mode = input.mode === "pending_review" ? "pending_review" : "automatic";
+    const products =
+      input.products && input.products.length > 0
+        ? input.products
+        : await loadNuvemshopProductsForStockSync();
+    const variantCatalog = buildVariantCatalog(products);
+    const productBaseCatalog = buildStrictProductBaseCatalog(products);
+    const movementDate =
+      normalizeDate(order.paid_at) || normalizeDate(order.updated_at) || normalizeDate(order.created_at);
+    const results: NuvemshopPaidOrderStockLineResult[] = [];
+
+    for (const [index, product] of (order.products || []).entries()) {
+      const lineResult = await syncPaidNuvemshopOrderLine({
+        client: supabase.client,
+        order,
+        orderLabel,
+        product,
+        itemIndex: index,
+        movementDate,
+        variantCatalog,
+        productBaseCatalog,
+        mode,
+      });
+
+      results.push(lineResult);
+    }
+
+    const appliedCount = results.filter((item) => item.status === "aplicado").length;
+    const pendingCount = results.filter((item) => item.status === "pendente").length;
+    const duplicateCount = results.filter((item) => item.status === "duplicado").length;
+    const ignoredCount = results.filter((item) => item.status === "ignorado").length;
+
+    return {
+      ok: true,
+      orderId,
+      orderLabel,
+      appliedCount,
+      pendingCount,
+      duplicateCount,
+      ignoredCount,
+      results,
+      persistence: {
+        enabled: true,
+        source: "supabase",
+        message:
+          mode === "pending_review"
+            ? pendingCount > 0
+              ? `Pedido ${orderLabel} importado com ${pendingCount} item(ns) para revisao no extrato.`
+              : duplicateCount > 0
+                ? `Pedido ${orderLabel} ja estava disponivel para revisao no extrato.`
+                : `Pedido ${orderLabel} nao gerou novas pendencias para revisao.`
+            : pendingCount > 0
+              ? `Pedido ${orderLabel} sincronizado com ${appliedCount} baixa(s) automatica(s) e ${pendingCount} pendencia(s).`
+            : duplicateCount > 0 && appliedCount === 0
+              ? `Pedido ${orderLabel} ja estava sincronizado anteriormente.`
+              : `Pedido ${orderLabel} sincronizado com ${appliedCount} baixa(s) automatica(s).`,
+        updatedAt: new Date().toISOString(),
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      orderId,
+      orderLabel,
+      appliedCount: 0,
+      pendingCount: 0,
+      duplicateCount: 0,
+      ignoredCount: 0,
+      results: [],
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function importPaidNuvemshopOrderToStockReview(orderId: string) {
+  const normalizedOrderId = String(orderId ?? "").trim();
+
+  if (!normalizedOrderId) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Nao foi possivel identificar o pedido da Nuvemshop."),
+    };
+  }
+
+  const credentials = getNuvemshopCredentials();
+
+  if (!credentials.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Nuvemshop sem credenciais completas: ${credentials.missing.join(", ")}.`,
+      ),
+    };
+  }
+
+  try {
+    const client = new NuvemshopClient(credentials.credentials);
+    const order = await client.getOrder(normalizedOrderId);
+    const result = await syncPaidNuvemshopOrderToStock({
+      order,
+      mode: "pending_review",
+    });
+
+    return result.ok
+      ? {
+          ok: true as const,
+          result,
+          persistence: result.persistence,
+        }
+      : {
+          ok: false as const,
+          persistence: result.persistence,
+        };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+async function saveManualStockMovement(
+  movementType: "entrada" | "saida",
+  input: unknown,
+) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeManualStockMovementInput(movementType, input);
+
+  if (!row.sku || !row.color || !row.size) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Selecione a base, a cor e o tamanho da camiseta."),
+    };
+  }
+
+  if (row.quantity <= 0) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Informe uma quantidade valida para movimentar no estoque."),
+    };
+  }
+
+  try {
+    const artDetails = await resolveStockArtSelection(row);
+    const movementPayload = buildManualStockMovementPayload(row, movementType, artDetails);
+
+    const { data: existingRow, error: existingError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_TABLE)
+      .select(
+        "id, sku, color, size, total_qty, printed_qty, notes, reorder_point, lead_time_days, updated_at",
+      )
+      .eq("sku", row.sku)
+      .eq("color", row.color)
+      .eq("size", row.size)
+      .maybeSingle();
+
+    if (existingError) {
+      throw existingError;
+    }
+
+    const previousTotal = getIntegerValue(existingRow?.total_qty);
+    const previousPrinted = Math.min(getIntegerValue(existingRow?.printed_qty), previousTotal);
+    const previousPlain = Math.max(previousTotal - previousPrinted, 0);
+    const requiresManualReview =
+      movementPayload.movementType === "saida" &&
+      movementPayload.reviewStatus === "pendente";
+    const hasInsufficientPlain =
+      movementPayload.movementType === "saida" && previousPlain < movementPayload.quantity;
+    const keepPlainStock = getStockMovementDelta(movementPayload) === 0;
+
+    if (
+      movementPayload.movementType === "saida" &&
+      !keepPlainStock &&
+      previousPlain < movementPayload.quantity
+    ) {
+      throw new Error(
+        `Nao ha lisa suficiente em estoque. Restam ${previousPlain} unidades para ${row.sku} ${row.color} ${row.size}.`,
+      );
+    }
+
+    const nextTotal = keepPlainStock
+      ? previousTotal
+      : movementPayload.movementType === "entrada"
+        ? previousTotal + movementPayload.quantity
+        : previousTotal - movementPayload.quantity;
+
+    let persistedRow = existingRow ?? null;
+
+    if (!keepPlainStock) {
+      const operation = existingRow?.id
+        ? supabase.client
+            .schema(OPERATIONS_SCHEMA)
+            .from(STOCK_TABLE)
+            .update({
+              total_qty: nextTotal,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", existingRow.id)
+        : supabase.client
+            .schema(OPERATIONS_SCHEMA)
+            .from(STOCK_TABLE)
+            .insert({
+              sku: row.sku,
+              color: row.color,
+              size: row.size,
+              total_qty: nextTotal,
+              printed_qty: 0,
+              reorder_point: 0,
+              lead_time_days: 10,
+              notes: "",
+            });
+
+      const { data, error } = await operation.select("*").single();
+
+      if (error || !data) {
+        throw error || new Error("Nao foi possivel atualizar o saldo de camisetas.");
+      }
+
+      persistedRow = data;
+    }
+
+    const nextTotalValue = getIntegerValue(persistedRow?.total_qty);
+    const nextPrinted = Math.min(getIntegerValue(persistedRow?.printed_qty), nextTotalValue);
+    const nextPlain = keepPlainStock ? previousPlain : Math.max(nextTotalValue - nextPrinted, 0);
+    const stockItemId = String(persistedRow?.id ?? existingRow?.id ?? "");
+    const reviewStatus: StockMovementReviewStatus = movementPayload.reviewStatus;
+    const stockEffectApplied =
+      movementPayload.movementType === "entrada" ? true : keepPlainStock ? false : true;
+    const reasonCategory =
+      requiresManualReview && hasInsufficientPlain
+        ? "saida_site_pendente_alerta"
+        : movementPayload.reasonCategory;
+    const reasonText = requiresManualReview
+      ? [
+          row.notes,
+          hasInsufficientPlain
+            ? `Alerta: faltam ${movementPayload.quantity - previousPlain} unidades para confirmar essa baixa no estoque.`
+            : "Venda do site aguardando conferencia manual antes da baixa.",
+        ]
+          .filter(Boolean)
+          .join(" ")
+      : movementPayload.reasonText;
+
+    await createStockMovement(supabase.client, {
+      stockItemId,
+      sku: movementPayload.sku,
+      color: movementPayload.color,
+      size: movementPayload.size,
+      movementDate: movementPayload.movementDate,
+      movementType: movementPayload.movementType,
+      quantity: movementPayload.quantity,
+      plainBefore: previousPlain,
+      plainAfter: nextPlain,
+      artName: movementPayload.artName,
+      artProductId: movementPayload.artProductId,
+      originType: movementPayload.originType,
+      originReference: movementPayload.originReference,
+      reasonCategory,
+      reasonText,
+      sourceModule: movementPayload.sourceModule,
+      reviewStatus,
+      stockEffectApplied,
+    });
+
+    return {
+      ok: true as const,
+      item: {
+        id: stockItemId,
+        sku: row.sku,
+        color: row.color,
+        size: row.size,
+        total: nextTotalValue,
+        printedReal: nextPrinted,
+        plain: nextPlain,
+        reorderPoint: Math.max(getIntegerValue(persistedRow?.reorder_point), 0),
+        notes: String(persistedRow?.notes ?? "").trim(),
+      } satisfies StockSelectionOption,
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message:
+          movementType === "entrada"
+            ? "Entrada de camisetas registrada com sucesso."
+            : requiresManualReview
+              ? hasInsufficientPlain
+                ? "Saida do site registrada em alerta. Revise a base antes de aprovar a baixa."
+                : "Saida do site registrada para revisao manual antes da baixa."
+            : keepPlainStock
+              ? "Saida registrada como ja estampada, sem baixar a lisa."
+              : "Saida de camisetas registrada com sucesso.",
+        updatedAt: typeof persistedRow?.updated_at === "string" ? persistedRow.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+async function resolveStockArtSelection(
+  row: ReturnType<typeof normalizeManualStockMovementInput>,
+) {
+  const fallback = {
+    artName: row.artName,
+    artProductId: row.artProductId,
+  };
+
+  if (!row.artSelectionId) {
+    return fallback;
+  }
+
+  const options = await loadSiteArtSelectionOptions();
+  const selected = options.find((option) => option.id === row.artSelectionId);
+
+  if (!selected) {
+    throw new Error("Nao foi possivel localizar a arte selecionada da Nuvem Shop.");
+  }
+
+  return {
+    artName: selected.artName,
+    artProductId: selected.productId,
+  };
+}
+
+export async function loadStoreProductSelectionOptions() {
+  const credentials = getNuvemshopCredentials();
+
+  if (!credentials.ok) {
+    return [] as StoreProductSelectionOption[];
+  }
+
+  try {
+    const client = new NuvemshopClient(credentials.credentials);
+    const products = await fetchAllNuvemshopPages((params) =>
+      client.listProducts(params),
+    );
+
+    return buildStoreProductSelectionOptions(products);
+  } catch {
+    return [] as StoreProductSelectionOption[];
   }
 }
 
@@ -258,6 +2305,7 @@ export async function loadStockModuleData() {
   if (!supabase.ok) {
     return {
       items: getFallbackStock(),
+      movements: [] as StockMovement[],
       dtfItems: [],
       dtfCatalog: catalog.products,
       nuvemshopStock: catalog.stockProducts,
@@ -273,7 +2321,11 @@ export async function loadStockModuleData() {
   }
 
   try {
-    const [{ data: stockData, error: stockError }, { data: dtfData, error: dtfError }] =
+    const [
+      { data: stockData, error: stockError },
+      { data: dtfData, error: dtfError },
+      { data: movementData, error: movementError },
+    ] =
       await Promise.all([
         supabase.client
           .schema(OPERATIONS_SCHEMA)
@@ -286,6 +2338,12 @@ export async function loadStockModuleData() {
           .from(DTF_TABLE)
           .select("*")
           .order("product_name", { ascending: true }),
+        supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(STOCK_MOVEMENTS_TABLE)
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(80),
       ]);
 
     if (stockError) {
@@ -296,15 +2354,25 @@ export async function loadStockModuleData() {
       throw dtfError;
     }
 
+    if (movementError) {
+      throw movementError;
+    }
+
     const items = (stockData ?? []).map((row) =>
-      rowToStockItem(row, catalog.printedByBaseColorSize),
+      rowToStockItem(
+        row,
+        catalog.publishedByBaseColorSize,
+        catalog.salesByBaseColorSize,
+      ),
     );
     const dtfItems = (dtfData ?? []).map((row) =>
       rowToDtfItem(row, catalog.salesByProductId),
     );
+    const movements = (movementData ?? []).map(rowToStockMovement);
 
     return {
       items: items.length > 0 ? items : [],
+      movements,
       dtfItems,
       dtfCatalog: catalog.products,
       nuvemshopStock: catalog.stockProducts,
@@ -332,6 +2400,7 @@ export async function loadStockModuleData() {
   } catch (error) {
     return {
       items: getFallbackStock(),
+      movements: [] as StockMovement[],
       dtfItems: [],
       dtfCatalog: catalog.products,
       nuvemshopStock: catalog.stockProducts,
@@ -359,17 +2428,59 @@ export async function createStockItem(input: unknown) {
   const stampedContext = await loadStampedStockContext();
 
   try {
-    const { data, error } = await supabase.client
+    const { data: existingRow, error: existingError } = await supabase.client
       .schema(OPERATIONS_SCHEMA)
       .from(STOCK_TABLE)
-      .insert({
-        sku: row.sku,
-        color: row.color,
-        size: row.size,
-        total_qty: row.total,
-        reorder_point: row.reorderPoint,
-        notes: row.notes,
-      })
+      .select("id, total_qty, printed_qty, reorder_point, lead_time_days, notes")
+      .eq("sku", row.sku)
+      .eq("color", row.color)
+      .eq("size", row.size)
+      .maybeSingle();
+
+    if (existingError) {
+      throw existingError;
+    }
+
+    const previousTotal = getIntegerValue(existingRow?.total_qty);
+    const previousPrinted = Math.min(
+      getIntegerValue(existingRow?.printed_qty),
+      previousTotal,
+    );
+    const previousPlain = Math.max(previousTotal - previousPrinted, 0);
+
+    const operation = existingRow?.id
+      ? supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(STOCK_TABLE)
+          .update({
+            total_qty: getIntegerValue(existingRow.total_qty) + row.total,
+            reorder_point:
+              row.reorderPoint > 0
+                ? row.reorderPoint
+                : getIntegerValue(existingRow.reorder_point),
+            lead_time_days:
+              row.leadTimeDays > 0
+                ? row.leadTimeDays
+                : getIntegerValue(existingRow.lead_time_days) || 10,
+            notes: row.notes || String(existingRow.notes ?? ""),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existingRow.id)
+      : supabase.client
+          .schema(OPERATIONS_SCHEMA)
+          .from(STOCK_TABLE)
+          .insert({
+            sku: row.sku,
+            color: row.color,
+            size: row.size,
+            total_qty: row.total,
+            printed_qty: row.printedReal,
+            reorder_point: row.reorderPoint,
+            lead_time_days: row.leadTimeDays,
+            notes: row.notes,
+          });
+
+    const { data, error } = await operation
       .select("*")
       .single();
 
@@ -377,13 +2488,41 @@ export async function createStockItem(input: unknown) {
       throw error;
     }
 
+    const nextItem = rowToStockItem(
+      data,
+      stampedContext.publishedByBaseColorSize,
+      stampedContext.salesByBaseColorSize,
+    );
+
+    if (row.total > 0) {
+      await createStockMovement(supabase.client, {
+        stockItemId: String(data.id ?? existingRow?.id ?? ""),
+        sku: nextItem.sku,
+        color: nextItem.color,
+        size: nextItem.size,
+        movementType: "entrada",
+        quantity: row.total,
+        plainBefore: previousPlain,
+        plainAfter: nextItem.plain,
+        reasonCategory: row.movementReasonCategory || "entrada_lote",
+        reasonText:
+          row.movementReasonText ||
+          (existingRow?.id
+            ? "Saldo adicionado em linha existente."
+            : "Cadastro inicial da linha de estoque."),
+        sourceModule: row.movementSourceModule || "estoque",
+      });
+    }
+
     return {
       ok: true as const,
-      item: rowToStockItem(data, stampedContext.printedByBaseColorSize),
+      item: nextItem,
       persistence: {
         enabled: true,
         source: "supabase" as const,
-        message: "Linha de estoque salva no Supabase.",
+        message: existingRow?.id
+          ? "Quantidade adicionada na linha existente do estoque."
+          : "Linha de estoque salva no Supabase.",
         updatedAt:
           data && typeof data.updated_at === "string" ? data.updated_at : null,
       },
@@ -412,6 +2551,29 @@ export async function updateStockItem(id: string, input: unknown) {
   const stampedContext = await loadStampedStockContext();
 
   try {
+    const { data: existingRow, error: existingError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(STOCK_TABLE)
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (existingError || !existingRow) {
+      throw existingError || new Error("Nao foi possivel localizar a linha do estoque.");
+    }
+
+    const previousItem = rowToStockItem(
+      existingRow,
+      stampedContext.publishedByBaseColorSize,
+      stampedContext.salesByBaseColorSize,
+    );
+    const nextPlain = Math.max(row.total - row.printedReal, 0);
+    const plainDelta = nextPlain - previousItem.plain;
+
+    if (plainDelta !== 0 && !row.movementReasonText) {
+      throw new Error("Informe a justificativa dessa movimentacao de estoque.");
+    }
+
     const { data, error } = await supabase.client
       .schema(OPERATIONS_SCHEMA)
       .from(STOCK_TABLE)
@@ -420,7 +2582,9 @@ export async function updateStockItem(id: string, input: unknown) {
         color: row.color,
         size: row.size,
         total_qty: row.total,
+        printed_qty: row.printedReal,
         reorder_point: row.reorderPoint,
+        lead_time_days: row.leadTimeDays,
         notes: row.notes,
         updated_at: new Date().toISOString(),
       })
@@ -432,9 +2596,36 @@ export async function updateStockItem(id: string, input: unknown) {
       throw error;
     }
 
+    const nextItem = rowToStockItem(
+      data,
+      stampedContext.publishedByBaseColorSize,
+      stampedContext.salesByBaseColorSize,
+    );
+
+    if (plainDelta !== 0) {
+      await createStockMovement(supabase.client, {
+        stockItemId: nextItem.id,
+        sku: nextItem.sku,
+        color: nextItem.color,
+        size: nextItem.size,
+        movementType:
+          plainDelta > 0
+            ? "entrada"
+            : row.movementReasonCategory === "correcao_ajuste"
+              ? "ajuste"
+              : "saida",
+        quantity: Math.abs(plainDelta),
+        plainBefore: previousItem.plain,
+        plainAfter: nextItem.plain,
+        reasonCategory: row.movementReasonCategory || "ajuste_manual",
+        reasonText: row.movementReasonText,
+        sourceModule: row.movementSourceModule || "estoque",
+      });
+    }
+
     return {
       ok: true as const,
-      item: rowToStockItem(data, stampedContext.printedByBaseColorSize),
+      item: nextItem,
       persistence: {
         enabled: true,
         source: "supabase" as const,
@@ -590,16 +2781,83 @@ function rowToDebt(row: Record<string, unknown>): InternalDebt {
   };
 }
 
+function rowToMonthlyOpeningBalance(row: Record<string, unknown>): MonthlyOpeningBalance {
+  return {
+    id: String(row.id ?? ""),
+    monthRef: String(row.month_ref ?? "").slice(0, 7),
+    openingBalance: getNumberValue(row.opening_balance),
+    notes: String(row.notes ?? "").trim(),
+    createdAt: typeof row.created_at === "string" ? row.created_at : null,
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+  };
+}
+
+function rowToManualFinanceMovement(row: Record<string, unknown>): ManualFinanceMovement {
+  return {
+    id: String(row.id ?? ""),
+    movementDate: normalizeDate(row.movement_date) || getTodayDate(),
+    type: normalizeFinancialMovementType(row.movement_type),
+    title: String(row.title ?? "").trim(),
+    category:
+      String(row.subgroup_name ?? "").trim() ||
+      String(row.group_name ?? "").trim() ||
+      String(row.category ?? "").trim(),
+    groupId: row.group_id ? String(row.group_id) : null,
+    groupName: String(row.group_name ?? "").trim(),
+    subgroupId: row.subgroup_id ? String(row.subgroup_id) : null,
+    subgroupName: String(row.subgroup_name ?? "").trim(),
+    amount: Math.max(getNumberValue(row.amount), 0),
+    paymentMethod: normalizeDebtPaymentMethod(row.payment_method),
+    notes: String(row.notes ?? "").trim(),
+    createdAt: typeof row.created_at === "string" ? row.created_at : null,
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+  };
+}
+
+function rowToFinanceCategoryGroupBase(
+  row: Record<string, unknown>,
+): Omit<FinanceCategoryGroup, "subgroups"> {
+  return {
+    id: String(row.id ?? ""),
+    movementType: normalizeFinancialMovementType(row.movement_type),
+    name: String(row.name ?? "").trim(),
+    active: Boolean(row.active ?? true),
+    createdAt: typeof row.created_at === "string" ? row.created_at : null,
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+  };
+}
+
+function rowToFinanceCategorySubgroup(row: Record<string, unknown>): FinanceCategorySubgroup {
+  return {
+    id: String(row.id ?? ""),
+    groupId: String(row.group_id ?? "").trim(),
+    name: String(row.name ?? "").trim(),
+    active: Boolean(row.active ?? true),
+    createdAt: typeof row.created_at === "string" ? row.created_at : null,
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+  };
+}
+
 function rowToStockItem(
   row: Record<string, unknown>,
-  printedByBaseColorSize: Map<string, number>,
+  publishedByBaseColorSize: Map<string, number>,
+  salesByBaseColorSize: Map<string, number>,
 ): BaseStockItem {
   const total = getIntegerValue(row.total_qty);
+  const printedReal = Math.min(getIntegerValue(row.printed_qty), total);
   const sku = String(row.sku ?? "");
-  const color = String(row.color ?? "");
+  const color = getPreferredColorLabel(String(row.color ?? ""));
   const size = String(row.size ?? "");
-  const printed =
-    printedByBaseColorSize.get(buildStockKey(sku, color, size)) ?? 0;
+  const published =
+    publishedByBaseColorSize.get(buildStockKey(sku, color, size)) ?? 0;
+  const free = Math.max(total - published, 0);
+  const plain = Math.max(total - printedReal, 0);
+  const recentSales30d =
+    salesByBaseColorSize.get(buildStockKey(sku, color, size)) ?? 0;
+  const averageDailySales =
+    recentSales30d > 0 ? Math.round((recentSales30d / 30) * 10) / 10 : 0;
+  const coverageDays =
+    averageDailySales > 0 ? Math.round((plain / averageDailySales) * 10) / 10 : null;
 
   return {
     id: String(row.id ?? ""),
@@ -607,12 +2865,61 @@ function rowToStockItem(
     color,
     size,
     total,
-    printed,
-    free: Math.max(total - printed, 0),
+    printed: published,
+    free,
+    plain,
+    printedReal,
+    published,
+    overcommitted: Math.max(published - total, 0),
     reorderPoint: getIntegerValue(row.reorder_point),
+    leadTimeDays: Math.max(getIntegerValue(row.lead_time_days), 0),
+    recentSales30d,
+    averageDailySales,
+    coverageDays,
     notes: String(row.notes ?? ""),
     createdAt: typeof row.created_at === "string" ? row.created_at : null,
     updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+  };
+}
+
+function rowToStockMovement(row: Record<string, unknown>): StockMovement {
+  const movementType = normalizeStockMovementType(row.movement_type);
+  const plainBefore = Math.max(getIntegerValue(row.plain_before), 0);
+  const plainAfter = Math.max(getIntegerValue(row.plain_after), 0);
+
+  return {
+    id: String(row.id ?? ""),
+    stockItemId: row.stock_item_id ? String(row.stock_item_id) : null,
+    sku: String(row.sku ?? ""),
+    color: getPreferredColorLabel(String(row.color ?? "")),
+    size: String(row.size ?? ""),
+    movementDate: normalizeDate(row.movement_date) || getTodayDate(),
+    movementType,
+    quantity: Math.max(getIntegerValue(row.quantity), 0),
+    plainBefore,
+    plainAfter,
+    artName: String(row.art_name ?? "").trim(),
+    artProductId: String(row.art_product_id ?? "").trim(),
+    originType: String(row.origin_type ?? "").trim(),
+    originReference: String(row.origin_reference ?? "").trim(),
+    reasonCategory: String(row.reason_category ?? "").trim(),
+    reasonText: String(row.reason_text ?? "").trim(),
+    sourceModule: String(row.source_module ?? "").trim(),
+    createdAt: typeof row.created_at === "string" ? row.created_at : null,
+    updatedAt: typeof row.updated_at === "string" ? row.updated_at : null,
+    reviewStatus: normalizeStockMovementReviewStatus(row.review_status),
+    stockEffectApplied:
+      typeof row.stock_effect_applied === "boolean"
+        ? row.stock_effect_applied
+        : movementType === "entrada"
+          ? true
+          : plainBefore !== plainAfter,
+    correctionRootId: row.correction_root_id ? String(row.correction_root_id) : null,
+    correctionParentId: row.correction_parent_id ? String(row.correction_parent_id) : null,
+    correctionRole: normalizeStockMovementCorrectionRole(row.correction_role),
+    correctionNote: String(row.correction_note ?? "").trim(),
+    correctionRequestToken: String(row.correction_request_token ?? "").trim(),
+    reversedAt: typeof row.reversed_at === "string" ? row.reversed_at : null,
   };
 }
 
@@ -661,17 +2968,72 @@ function normalizeDebtInput(input: unknown) {
   };
 }
 
+function normalizeMonthlyOpeningBalanceInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+  const monthRef = normalizeMonthReference(source.monthRef) || getCurrentMonthReference();
+
+  return {
+    monthRef,
+    openingBalance: getNumberValue(source.openingBalance),
+    notes: String(source.notes ?? "").trim(),
+  };
+}
+
+function normalizeManualFinanceMovementInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+
+  return {
+    movementDate: normalizeDate(source.movementDate) || getTodayDate(),
+    type: normalizeFinancialMovementType(source.type),
+    title: String(source.title ?? "").trim() || "Movimentacao manual",
+    category: String(source.category ?? "").trim() || "Operacional",
+    groupId: String(source.groupId ?? "").trim(),
+    subgroupId: String(source.subgroupId ?? "").trim(),
+    amount: Math.max(getNumberValue(source.amount), 0),
+    paymentMethod: normalizeDebtPaymentMethod(source.paymentMethod),
+    notes: String(source.notes ?? "").trim(),
+  };
+}
+
+function normalizeFinanceCategoryGroupInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+
+  return {
+    movementType: normalizeFinancialMovementType(source.movementType),
+    name: String(source.name ?? "").trim(),
+  };
+}
+
+function normalizeFinanceCategorySubgroupInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+
+  return {
+    groupId: String(source.groupId ?? "").trim(),
+    name: String(source.name ?? "").trim(),
+  };
+}
+
 function normalizeStockInput(input: unknown) {
   const source = isRecord(input) ? input : {};
   const total = Math.max(getIntegerValue(source.total), 0);
+  const printedReal = Math.max(
+    getIntegerValue(source.printedReal ?? source.internalPrinted),
+    0,
+  );
 
   return {
     sku: String(source.sku ?? "").trim() || "Camiseta base",
     color: String(source.color ?? "").trim() || "Preta",
     size: String(source.size ?? "").trim() || "M",
     total,
+    printedReal: Math.min(printedReal, total),
     reorderPoint: Math.max(getIntegerValue(source.reorderPoint), 0),
+    leadTimeDays: Math.max(getIntegerValue(source.leadTimeDays), 10),
     notes: String(source.notes ?? "").trim(),
+    movementReasonCategory: String(source.movementReasonCategory ?? "").trim(),
+    movementReasonText: String(source.movementReasonText ?? "").trim(),
+    movementSourceModule:
+      String(source.movementSourceModule ?? "").trim() || "estoque",
   };
 }
 
@@ -689,6 +3051,67 @@ function normalizeDtfInput(input: unknown) {
   };
 }
 
+function normalizeManualStockMovementInput(
+  movementType: "entrada" | "saida",
+  input: unknown,
+) {
+  const source = isRecord(input) ? input : {};
+  const alreadyPrintedValue = String(source.alreadyPrinted ?? "").trim().toLowerCase();
+
+  return {
+    sku: String(source.sku ?? "").trim(),
+    color: getPreferredColorLabel(String(source.color ?? "").trim()),
+    size: String(source.size ?? "").trim(),
+    quantity: Math.max(getIntegerValue(source.quantity), 0),
+    movementDate: normalizeDate(source.movementDate) || getTodayDate(),
+    originType: String(source.originType ?? "").trim() || "manual",
+    originReference: String(source.originReference ?? "").trim(),
+    artSelectionId: String(source.artSelectionId ?? "").trim(),
+    artName: String(source.artName ?? "").trim(),
+    artProductId: String(source.artProductId ?? "").trim(),
+    alreadyPrinted:
+      movementType === "saida" &&
+      (alreadyPrintedValue === "true" ||
+        alreadyPrintedValue === "1" ||
+        alreadyPrintedValue === "on" ||
+        alreadyPrintedValue === "yes"),
+    notes: String(source.notes ?? "").trim(),
+    movementType,
+  };
+}
+
+function normalizeStockMovementReviewInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+  const decisionValue = String(source.decision ?? "aprovar").trim().toLowerCase();
+
+  return {
+    sku: String(source.sku ?? "").trim(),
+    color: getPreferredColorLabel(String(source.color ?? "").trim()),
+    size: String(source.size ?? "").trim(),
+    quantity: Math.max(getIntegerValue(source.quantity), 0),
+    originReference: String(source.originReference ?? "").trim(),
+    notes: String(source.notes ?? "").trim(),
+    alreadyPrinted: isTruthy(source.alreadyPrinted),
+    deductFromStock: isTruthy(source.deductFromStock),
+    decision: decisionValue === "ignorar" || decisionValue === "ignore" ? "ignorar" : "aprovar",
+  };
+}
+
+function normalizeStockMovementCorrectionInput(input: unknown) {
+  const source = isRecord(input) ? input : {};
+
+  return {
+    movementId: String(source.movementId ?? "").trim(),
+    sku: String(source.sku ?? "").trim(),
+    color: getPreferredColorLabel(String(source.color ?? "").trim()),
+    size: String(source.size ?? "").trim(),
+    quantity: Math.max(getIntegerValue(source.quantity), 0),
+    originReference: String(source.originReference ?? "").trim(),
+    notes: String(source.notes ?? "").trim(),
+    requestToken: String(source.requestToken ?? "").trim(),
+  };
+}
+
 function normalizeDebtStatus(value: unknown): DebtStatus {
   const normalized = String(value ?? "").trim().toLowerCase();
 
@@ -703,6 +3126,10 @@ function normalizeDebtStatus(value: unknown): DebtStatus {
   }
 
   return "aberta";
+}
+
+function normalizeFinancialMovementType(value: unknown): FinancialMovementType {
+  return String(value ?? "").trim().toLowerCase() === "entrada" ? "entrada" : "saida";
 }
 
 function normalizeDebtPaymentMethod(value: unknown): DebtPaymentMethod {
@@ -736,7 +3163,7 @@ function normalizeDebtBillingFrequency(value: unknown): DebtBillingFrequency {
   return "mensal";
 }
 
-function normalizeDtfArtType(value: unknown): DtfArtType {
+function normalizeDtfArtType(value: unknown): OperationalDtfArtType {
   const normalized = String(value ?? "").trim().toLowerCase();
 
   if (
@@ -748,6 +3175,29 @@ function normalizeDtfArtType(value: unknown): DtfArtType {
   }
 
   return "outro";
+}
+
+function normalizeStockMovementType(value: unknown): StockMovementType {
+  const normalized = String(value ?? "").trim().toLowerCase();
+
+  if (normalized === "entrada" || normalized === "saida" || normalized === "ajuste") {
+    return normalized;
+  }
+
+  return "ajuste";
+}
+
+function normalizeEditableStockMovementType(
+  value: unknown,
+  fallback: StockMovementType,
+): "entrada" | "saida" {
+  const normalized = normalizeStockMovementType(value);
+
+  if (normalized === "entrada" || normalized === "saida") {
+    return normalized;
+  }
+
+  return fallback === "entrada" ? "entrada" : "saida";
 }
 
 function getFallbackDebts(): InternalDebt[] {
@@ -778,11 +3228,19 @@ function getFallbackStock(): BaseStockItem[] {
     size: row.size,
     total: getIntegerValue(row.total),
     printed: getIntegerValue(row.printed),
-    free: Math.max(
-      getIntegerValue(row.total) - getIntegerValue(row.printed),
+    free: Math.max(getIntegerValue(row.total) - getIntegerValue(row.printed), 0),
+    plain: Math.max(
+      getIntegerValue(row.total) - Math.min(getIntegerValue(row.printed), getIntegerValue(row.total)),
       0,
     ),
+    printedReal: Math.min(getIntegerValue(row.printed), getIntegerValue(row.total)),
+    published: getIntegerValue(row.printed),
+    overcommitted: 0,
     reorderPoint: getIntegerValue(row.reorderPoint),
+    leadTimeDays: 10,
+    recentSales30d: 0,
+    averageDailySales: 0,
+    coverageDays: null,
     notes: row.action,
     createdAt: null,
     updatedAt: null,
@@ -797,7 +3255,8 @@ async function loadDtfCatalogContext() {
       products: [] as DtfCatalogProduct[],
       stockProducts: [] as NuvemshopStockProduct[],
       salesByProductId: new Map<string, number>(),
-      printedByBaseColorSize: new Map<string, number>(),
+      publishedByBaseColorSize: new Map<string, number>(),
+      salesByBaseColorSize: new Map<string, number>(),
       state: buildDisabledState(
         `Catalogo da Nuvemshop indisponivel. Configure ${credentials.missing.join(" e ")}.`,
       ),
@@ -813,13 +3272,15 @@ async function loadDtfCatalogContext() {
       client.listProducts(params),
     );
     const stockProducts = buildNuvemshopStockProducts(products);
-    const printedByBaseColorSize = buildPrintedStockByBaseColorSizeMap(products);
+    const publishedByBaseColorSize = buildPublishedStockByBaseColorSizeMap(products);
     let salesByProductId = new Map<string, number>();
+    let salesByBaseColorSize = new Map<string, number>();
     let stateMessage = "Catalogo da Nuvemshop conectado para mapear o DTF aos produtos.";
 
     try {
       const orders = await fetchAllNuvemshopPages((params) => client.listOrders(params));
       salesByProductId = buildRecentSalesMap(orders);
+      salesByBaseColorSize = buildRecentSalesByBaseColorSizeMap(orders, products);
     } catch (error) {
       const message = error instanceof Error ? error.message : "falha ao ler pedidos";
       stateMessage = `Catalogo da Nuvemshop conectado, mas as vendas 30d do DTF nao puderam ser lidas: ${message}.`;
@@ -836,7 +3297,8 @@ async function loadDtfCatalogContext() {
       products: mappedProducts,
       stockProducts,
       salesByProductId,
-      printedByBaseColorSize,
+      publishedByBaseColorSize,
+      salesByBaseColorSize,
       state: {
         enabled: true,
         source: "supabase" as const,
@@ -855,7 +3317,8 @@ async function loadDtfCatalogContext() {
       products: [] as DtfCatalogProduct[],
       stockProducts: [] as NuvemshopStockProduct[],
       salesByProductId: new Map<string, number>(),
-      printedByBaseColorSize: new Map<string, number>(),
+      publishedByBaseColorSize: new Map<string, number>(),
+      salesByBaseColorSize: new Map<string, number>(),
       state: buildDisabledState(
         error instanceof Error
           ? `Nao foi possivel ler os produtos da Nuvemshop: ${error.message}.`
@@ -875,7 +3338,8 @@ async function loadStampedStockContext() {
 
   if (!credentials.ok) {
     return {
-      printedByBaseColorSize: new Map<string, number>(),
+      publishedByBaseColorSize: new Map<string, number>(),
+      salesByBaseColorSize: new Map<string, number>(),
     };
   }
 
@@ -884,13 +3348,16 @@ async function loadStampedStockContext() {
     const products = await fetchAllNuvemshopPages((params) =>
       client.listProducts(params),
     );
+    const orders = await fetchAllNuvemshopPages((params) => client.listOrders(params));
 
     return {
-      printedByBaseColorSize: buildPrintedStockByBaseColorSizeMap(products),
+      publishedByBaseColorSize: buildPublishedStockByBaseColorSizeMap(products),
+      salesByBaseColorSize: buildRecentSalesByBaseColorSizeMap(orders, products),
     };
   } catch {
     return {
-      printedByBaseColorSize: new Map<string, number>(),
+      publishedByBaseColorSize: new Map<string, number>(),
+      salesByBaseColorSize: new Map<string, number>(),
     };
   }
 }
@@ -932,6 +3399,529 @@ async function fetchAllNuvemshopPages<T>(
   return result;
 }
 
+async function loadNuvemshopProductsForStockSync() {
+  const credentials = getNuvemshopCredentials();
+
+  if (!credentials.ok) {
+    throw new Error(
+      `Faltam credenciais da Nuvemshop para sincronizar o estoque: ${credentials.missing.join(", ")}.`,
+    );
+  }
+
+  const client = new NuvemshopClient(credentials.credentials);
+  return fetchAllNuvemshopPages((params) => client.listProducts(params));
+}
+
+async function syncPaidNuvemshopOrderLine(input: {
+  client: OperationsSupabaseClient;
+  order: NuvemshopOrder;
+  orderLabel: string;
+  product: NuvemshopOrderProduct;
+  itemIndex: number;
+  movementDate: string;
+  variantCatalog: Map<
+    string,
+    {
+      baseCategories: string[];
+      color: string;
+      size: string;
+    }
+  >;
+  productBaseCatalog: Map<string, string[]>;
+  mode: "automatic" | "pending_review";
+}): Promise<NuvemshopPaidOrderStockLineResult> {
+  const quantity =
+    typeof input.product.quantity === "number" && Number.isFinite(input.product.quantity)
+      ? Math.max(Math.trunc(input.product.quantity), 0)
+      : 0;
+  const itemLabel = String(
+    input.product.name ??
+      input.product.sku ??
+      `Item ${input.itemIndex + 1} do pedido ${input.orderLabel}`,
+  ).trim() || `Item ${input.itemIndex + 1} do pedido ${input.orderLabel}`;
+  const originReference = buildNuvemshopOrderOriginReference(
+    input.order,
+    input.product,
+    input.itemIndex,
+  );
+
+  if (quantity <= 0) {
+    return {
+      originReference,
+      orderLabel: input.orderLabel,
+      itemLabel,
+      sku: "",
+      color: "",
+      size: "",
+      quantity: 0,
+      status: "ignorado",
+      message: "Item ignorado por quantidade invalida.",
+      movementId: "",
+    };
+  }
+
+  const variantId = input.product.variant_id ? String(input.product.variant_id) : "";
+  const variantEntry = variantId ? input.variantCatalog.get(variantId) : undefined;
+  const variantBaseCategories = variantEntry
+    ? getStrictStockBaseCategories(variantEntry.baseCategories)
+    : [];
+  const fallbackBaseCategories = input.product.product_id
+    ? input.productBaseCatalog.get(String(input.product.product_id)) ?? []
+    : [];
+  const fallbackVariant = getOrderProductColorAndSize(input.product);
+  const baseCategories =
+    variantBaseCategories.length > 0
+      ? variantBaseCategories
+      : fallbackBaseCategories;
+  const sku = baseCategories.length === 1 ? (baseCategories[0] ?? "") : "";
+  const color = variantEntry?.color ?? fallbackVariant.color;
+  const size = variantEntry?.size ?? fallbackVariant.size;
+  const ambiguityReason = getOrderStockResolutionIssue(baseCategories, color, size);
+
+  if (input.mode === "pending_review") {
+    return createPendingNuvemshopOrderMovement(input.client, {
+      originReference,
+      orderLabel: input.orderLabel,
+      itemLabel,
+      sku,
+      color,
+      size,
+      quantity,
+      movementDate: input.movementDate,
+      artName: itemLabel,
+      artProductId: input.product.product_id ? String(input.product.product_id) : "",
+      reasonText: ambiguityReason
+        ? `Pedido ${input.orderLabel}: ${ambiguityReason}`
+        : `Pedido ${input.orderLabel}: venda importada do site para revisao antes da baixa.`,
+    });
+  }
+
+  if (ambiguityReason) {
+    return createPendingNuvemshopOrderMovement(input.client, {
+      originReference,
+      orderLabel: input.orderLabel,
+      itemLabel,
+      sku,
+      color,
+      size,
+      quantity,
+      movementDate: input.movementDate,
+      artName: itemLabel,
+      artProductId: input.product.product_id ? String(input.product.product_id) : "",
+      reasonText: `Pedido ${input.orderLabel}: ${ambiguityReason}`,
+    });
+  }
+
+  return applyPaidNuvemshopOrderMovement(input.client, {
+    originReference,
+    orderLabel: input.orderLabel,
+    itemLabel,
+    sku,
+    color,
+    size,
+    quantity,
+    movementDate: input.movementDate,
+    artName: itemLabel,
+    artProductId: input.product.product_id ? String(input.product.product_id) : "",
+  });
+}
+
+async function applyPaidNuvemshopOrderMovement(
+  client: OperationsSupabaseClient,
+  input: {
+    originReference: string;
+    orderLabel: string;
+    itemLabel: string;
+    sku: string;
+    color: string;
+    size: string;
+    quantity: number;
+    movementDate: string;
+    artName: string;
+    artProductId: string;
+  },
+): Promise<NuvemshopPaidOrderStockLineResult> {
+  const { data, error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .rpc("apply_paid_order_stock_movement", {
+      p_sku: input.sku,
+      p_color: input.color,
+      p_size: input.size,
+      p_quantity: input.quantity,
+      p_movement_date: input.movementDate,
+      p_origin_reference: input.originReference,
+      p_origin_type: "venda",
+      p_art_name: input.artName,
+      p_art_product_id: input.artProductId,
+      p_reason_category: "saida_automatica_venda",
+      p_reason_text: `Baixa automatica do pedido ${input.orderLabel}.`,
+      p_source_module: "nuvemshop_webhook",
+    });
+
+  if (error) {
+    throw error;
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  const duplicate = Boolean(row?.duplicate);
+  const applied = Boolean(row?.applied);
+  const reviewStatus = String(row?.review_status ?? "").trim().toLowerCase();
+
+  return {
+    originReference: input.originReference,
+    orderLabel: input.orderLabel,
+    itemLabel: input.itemLabel,
+    sku: input.sku,
+    color: input.color,
+    size: input.size,
+    quantity: input.quantity,
+    status: duplicate
+      ? "duplicado"
+      : applied
+        ? "aplicado"
+        : reviewStatus === "pendente"
+          ? "pendente"
+          : "ignorado",
+    message:
+      typeof row?.message === "string" && row.message.trim()
+        ? row.message
+        : duplicate
+          ? "Item ja sincronizado anteriormente."
+          : applied
+            ? "Baixa automatica aplicada com sucesso."
+            : "Item registrado para revisao manual.",
+    movementId: row?.movement_id ? String(row.movement_id) : "",
+  };
+}
+
+async function loadNuvemshopPaidOrdersForApprovalQueue(
+  monthStart: string,
+  monthEnd: string,
+  movements: StockMovement[],
+) {
+  const credentials = getNuvemshopCredentials();
+
+  if (!credentials.ok) {
+    return [] as NuvemshopOrderApprovalQueueItem[];
+  }
+
+  try {
+    const client = new NuvemshopClient(credentials.credentials);
+    const [orders, products] = await Promise.all([
+      fetchAllNuvemshopPages((params) => client.listOrders(params)),
+      loadNuvemshopProductsForStockSync(),
+    ]);
+    const variantCatalog = buildVariantCatalog(products);
+    const productBaseCatalog = buildStrictProductBaseCatalog(products);
+    const existingReferences = new Set(
+      movements
+        .map((movement) => movement.originReference.trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const queueItems: NuvemshopOrderApprovalQueueItem[] = [];
+
+    for (const order of orders) {
+      if (!isPaidOrderWithinRange(order, monthStart, monthEnd)) {
+        continue;
+      }
+
+      const orderId = String(order.id ?? "").trim();
+
+      if (!orderId) {
+        continue;
+      }
+
+      const lines: NuvemshopOrderApprovalQueueLine[] = [];
+
+      for (const [itemIndex, product] of (order.products || []).entries()) {
+        const quantity =
+          typeof product.quantity === "number" && Number.isFinite(product.quantity)
+            ? Math.max(Math.trunc(product.quantity), 0)
+            : 0;
+
+        if (quantity <= 0) {
+          continue;
+        }
+
+        const originReference = buildNuvemshopOrderOriginReference(order, product, itemIndex);
+
+        if (existingReferences.has(originReference.toLowerCase())) {
+          continue;
+        }
+
+        const variantId = product.variant_id ? String(product.variant_id) : "";
+        const variantEntry = variantId ? variantCatalog.get(variantId) : undefined;
+        const variantBaseCategories = variantEntry
+          ? getStrictStockBaseCategories(variantEntry.baseCategories)
+          : [];
+        const fallbackBaseCategories = product.product_id
+          ? productBaseCatalog.get(String(product.product_id)) ?? []
+          : [];
+        const fallbackVariant = getOrderProductColorAndSize(product);
+        const baseCategories =
+          variantBaseCategories.length > 0 ? variantBaseCategories : fallbackBaseCategories;
+        const sku = baseCategories.length === 1 ? (baseCategories[0] ?? "") : "";
+        const color = variantEntry?.color ?? fallbackVariant.color;
+        const size = variantEntry?.size ?? fallbackVariant.size;
+        const ambiguityReason = getOrderStockResolutionIssue(baseCategories, color, size);
+        const itemLabel =
+          String(product.name ?? product.sku ?? `Item ${itemIndex + 1}`).trim() ||
+          `Item ${itemIndex + 1}`;
+
+        lines.push({
+          originReference,
+          itemLabel,
+          sku,
+          color,
+          size,
+          quantity,
+          resolutionStatus: ambiguityReason ? "pendente" : "pronto",
+          resolutionMessage: ambiguityReason
+            ? ambiguityReason
+            : "Pronto para entrar no extrato e seguir para aprovacao manual.",
+        });
+      }
+
+      if (lines.length === 0) {
+        continue;
+      }
+
+      queueItems.push({
+        orderId,
+        orderLabel: formatOrderLabel(order),
+        customerName: getOrderCustomerLabel(order),
+        paidAt: order.paid_at || order.updated_at || order.created_at || null,
+        lineCount: lines.length,
+        quantityTotal: lines.reduce((sum, line) => sum + line.quantity, 0),
+        lines,
+      });
+    }
+
+    return queueItems.sort((left, right) =>
+      `${right.paidAt || ""}-${right.orderId}`.localeCompare(
+        `${left.paidAt || ""}-${left.orderId}`,
+        "pt-BR",
+      ),
+    );
+  } catch {
+    return [] as NuvemshopOrderApprovalQueueItem[];
+  }
+}
+
+async function createPendingNuvemshopOrderMovement(
+  client: OperationsSupabaseClient,
+  input: {
+    originReference: string;
+    orderLabel: string;
+    itemLabel: string;
+    sku: string;
+    color: string;
+    size: string;
+    quantity: number;
+    movementDate: string;
+    artName: string;
+    artProductId: string;
+    reasonText: string;
+  },
+): Promise<NuvemshopPaidOrderStockLineResult> {
+  const existingMovement = await findOriginalWebhookMovement(client, input.originReference);
+
+  if (existingMovement) {
+    return {
+      originReference: input.originReference,
+      orderLabel: input.orderLabel,
+      itemLabel: input.itemLabel,
+      sku: input.sku,
+      color: input.color,
+      size: input.size,
+      quantity: input.quantity,
+      status: "duplicado",
+      message: "Item ja sincronizado anteriormente.",
+      movementId: existingMovement.id,
+    };
+  }
+
+  try {
+    await createStockMovement(client, {
+      stockItemId: "",
+      sku: input.sku,
+      color: input.color,
+      size: input.size,
+      movementDate: input.movementDate,
+      movementType: "saida",
+      quantity: input.quantity,
+      plainBefore: 0,
+      plainAfter: 0,
+      artName: input.artName,
+      artProductId: input.artProductId,
+      originType: "venda",
+      originReference: input.originReference,
+      reasonCategory: "saida_site_pendente_alerta",
+      reasonText: input.reasonText,
+      sourceModule: "nuvemshop_webhook",
+      reviewStatus: "pendente",
+      stockEffectApplied: false,
+    });
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      const duplicatedMovement = await findOriginalWebhookMovement(client, input.originReference);
+      return {
+        originReference: input.originReference,
+        orderLabel: input.orderLabel,
+        itemLabel: input.itemLabel,
+        sku: input.sku,
+        color: input.color,
+        size: input.size,
+        quantity: input.quantity,
+        status: "duplicado",
+        message: "Item ja sincronizado anteriormente.",
+        movementId: duplicatedMovement?.id ?? "",
+      };
+    }
+
+    throw error;
+  }
+
+  const insertedMovement = await findOriginalWebhookMovement(client, input.originReference);
+
+  return {
+    originReference: input.originReference,
+    orderLabel: input.orderLabel,
+    itemLabel: input.itemLabel,
+    sku: input.sku,
+    color: input.color,
+    size: input.size,
+    quantity: input.quantity,
+    status: "pendente",
+    message: input.reasonText,
+    movementId: insertedMovement?.id ?? "",
+  };
+}
+
+async function findOriginalWebhookMovement(
+  client: OperationsSupabaseClient,
+  originReference: string,
+) {
+  const { data, error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(STOCK_MOVEMENTS_TABLE)
+    .select("id, stock_effect_applied, review_status")
+    .eq("source_module", "nuvemshop_webhook")
+    .eq("origin_reference", originReference)
+    .eq("correction_role", "original")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return {
+    id: String(data.id ?? ""),
+    stockEffectApplied: Boolean(data.stock_effect_applied),
+    reviewStatus: normalizeStockMovementReviewStatus(data.review_status),
+  };
+}
+
+function buildNuvemshopOrderOriginReference(
+  order: NuvemshopOrder,
+  product: NuvemshopOrderProduct,
+  itemIndex: number,
+) {
+  const orderNumber = String(order.number ?? order.id ?? "").trim() || String(order.id ?? "").trim();
+  const productId = product.product_id ? String(product.product_id) : "sem-produto";
+  const variantId = product.variant_id ? String(product.variant_id) : "sem-variante";
+
+  return `pedido ${orderNumber} · item ${itemIndex + 1} · produto ${productId} · variante ${variantId}`;
+}
+
+function getOrderCustomerLabel(order: NuvemshopOrder) {
+  return (
+    String(order.contact_name ?? "").trim() ||
+    String(order.customer?.name ?? "").trim() ||
+    String(order.contact_email ?? "").trim() ||
+    "Cliente do site"
+  );
+}
+
+function isPaidOrderWithinRange(order: NuvemshopOrder, startDate: string, endDate: string) {
+  const rawReference =
+    String(order.paid_at ?? "").trim() ||
+    (String(order.payment_status ?? "").trim().toLowerCase() === "paid"
+      ? String(order.updated_at ?? "").trim() || String(order.created_at ?? "").trim()
+      : "");
+
+  if (!rawReference) {
+    return false;
+  }
+
+  const referenceDate = new Date(rawReference);
+
+  if (Number.isNaN(referenceDate.getTime())) {
+    return false;
+  }
+
+  const normalizedReference = formatDateForDb(referenceDate);
+  return normalizedReference >= startDate && normalizedReference <= endDate;
+}
+
+function getOrderStockResolutionIssue(baseCategories: string[], color: string, size: string) {
+  if (baseCategories.length === 0) {
+    return "nao foi possivel identificar a base/modelagem da venda.";
+  }
+
+  if (baseCategories.length > 1) {
+    return `o produto veio associado a mais de uma base (${baseCategories.join(", ")}).`;
+  }
+
+  if (!color && !size) {
+    return "nao foi possivel identificar a cor e o tamanho da variacao vendida.";
+  }
+
+  if (!color) {
+    return "nao foi possivel identificar a cor da variacao vendida.";
+  }
+
+  if (!size) {
+    return "nao foi possivel identificar o tamanho da variacao vendida.";
+  }
+
+  return "";
+}
+
+function buildStrictProductBaseCatalog(products: NuvemshopProduct[]) {
+  const catalog = new Map<string, string[]>();
+
+  for (const product of products) {
+    const baseCategories = getStrictStockBaseCategories(
+      (product.categories || [])
+        .map((category) => getLocalizedText(category.name))
+        .filter((value) => value && value !== "-"),
+    );
+
+    if (baseCategories.length > 0) {
+      catalog.set(String(product.id), baseCategories);
+    }
+  }
+
+  return catalog;
+}
+
+function getStrictStockBaseCategories(categories: string[]) {
+  return categories.filter((category) => !isBlockedStockCategory(category));
+}
+
+function formatOrderLabel(order: NuvemshopOrder) {
+  const number = String(order.number ?? "").trim();
+  const id = String(order.id ?? "").trim();
+  return number ? `#${number}` : id ? `#${id}` : "sem numero";
+}
+
 function buildRecentSalesMap(orders: NuvemshopOrder[]) {
   const sales = new Map<string, number>();
   const cutoff = new Date();
@@ -965,7 +3955,64 @@ function buildRecentSalesMap(orders: NuvemshopOrder[]) {
   return sales;
 }
 
-function buildPrintedStockByBaseColorSizeMap(
+function buildRecentSalesByBaseColorSizeMap(
+  orders: NuvemshopOrder[],
+  products: NuvemshopProduct[],
+) {
+  const sales = new Map<string, number>();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 30);
+  const variantCatalog = buildVariantCatalog(products);
+  const productBaseCatalog = buildProductBaseCatalog(products);
+
+  for (const order of orders) {
+    if (!order.created_at) {
+      continue;
+    }
+
+    const createdAt = new Date(order.created_at);
+    if (Number.isNaN(createdAt.getTime()) || createdAt < cutoff) {
+      continue;
+    }
+
+    for (const product of order.products || []) {
+      const quantity =
+        typeof product.quantity === "number" && Number.isFinite(product.quantity)
+          ? product.quantity
+          : 0;
+
+      if (quantity <= 0) {
+        continue;
+      }
+
+      const variantId = product.variant_id ? String(product.variant_id) : "";
+      const variantEntry = variantId ? variantCatalog.get(variantId) : undefined;
+      const fallbackBaseCategories = product.product_id
+        ? productBaseCatalog.get(String(product.product_id)) ?? []
+        : [];
+      const fallbackVariant = getOrderProductColorAndSize(product);
+      const baseCategories =
+        variantEntry?.baseCategories.length && variantEntry.baseCategories.length > 0
+          ? variantEntry.baseCategories
+          : fallbackBaseCategories;
+      const color = variantEntry?.color ?? fallbackVariant.color;
+      const size = variantEntry?.size ?? fallbackVariant.size;
+
+      if (!color || !size || baseCategories.length === 0) {
+        continue;
+      }
+
+      for (const baseCategory of baseCategories) {
+        const key = buildStockKey(baseCategory, color, size);
+        sales.set(key, (sales.get(key) ?? 0) + quantity);
+      }
+    }
+  }
+
+  return sales;
+}
+
+function buildPublishedStockByBaseColorSizeMap(
   products: Array<Record<string, unknown>>,
 ) {
   const stockMap = new Map<string, number>();
@@ -980,11 +4027,13 @@ function buildPrintedStockByBaseColorSizeMap(
       variants?: Array<Record<string, unknown>>;
     };
 
-    const categories = (product.categories || [])
+    const baseCategories = getStockBaseCategories(
+      (product.categories || [])
       .map((category) => getLocalizedText(category.name))
-      .filter((value) => value && value !== "-");
+      .filter((value) => value && value !== "-"),
+    );
 
-    if (categories.length === 0) {
+    if (baseCategories.length === 0) {
       continue;
     }
 
@@ -1009,14 +4058,73 @@ function buildPrintedStockByBaseColorSizeMap(
       }
 
       const quantity = getVariantStockValue(variant);
-      for (const category of categories) {
-        const key = buildStockKey(category, color, size);
+      for (const baseCategory of baseCategories) {
+        const key = buildStockKey(baseCategory, color, size);
         stockMap.set(key, (stockMap.get(key) ?? 0) + quantity);
       }
     }
   }
 
   return stockMap;
+}
+
+function buildVariantCatalog(products: NuvemshopProduct[]) {
+  const catalog = new Map<
+    string,
+    {
+      baseCategories: string[];
+      color: string;
+      size: string;
+    }
+  >();
+
+  for (const product of products) {
+    const baseCategories = getStockBaseCategories(
+      (product.categories || [])
+        .map((category) => getLocalizedText(category.name))
+        .filter((value) => value && value !== "-"),
+    );
+    const attributeNames = (product.attributes || []).map((value) =>
+      getLocalizedText(value),
+    );
+
+    for (const variant of product.variants || []) {
+      const { color, size } = getVariantColorAndSize(
+        attributeNames,
+        variant.values || [],
+      );
+
+      if (!color || !size || baseCategories.length === 0) {
+        continue;
+      }
+
+      catalog.set(String(variant.id), {
+        baseCategories,
+        color,
+        size,
+      });
+    }
+  }
+
+  return catalog;
+}
+
+function buildProductBaseCatalog(products: NuvemshopProduct[]) {
+  const catalog = new Map<string, string[]>();
+
+  for (const product of products) {
+    const baseCategories = getStockBaseCategories(
+      (product.categories || [])
+        .map((category) => getLocalizedText(category.name))
+        .filter((value) => value && value !== "-"),
+    );
+
+    if (baseCategories.length > 0) {
+      catalog.set(String(product.id), baseCategories);
+    }
+  }
+
+  return catalog;
 }
 
 function buildNuvemshopStockProducts(products: NuvemshopProduct[]) {
@@ -1080,6 +4188,114 @@ function buildNuvemshopStockVariant(
   };
 }
 
+function buildSiteArtSelectionOptions(products: NuvemshopProduct[]) {
+  const items: SiteArtSelectionOption[] = [];
+
+  for (const product of products) {
+    const attributeNames = (product.attributes || []).map((value) =>
+      getLocalizedText(value),
+    );
+    const baseCategories = getStockBaseCategories(
+      (product.categories || [])
+        .map((category) => getLocalizedText(category.name))
+        .filter((value) => value && value !== "-"),
+    );
+    const artName = getLocalizedText(product.name).trim();
+
+    if (!artName || baseCategories.length === 0) {
+      continue;
+    }
+
+    for (const variant of product.variants || []) {
+      const { color, size } = getVariantColorAndSize(
+        attributeNames,
+        variant.values || [],
+      );
+      const publishedStock = getVariantStockValue(variant);
+
+      if (!color || !size) {
+        continue;
+      }
+
+      for (const baseCategory of baseCategories) {
+        items.push({
+          id: `${String(product.id)}:${String(variant.id ?? "")}:${baseCategory}`,
+          artName,
+          productId: String(product.id),
+          variantId: String(variant.id ?? ""),
+          sku: baseCategory,
+          color,
+          size,
+          publishedStock,
+        });
+      }
+    }
+  }
+
+  return items.sort((left, right) => {
+    const leftKey = `${left.artName}-${left.sku}-${normalizeColor(left.color)}-${normalizeSize(left.size)}`;
+    const rightKey = `${right.artName}-${right.sku}-${normalizeColor(right.color)}-${normalizeSize(right.size)}`;
+    return leftKey.localeCompare(rightKey);
+  });
+}
+
+function buildStoreProductSelectionOptions(products: NuvemshopProduct[]) {
+  const items: StoreProductSelectionOption[] = [];
+
+  for (const product of products) {
+    const productName = getLocalizedText(product.name).trim();
+
+    if (!productName || product.published === false) {
+      continue;
+    }
+
+    const attributeNames = (product.attributes || []).map((value) =>
+      getLocalizedText(value),
+    );
+
+    for (const variant of product.variants || []) {
+      const variantId = String(variant.id ?? "").trim();
+
+      if (!variantId) {
+        continue;
+      }
+
+      const { color, size } = getVariantColorAndSize(
+        attributeNames,
+        variant.values || [],
+      );
+      const fallbackDetail = String(variant.sku ?? "").trim();
+      const publishedStock = getVariantStockValue(variant);
+      const resolvedColor = color || "Cor unica";
+      const resolvedSize = size || fallbackDetail || "Tam. unico";
+      const resolvedSku = fallbackDetail || "-";
+
+      items.push({
+        id: `${String(product.id)}:${variantId}`,
+        productName,
+        productId: String(product.id),
+        variantId,
+        sku: resolvedSku,
+        color: resolvedColor,
+        size: resolvedSize,
+        publishedStock,
+        unitPrice: Math.max(parseMoney(String(variant.price ?? "")), 0),
+        imageUrl:
+          product.images && product.images[0] && typeof product.images[0].src === "string"
+            ? product.images[0].src
+            : null,
+        optionLabel: `${productName} · ${resolvedColor} · ${resolvedSize}`,
+      });
+    }
+  }
+
+  return items.sort((left, right) =>
+    `${left.productName}-${left.color}-${left.size}`.localeCompare(
+      `${right.productName}-${right.color}-${right.size}`,
+    ),
+  );
+}
+
 function getVariantColorAndSize(
   attributeNames: string[],
   values: NuvemshopLocalizedText[],
@@ -1116,7 +4332,10 @@ function getVariantColorAndSize(
     }
   }
 
-  return { color, size };
+  return {
+    color: getPreferredColorLabel(color),
+    size,
+  };
 }
 
 function getVariantStockValue(variant: {
@@ -1142,6 +4361,76 @@ function getVariantStockValue(variant: {
   }
 
   return 0;
+}
+
+function getOrderProductColorAndSize(product: {
+  variant_values?: unknown[];
+  properties?: unknown[];
+}) {
+  const sources = [
+    ...(Array.isArray(product.variant_values) ? product.variant_values : []),
+    ...(Array.isArray(product.properties) ? product.properties : []),
+  ];
+  let color = "";
+  let size = "";
+
+  for (const entry of sources) {
+    if (typeof entry === "string") {
+      const normalized = normalizeText(entry);
+      if (!color && isKnownColorValue(normalized)) {
+        color = entry;
+      }
+      if (!size && isKnownSizeValue(normalized)) {
+        size = entry;
+      }
+      continue;
+    }
+
+    if (!isRecord(entry)) {
+      continue;
+    }
+
+    const values = [
+      String(entry.pt ?? ""),
+      String(entry.en ?? ""),
+      String(entry.es ?? ""),
+      String(entry.value ?? ""),
+      String(entry.name ?? ""),
+    ].filter(Boolean);
+
+    for (const value of values) {
+      const normalized = normalizeText(value);
+      if (!color && isKnownColorValue(normalized)) {
+        color = value;
+      }
+      if (!size && isKnownSizeValue(normalized)) {
+        size = value;
+      }
+    }
+  }
+
+  return {
+    color: getPreferredColorLabel(color),
+    size,
+  };
+}
+
+function getStockBaseCategories(categories: string[]) {
+  const filtered = categories.filter(
+    (category) => !isBlockedStockCategory(category),
+  );
+
+  return filtered.length > 0 ? filtered : categories;
+}
+
+function isBlockedStockCategory(category: string) {
+  const normalized = normalizeText(category);
+
+  return (
+    normalized === "full estampa" ||
+    normalized === "minimalista" ||
+    normalized === "outlet"
+  );
 }
 
 function buildStockKey(base: string, color: string, size: string) {
@@ -1175,6 +4464,10 @@ function normalizeColor(value: string) {
     return "roxo";
   }
 
+  if (normalized === "rosa" || normalized === "pink") {
+    return "rosa";
+  }
+
   if (
     normalized === "avela" ||
     normalized === "avelã" ||
@@ -1185,6 +4478,38 @@ function normalizeColor(value: string) {
   }
 
   return normalized;
+}
+
+function getPreferredColorLabel(value: string) {
+  const normalized = normalizeColor(value);
+
+  if (normalized === "preto") {
+    return "Preta";
+  }
+
+  if (normalized === "branco") {
+    return "Branca";
+  }
+
+  if (normalized === "roxo") {
+    return "Roxa";
+  }
+
+  if (normalized === "rosa") {
+    return "Rosa";
+  }
+
+  if (normalized === "avela") {
+    return "Avela";
+  }
+
+  const trimmed = String(value ?? "").trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
 }
 
 function normalizeSize(value: string) {
@@ -1238,8 +4563,29 @@ function isKnownColorValue(value: string) {
     normalized === "preto" ||
     normalized === "branco" ||
     normalized === "roxo" ||
+    normalized === "rosa" ||
     normalized === "avela"
   );
+}
+
+function normalizeStockMovementReviewStatus(value: unknown): StockMovementReviewStatus {
+  const normalized = String(value ?? "").trim().toLowerCase();
+
+  if (normalized === "pendente" || normalized === "ignorado") {
+    return normalized;
+  }
+
+  return "aprovado";
+}
+
+function normalizeStockMovementCorrectionRole(value: unknown): StockMovementCorrectionRole {
+  const normalized = String(value ?? "").trim().toLowerCase();
+
+  if (normalized === "estorno" || normalized === "correcao") {
+    return normalized;
+  }
+
+  return "original";
 }
 
 function isKnownSizeValue(value: string) {
@@ -1301,6 +4647,23 @@ function normalizeDate(value: unknown) {
 
   const trimmed = value.trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : "";
+}
+
+function isUniqueConstraintError(error: unknown) {
+  if (!isRecord(error)) {
+    return false;
+  }
+
+  return String(error.code ?? "").trim() === "23505";
+}
+
+function normalizeMonthReference(value: unknown) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const trimmed = value.trim();
+  return /^\d{4}-\d{2}$/.test(trimmed) ? trimmed : "";
 }
 
 function formatDebtMonth(value: string) {
@@ -1395,6 +4758,190 @@ function getTodayDate() {
   return formatDateForDb(new Date());
 }
 
+function getCurrentMonthReference() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function getPreviousMonthReference(monthRef: string) {
+  const [yearText, monthText] = monthRef.split("-");
+  const year = Number.parseInt(yearText || "", 10);
+  const monthIndex = Number.parseInt(monthText || "", 10) - 1;
+
+  if (!Number.isFinite(year) || !Number.isFinite(monthIndex)) {
+    return "";
+  }
+
+  const previousMonth = new Date(year, monthIndex - 1, 1);
+  return `${previousMonth.getFullYear()}-${String(previousMonth.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function buildMonthSequence(startMonthRef: string, endMonthRef: string) {
+  if (startMonthRef > endMonthRef) {
+    return [] as string[];
+  }
+
+  const [startYearText, startMonthText] = startMonthRef.split("-");
+  const startYear = Number.parseInt(startYearText || "", 10);
+  const startMonthIndex = Number.parseInt(startMonthText || "", 10) - 1;
+
+  if (!Number.isFinite(startYear) || !Number.isFinite(startMonthIndex)) {
+    return [] as string[];
+  }
+
+  const sequence: string[] = [];
+  const cursor = new Date(startYear, startMonthIndex, 1);
+
+  while (true) {
+    const monthRef = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
+    sequence.push(monthRef);
+
+    if (monthRef >= endMonthRef) {
+      return sequence;
+    }
+
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+}
+
+export async function createFinanceCategoryGroup(input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeFinanceCategoryGroupInput(input);
+
+  if (!row.name) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Informe o nome do grupo."),
+    };
+  }
+
+  try {
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_GROUPS_TABLE)
+      .insert({
+        movement_type: row.movementType,
+        name: row.name,
+        active: true,
+        updated_at: new Date().toISOString(),
+      })
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel cadastrar o grupo financeiro.");
+    }
+
+    return {
+      ok: true as const,
+      group: rowToFinanceCategoryGroupBase(data as Record<string, unknown>),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message: "Grupo financeiro cadastrado com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+export async function createFinanceCategorySubgroup(input: unknown) {
+  const supabase = createSupabaseServerClient();
+
+  if (!supabase.ok) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(
+        `Persistencia indisponivel. Configure ${supabase.missing.join(" e ")}.`,
+      ),
+    };
+  }
+
+  const row = normalizeFinanceCategorySubgroupInput(input);
+
+  if (!row.groupId) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Selecione o grupo pai do subgrupo."),
+    };
+  }
+
+  if (!row.name) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState("Informe o nome do subgrupo."),
+    };
+  }
+
+  try {
+    const { data: groupData, error: groupError } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_GROUPS_TABLE)
+      .select("id")
+      .eq("id", row.groupId)
+      .single();
+
+    if (groupError || !groupData) {
+      throw groupError || new Error("Selecione um grupo valido para o subgrupo.");
+    }
+
+    const { data, error } = await supabase.client
+      .schema(OPERATIONS_SCHEMA)
+      .from(FINANCE_SUBGROUPS_TABLE)
+      .insert({
+        group_id: row.groupId,
+        name: row.name,
+        active: true,
+        updated_at: new Date().toISOString(),
+      })
+      .select("*")
+      .single();
+
+    if (error || !data) {
+      throw error || new Error("Nao foi possivel cadastrar o subgrupo financeiro.");
+    }
+
+    return {
+      ok: true as const,
+      subgroup: rowToFinanceCategorySubgroup(data as Record<string, unknown>),
+      persistence: {
+        enabled: true,
+        source: "supabase" as const,
+        message: "Subgrupo financeiro cadastrado com sucesso.",
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : null,
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false as const,
+      persistence: buildDisabledState(getErrorMessage(error)),
+    };
+  }
+}
+
+function getMonthEndDate(monthRef: string) {
+  const [yearText, monthText] = monthRef.split("-");
+  const year = Number.parseInt(yearText || "", 10);
+  const monthIndex = Number.parseInt(monthText || "", 10) - 1;
+  const endDate = new Date(year, monthIndex + 1, 0);
+  return formatDateForDb(endDate);
+}
+
 function getLatestUpdatedAt(rows: Array<Record<string, unknown>>) {
   const values = rows
     .map((row) => (typeof row.updated_at === "string" ? row.updated_at : null))
@@ -1402,6 +4949,128 @@ function getLatestUpdatedAt(rows: Array<Record<string, unknown>>) {
     .sort((left, right) => right.localeCompare(left));
 
   return values[0] ?? null;
+}
+
+async function createStockMovement(
+  client: OperationsSupabaseClient,
+  movement: {
+    stockItemId: string;
+    sku: string;
+    color: string;
+    size: string;
+    movementDate?: string;
+    movementType: StockMovementType;
+    quantity: number;
+    plainBefore: number;
+    plainAfter: number;
+    artName?: string;
+    artProductId?: string;
+    originType?: string;
+    originReference?: string;
+    reasonCategory: string;
+    reasonText: string;
+    sourceModule: string;
+    reviewStatus?: StockMovementReviewStatus;
+    stockEffectApplied?: boolean;
+  },
+) {
+  const { error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(STOCK_MOVEMENTS_TABLE)
+    .insert({
+      stock_item_id: movement.stockItemId || null,
+      sku: movement.sku,
+      color: movement.color,
+      size: movement.size,
+      movement_date: movement.movementDate || getTodayDate(),
+      movement_type: movement.movementType,
+      quantity: movement.quantity,
+      plain_before: movement.plainBefore,
+      plain_after: movement.plainAfter,
+      art_name: movement.artName || "",
+      art_product_id: movement.artProductId || "",
+      origin_type: movement.originType || "manual",
+      origin_reference: movement.originReference || "",
+      reason_category: movement.reasonCategory || "ajuste_manual",
+      reason_text: movement.reasonText,
+      source_module: movement.sourceModule || "estoque",
+      review_status: movement.reviewStatus || "aprovado",
+      stock_effect_applied:
+        typeof movement.stockEffectApplied === "boolean"
+          ? movement.stockEffectApplied
+          : movement.movementType === "entrada",
+      updated_at: new Date().toISOString(),
+    });
+
+  if (error) {
+    throw error;
+  }
+}
+
+async function loadStockRowByBase(
+  client: OperationsSupabaseClient,
+  sku: string,
+  color: string,
+  size: string,
+) {
+  const { data, error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(STOCK_TABLE)
+    .select("*")
+    .eq("sku", sku)
+    .eq("color", color)
+    .eq("size", size)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data as Record<string, unknown> | null;
+}
+
+async function updateStockTotalQty(
+  client: OperationsSupabaseClient,
+  stockItemId: string,
+  totalQty: number,
+) {
+  const { data, error } = await client
+    .schema(OPERATIONS_SCHEMA)
+    .from(STOCK_TABLE)
+    .update({
+      total_qty: Math.max(totalQty, 0),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", stockItemId)
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    throw error || new Error("Nao foi possivel atualizar o saldo dessa base.");
+  }
+
+  return data as Record<string, unknown>;
+}
+
+function getPlainStockFromRow(row: Record<string, unknown> | null) {
+  if (!row) {
+    return 0;
+  }
+
+  const total = getIntegerValue(row.total_qty);
+  const printed = Math.min(getIntegerValue(row.printed_qty), total);
+  return Math.max(total - printed, 0);
+}
+
+function isTruthy(value: unknown) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return (
+    normalized === "true" ||
+    normalized === "1" ||
+    normalized === "on" ||
+    normalized === "yes" ||
+    normalized === "sim"
+  );
 }
 
 function buildDisabledState(message: string): OperationalPersistenceState {
@@ -1415,6 +5084,10 @@ function buildDisabledState(message: string): OperationalPersistenceState {
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) {
+    return `Nao foi possivel acessar o Supabase: ${error.message}. Confirme que o schema repeticao_maxima foi adicionado em Settings > API > Exposed schemas e que o SQL foi executado com os GRANTs de acesso ao schema e as tabelas.`;
+  }
+
+  if (isRecord(error) && typeof error.message === "string" && error.message.trim()) {
     return `Nao foi possivel acessar o Supabase: ${error.message}. Confirme que o schema repeticao_maxima foi adicionado em Settings > API > Exposed schemas e que o SQL foi executado com os GRANTs de acesso ao schema e as tabelas.`;
   }
 

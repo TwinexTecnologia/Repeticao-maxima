@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
 
+import { authorizeApiAccess } from "@/lib/auth/access";
 import { saveFinanceConfig } from "@/lib/financeiro/repository";
 
 export async function PUT(request: Request) {
+  const authorization = await authorizeApiAccess("financeiro");
+
+  if (!authorization.ok) {
+    return authorization.response;
+  }
+
   try {
     const body = await request.json();
     const result = await saveFinanceConfig(body);
