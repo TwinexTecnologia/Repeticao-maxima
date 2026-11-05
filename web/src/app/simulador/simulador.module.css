@@ -1,0 +1,603 @@
+.labRoot {
+  display: grid;
+  gap: 18px;
+  padding: 18px;
+  border-radius: 28px;
+  color: #f7efff;
+  background:
+    radial-gradient(circle at top left, rgba(143, 56, 255, 0.22), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(255, 126, 35, 0.18), transparent 26%),
+    linear-gradient(180deg, #09020f 0%, #12031f 55%, #07010d 100%);
+  border: 1px solid rgba(186, 133, 255, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 28px 70px rgba(5, 1, 12, 0.28);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.headerEyebrow {
+  color: #cba9ff;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.headerTitle {
+  margin-top: 6px;
+  font-size: clamp(1.8rem, 3vw, 2.4rem);
+  line-height: 1.05;
+}
+
+.headerDescription {
+  margin-top: 8px;
+  max-width: 760px;
+  color: rgba(237, 222, 255, 0.78);
+  line-height: 1.6;
+}
+
+.channelTabs {
+  display: inline-grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(185, 141, 255, 0.12);
+}
+
+.channelTab {
+  min-height: 46px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 14px;
+  color: rgba(247, 239, 255, 0.82);
+  background: transparent;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.channelTabActive {
+  color: #ffffff;
+  background: linear-gradient(135deg, #7b2cbf 0%, #9d4edd 100%);
+  box-shadow: 0 14px 28px rgba(102, 32, 173, 0.28);
+}
+
+.summaryGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.summaryCard,
+.boardSection,
+.editorPanel {
+  border-radius: 24px;
+  background: rgba(10, 6, 18, 0.72);
+  border: 1px solid rgba(185, 141, 255, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 16px 34px rgba(5, 1, 12, 0.18);
+}
+
+.summaryCard {
+  padding: 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.summaryCard span {
+  color: rgba(229, 210, 255, 0.74);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.summaryCard strong {
+  font-size: 1.6rem;
+  line-height: 1.1;
+}
+
+.summaryCard small {
+  color: rgba(229, 210, 255, 0.6);
+  font-size: 0.84rem;
+}
+
+.mainLayout {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1.45fr) minmax(340px, 0.8fr);
+  align-items: start;
+}
+
+.boardColumn {
+  display: grid;
+  gap: 18px;
+}
+
+.boardSection {
+  padding: 18px;
+}
+
+.sectionTitleRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.sectionTitleRow h3,
+.editorHeader h3 {
+  font-size: 1.12rem;
+}
+
+.sectionTitleRow p,
+.editorHeader p {
+  margin-top: 6px;
+  color: rgba(229, 210, 255, 0.7);
+  line-height: 1.55;
+}
+
+.kanbanGroups {
+  margin-top: 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.groupBlock {
+  display: grid;
+  gap: 12px;
+}
+
+.groupTitle,
+.channelSectionTitle,
+.resultPanelTitle,
+.impactListTitle {
+  color: #ffb56d;
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.comboGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.comboCard {
+  padding: 16px;
+  border: 1px solid rgba(185, 141, 255, 0.12);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(31, 10, 52, 0.94), rgba(15, 5, 28, 0.96));
+  color: #ffffff;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.comboCard:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 155, 61, 0.28);
+  box-shadow: 0 18px 30px rgba(5, 1, 12, 0.2);
+}
+
+.comboCardActive {
+  border-color: rgba(179, 93, 255, 0.9);
+  box-shadow:
+    0 0 0 1px rgba(179, 93, 255, 0.35),
+    0 18px 30px rgba(91, 29, 153, 0.26);
+}
+
+.comboCardTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.comboName {
+  display: block;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.comboCardTop small,
+.comboMeta span {
+  color: rgba(229, 210, 255, 0.68);
+}
+
+.comboPrice {
+  margin-top: 14px;
+  font-size: 1.9rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.comboMeta {
+  margin-top: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.comboMeta strong {
+  color: #ffffff;
+}
+
+.marginOk,
+.marginWarn,
+.marginBad {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.marginOk {
+  color: #3bff9f;
+  background: rgba(36, 166, 94, 0.18);
+}
+
+.marginWarn {
+  color: #ffcb6d;
+  background: rgba(255, 154, 31, 0.18);
+}
+
+.marginBad {
+  color: #ff8a8a;
+  background: rgba(190, 40, 60, 0.18);
+}
+
+.comparisonGrid {
+  margin-top: 18px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.comparisonCard,
+.impactCard {
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(185, 141, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.comparisonCard span,
+.impactCard span {
+  color: rgba(229, 210, 255, 0.74);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.comparisonCard strong,
+.impactCard strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 1.55rem;
+}
+
+.comparisonCardHighlight {
+  background: linear-gradient(180deg, rgba(18, 100, 53, 0.2), rgba(14, 59, 33, 0.26));
+  border-color: rgba(62, 196, 114, 0.24);
+}
+
+.comparisonStats {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.comparisonStats div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.comparisonStats div span {
+  color: rgba(229, 210, 255, 0.66);
+}
+
+.comparisonStats div strong {
+  margin-top: 0;
+  font-size: 1rem;
+}
+
+.impactCard {
+  display: grid;
+  align-content: start;
+}
+
+.impactMargin {
+  margin-top: 10px;
+  color: #3bff9f;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.impactPositive {
+  color: #3bff9f;
+}
+
+.impactNegative {
+  color: #ff8a8a;
+}
+
+.impactList {
+  margin-top: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.impactRows {
+  display: grid;
+  gap: 8px;
+}
+
+.impactRow {
+  padding: 12px 14px;
+  border-radius: 16px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(185, 141, 255, 0.08);
+}
+
+.impactRow span,
+.emptyImpact {
+  color: rgba(229, 210, 255, 0.72);
+}
+
+.editorPanel {
+  position: sticky;
+  top: 24px;
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.editorFields,
+.channelSection,
+.resultPanel,
+.feedbackPanel {
+  display: grid;
+  gap: 12px;
+}
+
+.fieldGrid,
+.toggleGrid,
+.actionRow {
+  display: grid;
+  gap: 12px;
+}
+
+.fieldGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.toggleGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field span {
+  color: rgba(229, 210, 255, 0.74);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(185, 141, 255, 0.16);
+  outline: none;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.field input:focus,
+.field select:focus {
+  border-color: rgba(255, 166, 77, 0.42);
+  box-shadow: 0 0 0 4px rgba(255, 166, 77, 0.08);
+}
+
+.toggle {
+  min-height: 46px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(185, 141, 255, 0.16);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.04);
+  font-weight: 700;
+}
+
+.toggle input {
+  accent-color: #9d4edd;
+}
+
+.resultPanel {
+  padding: 16px;
+  border-radius: 22px;
+  border: 1px solid rgba(185, 141, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.resultRows {
+  display: grid;
+  gap: 10px;
+}
+
+.resultRow,
+.resultRowStrong {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  color: rgba(229, 210, 255, 0.72);
+}
+
+.resultRow strong {
+  color: #ffffff;
+}
+
+.resultRowStrong {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(185, 141, 255, 0.12);
+}
+
+.resultRowStrong strong {
+  color: #3bff9f;
+  font-size: 1.08rem;
+}
+
+.marginBox {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 18px;
+  text-align: center;
+  background: linear-gradient(180deg, rgba(21, 105, 58, 0.2), rgba(15, 59, 34, 0.26));
+  border: 1px solid rgba(62, 196, 114, 0.22);
+}
+
+.marginValue {
+  font-size: 2rem;
+  font-weight: 900;
+  color: #57ffae;
+}
+
+.marginMeta {
+  margin-top: 4px;
+  font-weight: 800;
+  color: #d3ffe7;
+}
+
+.marginHint {
+  margin-top: 4px;
+  color: rgba(225, 255, 236, 0.74);
+  font-size: 0.86rem;
+}
+
+.actionRow {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.primaryButton,
+.secondaryButton {
+  min-height: 52px;
+  padding: 0 16px;
+  border-radius: 16px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.primaryButton {
+  border: 0;
+  color: #ffffff;
+  background: linear-gradient(135deg, #7b2cbf 0%, #b04cff 100%);
+  box-shadow: 0 16px 32px rgba(102, 32, 173, 0.28);
+}
+
+.secondaryButton {
+  border: 1px solid rgba(185, 141, 255, 0.18);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.feedbackPanel {
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(185, 141, 255, 0.14);
+}
+
+.feedbackNeutral {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.feedbackWarning {
+  background: rgba(176, 90, 0, 0.12);
+  border-color: rgba(255, 166, 77, 0.18);
+}
+
+.feedbackPanel strong {
+  color: #ffffff;
+}
+
+.feedbackPanel span {
+  color: rgba(229, 210, 255, 0.76);
+  line-height: 1.55;
+}
+
+@media (max-width: 1180px) {
+  .summaryGrid,
+  .mainLayout,
+  .comboGrid,
+  .comparisonGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .editorPanel {
+    position: static;
+  }
+}
+
+@media (max-width: 720px) {
+  .labRoot {
+    padding: 14px;
+    border-radius: 22px;
+  }
+
+  .header,
+  .channelTabs,
+  .fieldGrid,
+  .toggleGrid,
+  .actionRow,
+  .impactRow,
+  .comboCardTop,
+  .comparisonStats div,
+  .resultRow,
+  .resultRowStrong {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .channelTabs {
+    width: 100%;
+  }
+
+  .channelTab {
+    width: 100%;
+  }
+}
