@@ -17,6 +17,7 @@ const navigationItems = [
   { href: "/estoque", label: "Estoque", hint: "Base por cor" },
   { href: "/pedidos", label: "Pedidos", hint: "Venda e producao" },
   { href: "/financeiro", label: "Financeiro", hint: "Margem liquida" },
+  { href: "/simulador", label: "Laboratorio", hint: "Margens e combos" },
   {
     href: "/integracoes/nuvemshop",
     label: "Nuvemshop",
