@@ -73,6 +73,13 @@ export const APP_NAVIGATION_ITEMS: AppNavigationItem[] = [
     permission: "pedidos",
   },
   {
+    href: "/simulador",
+    label: "Laboratorio",
+    hint: "Margens e combos",
+    icon: "financeiro",
+    permission: "financeiro",
+  },
+  {
     href: "/integracoes/nuvemshop",
     label: "Nuvemshop",
     hint: "Pedidos reais",
