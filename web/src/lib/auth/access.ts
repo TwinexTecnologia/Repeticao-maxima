@@ -74,6 +74,13 @@ export const APP_NAVIGATION_ITEMS: AppNavigationItem[] = [
     permission: "pedidos",
   },
   {
+    href: "/simulador",
+    label: "Laboratorio",
+    hint: "Margens e combos",
+    icon: "financeiro",
+    permission: "financeiro",
+  },
+  {
     href: "/marketing",
     label: "Marketing",
     hint: "Vendas e carrinhos",
