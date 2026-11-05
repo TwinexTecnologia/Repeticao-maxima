@@ -21,11 +21,12 @@ type ComboId =
   | "print-5";
 type NuvemPaymentMode = "pix" | "card1" | "card2";
 type MercadoLivreListingType = "classico" | "premium" | "full";
+type ComboFamily = "minimalistas" | "mesclados" | "estampados";
 
 type ComboDefinition = {
   id: ComboId;
   label: string;
-  family: "minimalistas" | "mesclados" | "estampados";
+  family: ComboFamily;
   totalQuantity: number;
   plainQuantity: number;
   printedQuantity: number;
@@ -39,6 +40,14 @@ type LabState = {
       nuvemshop: number;
       tiktok: number;
       mercadolivre: number | null;
+    }
+  >;
+  familyTargets: Record<
+    ComboFamily,
+    {
+      nuvemshop: number;
+      tiktok: number;
+      mercadolivre: number;
     }
   >;
   channels: {
@@ -110,7 +119,7 @@ type SimuladorClientProps = {
   initialPersistence: FinancePersistenceState;
 };
 
-const LOCAL_STORAGE_KEY = "rm-laboratorio-margens-v1";
+const LOCAL_STORAGE_KEY = "rm-laboratorio-margens-v2";
 
 const COMBOS: ComboDefinition[] = [
   {
@@ -217,6 +226,11 @@ const DEFAULT_LAB_STATE: LabState = {
     "print-4": { nuvemshop: 359.9, tiktok: 379.9, mercadolivre: null },
     "print-5": { nuvemshop: 439.9, tiktok: 469.9, mercadolivre: null },
   },
+  familyTargets: {
+    minimalistas: { nuvemshop: 38.1, tiktok: 38.1, mercadolivre: 25 },
+    mesclados: { nuvemshop: 38.8, tiktok: 38.1, mercadolivre: 25 },
+    estampados: { nuvemshop: 37.2, tiktok: 36.9, mercadolivre: 25 },
+  },
   channels: {
     nuvemshop: {
       monthlyTraffic: 1200,
@@ -296,6 +310,16 @@ export function SimuladorClient({
   const selectedCombo = useMemo(
     () => COMBOS.find((combo) => combo.id === selectedComboId) ?? COMBOS[0],
     [selectedComboId],
+  );
+  const selectedFamilyTarget = useMemo(
+    () =>
+      getFamilyTargetMargin(
+        draftLabState,
+        selectedCombo.family,
+        selectedChannel,
+        draftConfig.desiredMargin,
+      ),
+    [draftConfig.desiredMargin, draftLabState, selectedChannel, selectedCombo.family],
   );
 
   const topMetrics = useMemo(() => {
@@ -499,18 +523,18 @@ export function SimuladorClient({
     }));
   }
 
-  function handleComboPriceChange(
-    comboId: ComboId,
+  function handleFamilyTargetChange(
+    family: ComboFamily,
     channel: ChannelKey,
     value: string,
   ) {
     setDraftLabState((current) => ({
       ...current,
-      comboPrices: {
-        ...current.comboPrices,
-        [comboId]: {
-          ...current.comboPrices[comboId],
-          [channel]: normalizeNullablePrice(value),
+      familyTargets: {
+        ...current.familyTargets,
+        [family]: {
+          ...current.familyTargets[family],
+          [channel]: parseNumber(value),
         },
       },
     }));
@@ -600,8 +624,6 @@ export function SimuladorClient({
     }));
   }
 
-  const selectedComboPrice =
-    draftLabState.comboPrices[selectedCombo.id][selectedChannel] ?? 0;
   const currentPaymentRate = getCurrentNuvemRate(
     draftConfig,
     draftLabState.channels.nuvemshop.paymentMode,
@@ -684,7 +706,12 @@ export function SimuladorClient({
                           <span
                             className={getMarginToneClass(
                               result.finalMargin,
-                              draftConfig.desiredMargin,
+                              getFamilyTargetMargin(
+                                draftLabState,
+                                combo.family,
+                                selectedChannel,
+                                draftConfig.desiredMargin,
+                              ),
                               styles,
                             )}
                           >
@@ -815,8 +842,8 @@ export function SimuladorClient({
                 </div>
               ) : (
                 <div className={styles.emptyImpact}>
-                  Nenhuma alteracao em andamento. Edite um custo ou preco para ver
-                  o efeito nos combos.
+                  Nenhuma alteracao em andamento. Edite um custo, uma meta ou uma
+                  taxa para ver o efeito nos combos.
                 </div>
               )}
             </div>
@@ -826,29 +853,18 @@ export function SimuladorClient({
         <aside className={styles.editorPanel}>
           <div className={styles.editorHeader}>
             <div>
-              <h3>Ajustes do combo selecionado</h3>
+              <h3>Ajustes da familia selecionada</h3>
               <p>
-                {selectedCombo.label} - {getChannelLabel(selectedChannel)}
+                {getFamilyLabel(selectedCombo.family)} · {getChannelLabel(selectedChannel)}
               </p>
             </div>
           </div>
 
           <div className={styles.editorFields}>
-            <label className={styles.field}>
-              <span>Preco de venda (R$)</span>
-              <input
-                type="number"
-                step="0.01"
-                value={selectedComboPrice === null ? "" : selectedComboPrice}
-                onChange={(event) =>
-                  handleComboPriceChange(
-                    selectedCombo.id,
-                    selectedChannel,
-                    event.target.value,
-                  )
-                }
-              />
-            </label>
+            <div className={styles.editorNote}>
+              Mexer aqui recalcula automaticamente todos os combos de{" "}
+              {getFamilyLabel(selectedCombo.family).toLowerCase()} desse canal.
+            </div>
 
             <label className={styles.field}>
               <span>Custo camiseta (R$)</span>
@@ -899,13 +915,17 @@ export function SimuladorClient({
             </label>
 
             <label className={styles.field}>
-              <span>Meta de margem (%)</span>
+              <span>Meta da familia (%)</span>
               <input
                 type="number"
                 step="0.01"
-                value={draftConfig.desiredMargin}
+                value={selectedFamilyTarget}
                 onChange={(event) =>
-                  handleConfigNumberChange("desiredMargin", event.target.value)
+                  handleFamilyTargetChange(
+                    selectedCombo.family,
+                    selectedChannel,
+                    event.target.value,
+                  )
                 }
               />
             </label>
@@ -1306,15 +1326,15 @@ export function SimuladorClient({
                 {afterResult.ready ? formatPercent(afterResult.finalMargin) : "Pendente"}
               </div>
               <div className={styles.marginMeta}>
-                {afterResult.finalMargin >= draftConfig.desiredMargin
+                {afterResult.finalMargin >= selectedFamilyTarget
                   ? "Dentro da meta"
                   : "Abaixo da meta"}
               </div>
               <div className={styles.marginHint}>
-                Meta: {formatPercent(draftConfig.desiredMargin)}
+                Meta da familia: {formatPercent(selectedFamilyTarget)}
               </div>
               <div className={styles.marginHint}>
-                Preco minimo:{" "}
+                Preco projetado:{" "}
                 {afterResult.targetPrice === null
                   ? "Reveja taxas"
                   : formatMoney(afterResult.targetPrice)}
@@ -1363,17 +1383,31 @@ function calculateScenario(
   config: FinanceConfig,
   labState: LabState,
 ): ScenarioResult {
-  const price = labState.comboPrices[combo.id][channel];
-
-  if (price === null || price <= 0) {
-    return buildEmptyScenario("Preco nao configurado.");
-  }
-
-  const grossRevenue = price;
   const minimalUnitCost = getMinimalUnitCost(config);
   const printedUnitCost = getPrintedUnitCost(config);
   const productionCost =
     combo.plainQuantity * minimalUnitCost + combo.printedQuantity * printedUnitCost;
+  const fixedAllocation = getChannelFixedAllocation(channel, labState);
+  const targetMargin = getFamilyTargetMargin(
+    labState,
+    combo.family,
+    channel,
+    config.desiredMargin,
+  );
+  const price = calculateTargetPrice(
+    channel,
+    config,
+    labState,
+    productionCost,
+    fixedAllocation,
+    targetMargin,
+  );
+
+  if (price === null || price <= 0) {
+    return buildEmptyScenario("Nao foi possivel projetar o preco.");
+  }
+
+  const grossRevenue = price;
   let discountValue = 0;
   let netRevenue = grossRevenue;
   let feeCost = 0;
@@ -1381,7 +1415,6 @@ function calculateScenario(
   let gohanCost = 0;
   let shippingCost = 0;
   let otherCosts = 0;
-  let fixedAllocation: number | null = null;
 
   if (channel === "nuvemshop") {
     const channelConfig = labState.channels.nuvemshop;
@@ -1392,7 +1425,6 @@ function calculateScenario(
     netRevenue = grossRevenue - discountValue;
     feeCost = netRevenue * (paymentRate.percent / 100) + paymentRate.fixed;
     shippingCost = channelConfig.companyShipping;
-    fixedAllocation = getChannelFixedAllocation(channel, labState);
     const preGohanProfit = netRevenue - productionCost - feeCost - shippingCost;
 
     if (channelConfig.gohanEnabled && preGohanProfit > 0) {
@@ -1415,7 +1447,6 @@ function calculateScenario(
 
     shippingCost = channelConfig.companyShipping;
     otherCosts = channelConfig.otherCosts;
-    fixedAllocation = getChannelFixedAllocation(channel, labState);
   }
 
   if (channel === "mercadolivre") {
@@ -1430,7 +1461,6 @@ function calculateScenario(
       netRevenue * (channelConfig.commissionPercent / 100) + channelConfig.fixedFee;
     shippingCost = channelConfig.companyShipping;
     otherCosts = channelConfig.otherCosts;
-    fixedAllocation = getChannelFixedAllocation(channel, labState);
   }
 
   const contributionValue =
@@ -1465,26 +1495,19 @@ function calculateScenario(
     fixedAllocation,
     finalProfit,
     finalMargin,
-    targetPrice: calculateTargetPrice(
-      combo,
-      channel,
-      config,
-      labState,
-      productionCost,
-      fixedAllocation,
-    ),
+    targetPrice: price,
   };
 }
 
 function calculateTargetPrice(
-  combo: ComboDefinition,
   channel: ChannelKey,
   config: FinanceConfig,
   labState: LabState,
   productionCost: number,
   fixedAllocation: number | null,
+  targetMarginPercent: number,
 ) {
-  const targetMargin = config.desiredMargin / 100;
+  const targetMargin = targetMarginPercent / 100;
   const fixedCosts = (fixedAllocation === null ? 0 : fixedAllocation) + productionCost;
 
   if (channel === "nuvemshop") {
@@ -1640,6 +1663,20 @@ function mergeLabState(base: LabState, incoming?: Partial<LabState>): LabState {
       ...base.comboPrices,
       ...(incoming.comboPrices ?? {}),
     },
+    familyTargets: {
+      minimalistas: {
+        ...base.familyTargets.minimalistas,
+        ...(incoming.familyTargets?.minimalistas ?? {}),
+      },
+      mesclados: {
+        ...base.familyTargets.mesclados,
+        ...(incoming.familyTargets?.mesclados ?? {}),
+      },
+      estampados: {
+        ...base.familyTargets.estampados,
+        ...(incoming.familyTargets?.estampados ?? {}),
+      },
+    },
     channels: {
       nuvemshop: {
         ...base.channels.nuvemshop,
@@ -1659,6 +1696,28 @@ function mergeLabState(base: LabState, incoming?: Partial<LabState>): LabState {
 
 function getChannelLabel(channel: ChannelKey) {
   return CHANNELS.find((item) => item.key === channel)?.label ?? channel;
+}
+
+function getFamilyLabel(family: ComboFamily) {
+  if (family === "minimalistas") {
+    return "Minimalistas";
+  }
+
+  if (family === "mesclados") {
+    return "Mescladas";
+  }
+
+  return "Estampadas";
+}
+
+function getFamilyTargetMargin(
+  labState: LabState,
+  family: ComboFamily,
+  channel: ChannelKey,
+  fallback: number,
+) {
+  const value = labState.familyTargets[family]?.[channel];
+  return Number.isFinite(value) ? value : fallback;
 }
 
 function getMarginToneClass(
