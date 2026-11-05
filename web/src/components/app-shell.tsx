@@ -17,7 +17,27 @@ type AppShellProps = {
   currentPath: string;
   children: ReactNode;
 };
+const navigationItems = [
+  { href: "/", label: "Dashboard", hint: "Caixa e alertas" },
+  { href: "/compras", label: "Compras", hint: "Lotes e dividas" },
+  { href: "/estoque", label: "Estoque", hint: "Base por cor" },
+  { href: "/pedidos", label: "Pedidos", hint: "Venda e producao" },
+  { href: "/financeiro", label: "Financeiro", hint: "Margem liquida" },
+  { href: "/simulador", label: "Laboratorio", hint: "Margens e combos" },
+  {
+    href: "/integracoes/nuvemshop",
+    label: "Nuvemshop",
+    hint: "Pedidos reais",
+  },
+  {
+    href: "/influenciadores",
+    label: "Influenciadores",
+    hint: "Cupons e brindes",
+  },
+  { href: "/empresa", label: "Empresa", hint: "Dados e regras" },
+];
 
+export function AppShell({
 export async function AppShell({
   title,
   subtitle,
