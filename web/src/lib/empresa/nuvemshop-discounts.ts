@@ -408,25 +408,23 @@ function isLocalOrigin(origin: string) {
 
 function extractCartLineItems(payload: DiscountCallbackPayload) {
   const cartPayload = getRecordValue(payload.cart);
-  const rawLineItems =
-    getRecordArrayValue(payload.line_items).length > 0
-      ? getRecordArrayValue(payload.line_items)
-      : getRecordArrayValue(cartPayload?.line_items);
+  const collections = [
+    payload.line_items,
+    payload.items,
+    payload.products,
+    cartPayload?.line_items,
+    cartPayload?.items,
+    cartPayload?.products,
+  ];
+  const collection = collections
+    .map((value) => getRecordArrayValue(value))
+    .find((value) => value.length > 0);
 
-  if (rawLineItems.length > 0) {
-    return rawLineItems
-      .map((lineItem) => ({
-        matchIds: extractMatchIds(lineItem),
-        quantity: Math.max(getIntegerValue(lineItem.quantity), 0),
-      }))
-      .filter((lineItem) => lineItem.matchIds.length > 0 && lineItem.quantity > 0);
+  if (!collection) {
+    return [] as CartLineItem[];
   }
 
-  const products =
-    getRecordArrayValue(payload.products).length > 0
-      ? getRecordArrayValue(payload.products)
-      : getRecordArrayValue(cartPayload?.products);
-  return products
+  return collection
     .map((product) => ({
       matchIds: extractMatchIds(product),
       quantity: Math.max(getIntegerValue(product.quantity), 0),
@@ -469,7 +467,9 @@ function extractMatchIds(value: Record<string, unknown>) {
   return Array.from(
     new Set(
       [
+        getTextValue(value.productId),
         getTextValue(value.product_id),
+        getTextValue(value.variantId),
         getTextValue(value.variant_id),
         getTextValue(value.id),
         getTextValue(productPayload?.id),
